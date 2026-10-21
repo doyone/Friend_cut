@@ -120,24 +120,31 @@ export function podium(roster, scores, me) {
 }
 
 // data-ends(서버 시각)까지 남은 시간을 전역 타이머가 계속 갱신한다.
+// 화면을 다시 그리며 새로 만들어도 꽉 찼다가 줄어드는 깜빡임이 없게, 만들 때부터 지금 값으로 칠한다.
+let clock = () => Date.now();
+
+function paintCountdown(el, t) {
+  const left = Math.max(0, Number(el.dataset.ends) - t);
+  const total = Number(el.dataset.total) || 1;
+  el.querySelector('i').style.transform = `scaleX(${Math.min(1, left / total)})`;
+  el.querySelector('span').textContent = `${Math.ceil(left / 1000)}초`;
+  el.classList.toggle('urgent', left < 5000);
+}
+
 export function countdown(endsAt, totalMs) {
-  return h('div', { class: 'countdown', 'data-ends': endsAt, 'data-total': totalMs },
+  const el = h('div', { class: 'countdown', 'data-ends': endsAt, 'data-total': totalMs },
     h('div', { class: 'track' }, h('i')),
     h('span'));
+  paintCountdown(el, clock());
+  return el;
 }
 
 export function startTimerLoop(now) {
-  const tick = () => {
+  clock = now;
+  setInterval(() => {
     const t = now();
-    for (const el of document.querySelectorAll('.countdown[data-ends]')) {
-      const left = Math.max(0, Number(el.dataset.ends) - t);
-      const total = Number(el.dataset.total) || 1;
-      el.querySelector('i').style.transform = `scaleX(${Math.min(1, left / total)})`;
-      el.querySelector('span').textContent = `${Math.ceil(left / 1000)}초`;
-      el.classList.toggle('urgent', left < 5000);
-    }
-  };
-  setInterval(tick, 100);
+    for (const el of document.querySelectorAll('.countdown[data-ends]')) paintCountdown(el, t);
+  }, 100);
 }
 
 // 마우스 없이 고르기: 방향키로 옮기고 스페이스로 누른다. 숫자키 1~9로 바로 누를 수도 있다.

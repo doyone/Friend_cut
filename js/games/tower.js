@@ -1,22 +1,23 @@
 // 독박 타워: 좁은 받침대에 돌아가며 물리 블록을 쌓는다.
 // 블록은 🎰 룰렛(기본 4칸 블록 7종 + 추가 블록, 완전 랜덤)으로 차례가 시작될 때 뽑는다. NEXT는 '?'로만 보인다.
 // 각자 한 판에 한 번 '😈 악마 카드'로 다음 사람 블록을 내가 고른 악마 블록으로 정해 버릴 수 있다 (그걸로 죽으면 내 킬).
-// 카드는 내 차례 내내 쓸 수 있고, 내 블록이 멈춘 뒤에도 최대 10초 고민할 수 있다.
+// 카드는 내 차례 내내 쓸 수 있고, 내 블록이 멈춘 뒤에도 최대 5초 고민할 수 있다.
 // 블록이 하나라도 떨어지면 놓은 사람 탈락. 순서는 바퀴마다 섞는다(테트리스 가방처럼). 마지막 1명 우승.
 // 물리는 방장 컴퓨터만 계산하고(planck.js), 다른 사람은 위치만 받아서 그린다.
 import { h, isTyping, josa, pick, shuffle, digitOf } from '../util.js';
 import { avatar, countdown, podium } from '../ui.js';
 
 const PLANCK_URL = 'https://cdn.jsdelivr.net/npm/planck@1.4.2/+esm';
-const INTRO_TIME = 7000;
-const DECIDE_TIME = 10000;   // 내 블록이 멈춘 뒤 악마 카드 고민 시간 (고르면 바로 끝)
+const INTRO_TIME = 4000;
+const DECIDE_TIME = 5000;    // 내 블록이 멈춘 뒤 악마 카드 고민 시간 (고르면 바로 끝)
 const RESULT_TIME = 1500;    // 결과 잠깐 보여 주기
 const SPIN_TIME = 1300;      // 차례 시작할 때 룰렛 도는 시간
-const SETTLE_MAX = 5000;     // 떨군 뒤 최대 이만큼 기다리면 다음 차례
+const SETTLE_MAX = 5000;     // 떨군 뒤 이만큼 지나면 거의 멈춘 건 그 자리에 세우고 다음 차례
+const SETTLE_HARD = 9000;    // 아직 날아다니는 게 있어도 이때는 무조건 다음 차례
 const DEVIL_CARDS = 1;       // 한 판에 1인당 악마 카드
 const PLATFORM_W = 6.24;     // 받침대 폭 (예전 5.2의 1.2배)
 const PLATFORM_H = 0.6;
-const GRAVITY = 16;          // 실제(10)보다 세게: 빨리 떨어지고 쿵 내려앉아서 묵직하다
+const GRAVITY = 15;          // 실제(10)의 1.5배: 빨리 떨어지고 쿵 내려앉아서 묵직하다
 const DROP_GAP = 1.5;        // 떨구는 높이: 블록 맨 아래가 탑 꼭대기보다 이만큼 위
 const FALL_Y = -2;           // 이 아래로 내려가면 떨어진 것
 const X_LIMIT = 5;           // 조준 좌우 한계
@@ -75,7 +76,7 @@ export const SHAPES = {
   diamond: { name: '다이아', kind: 'devil', parts: [{ poly: [[0, -1.0], [0.65, 0], [0, 1.0], [-0.65, 0]] }] },
   rugby: { name: '럭비공', kind: 'devil', parts: [{ poly: ellipse(12, 1.0, 0.5) }] },
   ice: { name: '미끌 얼음', kind: 'devil', parts: [{ box: [0.7, 0.4] }], props: { friction: 0 }, look: { fill: '#bfe9ff', mark: '❄' } },
-  bouncy: { name: '탱탱볼', kind: 'devil', parts: [{ circle: 0.45 }], props: { restitution: 0.85 }, look: { fill: '#ff5fa2', mark: '★' } },
+  bouncy: { name: '탱탱볼', kind: 'devil', parts: [{ circle: 0.45 }], props: { restitution: 0.75 }, look: { fill: '#ff5fa2', mark: '★' } },
   iron: { name: '쇠공', kind: 'devil', parts: [{ circle: 0.42 }], props: { density: 6 }, look: { fill: '#636e72', mark: '⚙' } },
   xshape: { name: '엑스', kind: 'devil', parts: [{ box: [1.0, 0.1], rot: Math.PI / 4 }, { box: [1.0, 0.1], rot: -Math.PI / 4 }] },
   beads: { name: '꼬치', kind: 'devil', parts: [{ circle: 0.32, at: [-0.64, 0] }, { circle: 0.32 }, { circle: 0.32, at: [0.64, 0] }, { box: [0.95, 0.05] }] },
@@ -167,7 +168,8 @@ function addBody(sim, b, awake) {
   return body;
 }
 
-function snapshot(ctx) {
+// trail: 이번 틱 동안 지나간 중간 자리들 (꺾이며 움직인 블록만) → b.p
+function snapshot(ctx, trail) {
   const S = ctx.state;
   const sim = ctx.sim;
   let top = 0;
@@ -176,10 +178,17 @@ function snapshot(ctx) {
     const a = body.getAngle();
     const m = sim.meta.get(id);
     top = Math.max(top, topOf(m.s, p.x, p.y, a));
-    return { id, s: m.s, by: m.by, x: round3(p.x), y: round3(p.y), a: round3(a) };
+    const b = { id, s: m.s, by: m.by, x: round3(p.x), y: round3(p.y), a: round3(a) };
+    if (trail?.has(id)) b.p = trail.get(id);
+    return b;
   });
   S.top = round3(top);
 }
+
+const pose = body => {
+  const p = body.getPosition();
+  return [round3(p.x), round3(p.y), round3(body.getAngle())];
+};
 
 // 떨굴 때 블록 중심 높이: 블록 맨 아래가 탑 꼭대기 + DROP_GAP에 오게 (모양·회전 반영).
 // 180° 더 돌린 모양의 꼭대기 = 지금 모양에서 중심부터 맨 아래까지 깊이
@@ -277,7 +286,30 @@ function stepFall(ctx, now) {
   const dt = Math.min(500, Math.max(0, now - (ctx.simAt || now)));
   ctx.simAt = now;
   const steps = Math.max(1, Math.round(dt / (1000 / 60)));
-  for (let i = 0; i < steps; i++) sim.world.step(1 / 60, 8, 3);
+  // 위치는 0.1초마다 보내는데, 그것만 직선으로 이으면 튕기거나 부딪히는 순간이 빠져서
+  // 허공에서 꺾이고 착지도 사뿐해 보인다. 그래서 틱 사이 중간 자리도 고르게 몇 개 기록한다.
+  const segs = Math.min(6, Math.max(1, Math.round(steps / 2)));
+  const marks = new Set(Array.from({ length: segs - 1 }, (_, k) => Math.round((steps * (k + 1)) / segs)));
+  const start = new Map([...sim.bodies].map(([id, body]) => [id, pose(body)]));
+  const samples = new Map();
+  for (let i = 1; i <= steps; i++) {
+    sim.world.step(1 / 60, 8, 3);
+    if (!marks.has(i)) continue;
+    for (const [id, body] of sim.bodies) {
+      if (!samples.has(id)) samples.set(id, []);
+      samples.get(id).push(pose(body));
+    }
+  }
+  // 곧게 움직였거나 가만히 있던 건 직선으로 이어도 되니 빼고, 꺾인 것만 보낸다
+  const trail = new Map();
+  for (const [id, body] of sim.bodies) {
+    const a = start.get(id);
+    const list = samples.get(id);
+    if (!a || list?.length !== segs - 1) continue;
+    const z = pose(body);
+    const bent = list.some((q, k) => q.some((v, j) => Math.abs(v - (a[j] + ((z[j] - a[j]) * (k + 1)) / segs)) > (j < 2 ? 0.02 : 0.03)));
+    if (bent) trail.set(id, list);
+  }
   for (const [id, body] of [...sim.bodies]) {
     const p = body.getPosition();
     if (p.y > FALL_Y && Math.abs(p.x) < 14) continue;
@@ -286,17 +318,32 @@ function stepFall(ctx, now) {
     sim.meta.delete(id);
     S.toppled = (S.toppled || 0) + 1;
   }
-  snapshot(ctx);
-  const moving = [...sim.bodies.values()].some(b => b.isAwake());
-  if ((!moving && now - S.dropAt > 800) || now - S.dropAt > SETTLE_MAX) settle(ctx, now);
+  snapshot(ctx, trail);
+  const bodies = [...sim.bodies.values()];
+  const age = now - S.dropAt;
+  // 다 멈췄으면 끝. 오래 걸려도 공중에 떠 있거나 빠르게 움직이는 게 있으면 결판날 때까지 기다린다
+  // (중간에 멈추면 허공에 뜬 채로 다음 차례에 이어지고, 그때 떨어지면 애꿎은 다음 사람이 탈락한다)
+  if ((!bodies.some(b => b.isAwake()) && age > 800) || (age > SETTLE_MAX && !bodies.some(flying)) || age > SETTLE_HARD) {
+    settle(ctx, now);
+  }
   return true;
 }
+
+function touching(body) {
+  for (let ce = body.getContactList(); ce; ce = ce.next) if (ce.contact.isTouching()) return true;
+  return false;
+}
+const flying = body => body.isAwake() && (body.getLinearVelocity().length() > 0.3 || !touching(body));
 
 function settle(ctx, now) {
   const S = ctx.state;
   const name = ctx.nameOf;
   const active = S.turn;
   const toppled = S.toppled || 0;
+  // 아직 꿈틀대던 건 그 자리에 세워서(재워서) 다음 차례로 움직임이 넘어가지 않게.
+  // 다음 블록이 건드리면 다시 깨어난다.
+  for (const body of ctx.sim.bodies.values()) body.setAwake(false);
+  snapshot(ctx); // 중간 자리(p)는 떨어지는 동안에만 필요하다
   S.turnsPlayed = (S.turnsPlayed || 0) + 1;
   S.lastResult = { id: active, ok: !toppled, n: toppled, at: now };
   if (toppled) {
@@ -604,17 +651,18 @@ export default {
       const live = new Set();
       for (const b of S.bodies || []) {
         live.add(b.id);
-        let it = shown.get(b.id);
+        const it = shown.get(b.id);
         if (!it) {
           const el = shapeGroup(b.s, colorOf(b.by));
           bodiesG.append(el);
-          it = { el, from: b, to: b, t: now };
-          shown.set(b.id, it);
-        } else {
-          it.from = current(it, now);
-          it.to = b;
-          it.t = now;
+          shown.set(b.id, { el, keys: [b, b], t: now });
+          continue;
         }
+        const last = it.keys[it.keys.length - 1];
+        if (last.x === b.x && last.y === b.y && last.a === b.a) continue; // 이 블록은 안 움직임
+        // 지금 그리던 자리 → 방장이 보낸 중간 자리들 → 새 자리를 차례로 따라간다
+        it.keys = [current(it, now), ...(b.p || []).map(([x, y, a]) => ({ x, y, a })), b];
+        it.t = now;
       }
       for (const [id, it] of shown) {
         if (live.has(id)) continue;
@@ -624,11 +672,16 @@ export default {
     }
 
     function current(it, now) {
-      const k = Math.min(1, (now - it.t) / 110);
-      let da = it.to.a - it.from.a;
+      const { keys } = it;
+      const k = Math.min(1, (now - it.t) / 110) * (keys.length - 1);
+      const i = Math.min(keys.length - 2, Math.floor(k));
+      const f = k - i;
+      const p = keys[i];
+      const q = keys[i + 1];
+      let da = q.a - p.a;
       if (da > Math.PI) da -= Math.PI * 2;
       if (da < -Math.PI) da += Math.PI * 2;
-      return { x: it.from.x + (it.to.x - it.from.x) * k, y: it.from.y + (it.to.y - it.from.y) * k, a: it.from.a + da * k };
+      return { x: p.x + (q.x - p.x) * f, y: p.y + (q.y - p.y) * f, a: p.a + da * f };
     }
 
     function paint() {
@@ -771,7 +824,7 @@ export default {
       return h('div', { class: 'tw-devil' },
         h('b', {}, `😈 악마 카드: ${who(S.next.id).name}의 다음 블록(?)을 내가 정하기`),
         devilButtons(false),
-        h('span', { class: 'muted small' }, '지금 안 써도 블록 놓은 뒤에 10초 더 고민할 수 있어요'));
+        h('span', { class: 'muted small' }, `지금 안 써도 블록 놓은 뒤에 ${DECIDE_TIME / 1000}초 더 고민할 수 있어요`));
     }
 
     function panelView() {
