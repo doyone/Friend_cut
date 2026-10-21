@@ -128,7 +128,7 @@ button, input { font: inherit; color: inherit; }
 .sidebar { background: var(--side); color: var(--side-text); display: flex; flex-direction: column; position: sticky; top: 0; height: 100vh; }
 .side-scroll { flex: 1; overflow: auto; padding: 20px 20px 16px; display: flex; flex-direction: column; gap: 18px; }
 .me { display: flex; align-items: center; gap: 14px; }
-.me-name { font-size: 22px; font-weight: 800; color: #fff; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.me-name { font-size: 22px; font-weight: 800; color: #fff; line-height: 1.2; word-break: keep-all; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; } /* 별명이 붙으면 두 줄까지 */
 .me-info { min-width: 0; flex: 1; }
 .me-sub { font-size: 14px; color: var(--side-muted); font-weight: 700; }
 .season-bar { height: 6px; border-radius: 3px; background: var(--side-2); margin-top: 8px; overflow: hidden; }
@@ -761,6 +761,18 @@ kbd.num { position: absolute; top: 10px; left: 10px; margin: 0; z-index: 1; back
 }
 .sticker-btn:disabled { opacity: .5; }
 .sticker-btn kbd.num { top: 4px; left: 4px; }
+/* 꼴찌 별명 짓기 */
+.nick-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; width: 100%; }
+.nick-btn {
+  position: relative; padding: 14px 8px 12px 30px; border-radius: 10px; cursor: pointer;
+  background: #fff; border: 2px solid var(--line); box-shadow: 0 3px 0 var(--line); font-weight: 800; font-size: 14px; color: var(--ink);
+}
+.nick-btn.write { background: #fff8e1; border-color: var(--yellow); }
+.nick-btn:disabled { opacity: .5; }
+.nick-btn kbd.num { top: 4px; left: 4px; }
+.nick-write { display: flex; align-items: center; gap: 12px; width: 100%; }
+.nick-input { flex: 1; min-width: 0; }
+.nick-preview { flex: none; padding: 6px 12px; border-radius: 999px; background: #fff; border: 2px dashed var(--red); color: var(--red); }
 .rb-actions { display: flex; gap: 10px; justify-content: center; align-items: center; flex-wrap: wrap; }
 
 @media (max-width: 900px) {

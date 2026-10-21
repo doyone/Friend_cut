@@ -51,6 +51,16 @@ export const STICKERS = [
 const STICKER_BY_ID = Object.fromEntries(STICKERS.map(s => [s.id, s]));
 export const stickerInfo = id => STICKER_BY_ID[id];
 
+// 꼴찌 별명: 1등이 꼴찌 닉네임 앞에 붙인다 (민준 → 바보같은 민준). 스티커처럼 1등을 해야 떨어진다.
+export const NICK_MAX = 8;
+export const NICKS = [
+  '바보같은', '바나나먹는', '방구뀌는', '코딱지파는', '콧물흘리는', '맨날지는', '탈탈털린', '눈물젖은',
+  '똥손', '쭈구리', '허접한', '졸고있는', '삐진', '숙제안한', '발냄새나는', '금붕어기억력', '꼴찌장인', '징징대는',
+  '이불킥하는', '깡통',
+];
+// 별명 정리: 앞뒤 공백·겹친 공백 없애고 최대 8글자
+export const cleanNick = text => Array.from(String(text ?? '').replace(/\s+/g, ' ').trim()).slice(0, NICK_MAX).join('').trim();
+
 // 누가 어떤 스티커를 달고 있는지는 방 정보에 있다. main.js가 연결해 준다.
 let stickerSource = () => [];
 export function setStickerSource(fn) {

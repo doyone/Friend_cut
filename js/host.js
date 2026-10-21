@@ -4,13 +4,16 @@
 // 새 방장이 state를 읽어서 그대로 이어서 돌릴 수 있다.
 //
 // 게임이 끝나면(state.over) 방장이 공통 결과를 처리한다:
-// 오늘 점수 지급 → 1등 스티커 탈출 → 1등이 꼴찌에게 붙일 스티커 고르기(20초, 안 고르면 랜덤).
-import { STICKERS, stickerInfo } from './ui.js';
+// 오늘 점수 지급 → 1등 스티커·별명 탈출 → 1등이 꼴찌에게 붙일 스티커 고르기(20초, 안 고르면 랜덤)
+// → 이어서 꼴찌 별명 짓기(20초, 안 고르면 랜덤. 민준 → 바보같은 민준).
+import { NICKS, STICKERS, cleanNick, stickerInfo } from './ui.js';
 import { josa, pick } from './util.js';
 import { TAUNTS } from './chat.js';
+import { withNick } from './room.js';
 
 const RANK_POINTS = { 1: 5, 2: 3, 3: 2 }; // 나머지 1점, 꼴찌 0점
 const STICKER_TIME = 20000;
+const NICK_TIME = 20000;
 const MAX_STICKERS = 3;
 
 // standings(클수록 잘함, 게임이 안 정하면 scores)로 등수와 오늘 점수를 매긴다. 동점은 같은 등수.
@@ -39,6 +42,30 @@ export function nemesisOf(kills, id) {
     }
   }
   return best;
+}
+
+// 숨은 탭에서도 제 속도로 도는 타이머. 브라우저는 안 보이는 탭(다른 탭·가려진 창)의 setInterval을
+// 1초에 한 번꼴로 늦추는데, Web Worker 안의 타이머는 그대로 돈다. 그 박자에 맞춰 방장이 계산하면
+// 방장이 다른 화면을 보고 있어도 모두의 게임이 안 느려진다. 워커를 못 쓰면 그냥 setInterval.
+function steadyInterval(fn, ms) {
+  let fallback = null;
+  let worker = null;
+  const url = URL.createObjectURL(new Blob([`setInterval(() => postMessage(0), ${ms});`], { type: 'text/javascript' }));
+  try {
+    worker = new Worker(url);
+    worker.onmessage = () => fn();
+    worker.onerror = () => {
+      worker.terminate();
+      fallback ??= setInterval(fn, ms);
+    };
+  } catch {
+    fallback = setInterval(fn, ms);
+  }
+  return () => {
+    worker?.terminate();
+    clearInterval(fallback);
+    URL.revokeObjectURL(url);
+  };
 }
 
 export class GameHost {
@@ -90,7 +117,7 @@ export class GameHost {
       for (const k of this.done) if (!(k in this.inbox)) this.done.delete(k);
       this.step(); // 탭이 백그라운드라 타이머가 느려져도 입력은 바로 처리
     });
-    this.timer = setInterval(() => this.step(), this.game.tickMs || 100); // 움직임이 많은 게임은 더 자주
+    this.stopTimer = steadyInterval(() => this.step(), this.game.tickMs || 100); // 움직임이 많은 게임은 더 자주
   }
 
   step() {
@@ -139,10 +166,14 @@ export class GameHost {
       this.award().catch(e => console.error('[host] award', e));
     }
     const r = this.result;
+    const botWinner = r?.winners?.length && r.winners.every(id => this.isBot(id)) ? r.winners[0] : null;
     if (r?.stickerUntil && !r.sticker) {
-      const botWinner = r.winners.every(id => this.isBot(id)) ? r.winners[0] : null;
       if (botWinner && ctx.now() - (r.at || 0) > 2500) this.applySticker(pick(STICKERS).id, botWinner);
       else if (ctx.now() >= r.stickerUntil) this.applySticker(pick(STICKERS).id, null);
+    }
+    if (r?.nickUntil && !r.nick) {
+      if (botWinner && ctx.now() - (r.nickAt || 0) > 2500) this.applyNick(pick(NICKS), botWinner);
+      else if (ctx.now() >= r.nickUntil) this.applyNick(pick(NICKS), null);
     }
   }
 
@@ -211,11 +242,13 @@ export class GameHost {
     for (const id of losers) addTitle(id, '🤡 이번 판 호구');
 
     await this.addSeason(Object.fromEntries(rows.map(r => [r.id, r.pts])));
-    const stickers = this.room.snap.stats?.stickers || {};
+    const { stickers = {}, nicks = {} } = this.room.snap.stats || {};
     for (const id of winners) {
-      if (!stickers[id]?.length) continue;
+      const freed = [stickers[id]?.length && '스티커', nicks[id] && '별명'].filter(Boolean);
+      if (!freed.length) continue;
       await this.net.set(this.room.path(`stats/stickers/${id}`), null);
-      this.sys(`✨ ${nameOf(id)} 1등 해서 스티커 탈출!`);
+      await this.net.set(this.room.path(`stats/nicks/${id}`), null);
+      this.sys(`✨ ${nameOf(id)} 1등 해서 ${freed.join('·')} 탈출!`);
     }
 
     const result = { run: this.run, rows, winners, losers, titles, at: this.net.now() };
@@ -229,6 +262,7 @@ export class GameHost {
 
   commonInput({ pid, type, data }) {
     if (type === '__sticker' && this.result?.winners?.includes(pid)) this.applySticker(data.id, pid);
+    if (type === '__nick' && this.result?.winners?.includes(pid)) this.applyNick(data.text, pid);
   }
 
   async applySticker(id, by) {
@@ -236,7 +270,10 @@ export class GameHost {
     const s = stickerInfo(id);
     if (!r || r.sticker || !s) return;
     r.sticker = by ? { id, by } : { id };
-    await this.net.set(this.p('result/sticker'), r.sticker);
+    // 스티커 다음은 별명 짓기
+    r.nickAt = this.net.now();
+    r.nickUntil = r.nickAt + NICK_TIME;
+    await this.net.update(this.p('result'), { sticker: r.sticker, nickAt: r.nickAt, nickUntil: r.nickUntil });
     for (const loser of r.losers) {
       await this.net.transaction(this.room.path(`stats/stickers/${loser}`),
         cur => [...(Array.isArray(cur) ? cur : []), id].slice(-MAX_STICKERS));
@@ -248,9 +285,25 @@ export class GameHost {
       : `${s.emoji} 시간 초과! ${who} 얼굴에 ${s.label} 랜덤 부착`);
   }
 
+  // 꼴찌 닉네임 앞에 별명을 붙인다. 원래 닉네임은 그대로 두고 stats/nicks에 별명만 (1등 하면 지워짐)
+  async applyNick(text, by) {
+    const r = this.result;
+    const nick = cleanNick(text);
+    if (!r || r.nick || !r.nickUntil || !nick) return;
+    r.nick = by ? { text: nick, by } : { text: nick };
+    await this.net.set(this.p('result/nick'), r.nick);
+    for (const loser of r.losers) await this.net.set(this.room.path(`stats/nicks/${loser}`), nick);
+    const { nameOf } = this.ctx;
+    const base = id => this.room.snap.players?.[id]?.name || nameOf(id);
+    const who = r.losers.map(id => `'${withNick(base(id), nick)}'`).join(', ');
+    this.sys(by
+      ? `🏷️ ${josa(nameOf(by), '이', '가')} 별명 지어 줌 → 이제부터 ${who} ㅋㅋ`
+      : `🏷️ 시간 초과! 랜덤 별명 → 이제부터 ${who}`);
+  }
+
   stop() {
     this.stopped = true;
-    clearInterval(this.timer);
+    this.stopTimer?.();
     this.unsub?.();
   }
 }

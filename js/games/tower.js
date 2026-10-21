@@ -900,7 +900,12 @@ export default {
       panel.replaceChildren(panelView());
     }
 
+    let sideKey = '';
     function renderSide() {
+      // 떨어지는 동안엔 상태가 초당 10번 오니, 순서·탈락·카드가 바뀔 때만 다시 그린다 (얼굴 그림이 무거움)
+      const key = JSON.stringify([S.lap, S.alive, S.turn, S.next?.id, S.bag, S.bagPos, S.cards, S.outOrder, S.dead]);
+      if (key === sideKey) return;
+      sideKey = key;
       const deadList = (S.outOrder || []).map(id => {
         const by = S.dead?.[id];
         return h('li', {}, h('b', {}, who(id).name), by && by !== '-' ? ` ← ${who(by).name}의 😈` : ' 🎰 룰렛');

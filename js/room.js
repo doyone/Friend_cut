@@ -17,9 +17,12 @@ export function myId() {
   return id;
 }
 
-export function sortedPlayers(players) {
+// nicks: 꼴찌 별명 { id: '바보같은' } → 보이는 이름은 '바보같은 민준' (원래 닉네임은 base)
+export const withNick = (name, nick) => (nick ? `${nick} ${name}` : name);
+
+export function sortedPlayers(players, nicks = {}) {
   return Object.entries(players || {})
-    .map(([id, p]) => ({ id, ...p }))
+    .map(([id, p]) => ({ id, ...p, base: p.name, name: withNick(p.name, nicks?.[id]) }))
     .sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
 }
 
@@ -144,7 +147,8 @@ export class RoomSession {
   }
 
   chat(text, taunt = false) {
-    const { name, color, face } = this.me;
+    const { color, face } = this.me;
+    const name = withNick(this.me.name, this.snap.stats?.nicks?.[this.id]);
     this.net.push(this.path('chat'), { pid: this.id, name, color, face, text, t: this.net.now(), ...(taunt ? { taunt: true } : {}) });
   }
 

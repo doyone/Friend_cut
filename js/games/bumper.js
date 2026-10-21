@@ -19,16 +19,17 @@ const CAR_R = 0.7;
 const GIANT_R = 1.15;
 const THRUST = 20;            // 방향키 가속 (m/s²)
 const MAX_SPEED = 6.5;        // 방향키로 낼 수 있는 최고 속도
-const ICE = 2.8;              // 얼음 마찰 (클수록 빨리 멈춤). 세게 맞아도 3m쯤 밀리고 버틸 수 있게 — 가장자리에선 끝
+const ICE = 2.2;              // 얼음 마찰 (클수록 빨리 멈춤). 보통 박치기에 3.5m, 풀돌진에 6m쯤 밀린다
 const CHARGE_TIME = 900;      // 이만큼 모으면 최대 돌진
-const BRACE = 2.5;            // 모으는 동안 무게 배수 (버티기)
-const DASH_MIN = 6;
-const DASH_MAX = 10;
+const CHARGE_GRIP = 3.5;      // 모으는 동안 마찰 (버티고 서 있기)
+const BRACE = 1.6;            // 모으는 동안 무게 배수 (버티기)
+const DASH_MIN = 7;
+const DASH_MAX = 12;
 const DASH_BURST = 350;       // 돌진하고 이만큼은 쭉 나가다가
 const DASH_BRAKE = 450;       // 이만큼 급제동 (빗나가도 혼자 끝까지 날아가진 않게)
 const DASH_COOL = 1200;
-const BOUNCE = 0.5;           // 세게 부딪힐 때 튕김
-const BUMP = 2;               // 세게 부딪히면 덤으로 밀어내는 속도 (범퍼카 손맛)
+const BOUNCE = 0.8;           // 세게 부딪힐 때 튕김
+const BUMP = 3.5;             // 세게 부딪히면 덤으로 밀어내는 속도 (범퍼카 손맛)
 const SPAWN_R = 4.5;          // 처음 서는 원 반지름
 const KILL_WINDOW = 3000;     // 떨어지기 이만큼 전까지 부딪힌 사람이 킬
 const GIANT_TIME = 6000;
@@ -115,7 +116,7 @@ function stepWorld(ctx, now) {
     }
     // 마찰: 모으는 중엔 버티고(급정거), 돌진 직후엔 쭉 나가다가 급제동, 기름 위에선 거의 안 멈춤
     const since = now - (c.dt ?? -1e9);
-    let k = slippery ? 0.1 : c.ch ? 2.4 : ICE;
+    let k = slippery ? 0.1 : c.ch ? CHARGE_GRIP : ICE;
     if (since < DASH_BURST) k = 0.2;
     else if (since < DASH_BURST + DASH_BRAKE) k += 3.5;
     const f = Math.exp(-k * dt);
@@ -379,7 +380,7 @@ function botDecide(S, car, now, mem, later) {
       return d < 4.5 && ((car.x - o.x) * Math.cos(o.a || 0) + (car.y - o.y) * Math.sin(o.a || 0)) / d > 0.85;
     });
     mem.braceUntil = now + 300;
-    if (threat && Math.random() < 0.45) {
+    if (threat && Math.random() < 0.3) {
       Object.assign(mem, { charging: true, releaseAt: now + 450 + Math.random() * 400, braceUntil: now + 2500 });
       mem.dir = quant8(Math.atan2(threat.y - car.y, threat.x - car.x));
       mem.think = mem.releaseAt + 50; // 받아칠 때까지 방향 유지
@@ -518,8 +519,11 @@ export default {
       return true;
     }
     if (S.phase !== 'play') return false;
-    // 방장 탭이 숨겨지면 브라우저가 타이머를 늦춰서 모두의 게임이 느려진다 → 다들 이유를 알 수 있게 표시
-    S.away = typeof document !== 'undefined' && document.hidden ? 1 : 0;
+    // 방장 계산이 실제로 늦어지면(노트북 절전 등으로 방장 탭이 잠들면) 다들 이유를 알 수 있게 표시
+    const gap = now - (ctx.lastTick ?? now);
+    ctx.lastTick = now;
+    if (gap > 300) ctx.slowUntil = now + 2000;
+    S.away = now < (ctx.slowUntil || 0) ? 1 : 0;
     // 1/60초씩 따라잡는다 (방장 탭이 잠깐 멈췄다 깨어나도 0.5초 넘게 몰아서 돌리진 않게)
     let t = Math.max(ctx.simAt ?? now, now - 500);
     ctx.trail ||= { start: poses(S), samples: new Map() };
@@ -840,26 +844,28 @@ export default {
       }
     }
 
+    // 위·옆 줄은 초당 20번 오는 상태마다 다시 만들면 무거워서(얼굴 그림 등) 내용이 바뀔 때만 다시 그린다
     function renderTop() {
       const t = api.now();
       const left = Math.max(0, Math.ceil((S.startAt + SHRINK_AT - t) / 1000));
       const c = myCar();
-      const bits = [h('span', {}, `생존 ${S.cars.filter(x => !x.out).length}명`)];
-      if (S.phase === 'play') bits.push(h('span', { class: left ? '' : 'bc-hot' }, left ? `⏱️ 경기장 축소까지 ${left}초` : '🔥 경기장 줄어드는 중!'));
-      if (S.phase === 'play' && S.away) bits.push(h('span', { class: 'bc-hot' }, '🐢 방장 화면이 숨겨져서 느려요'));
-      if (S.phase === 'play' && c && !c.out) {
+      const play = S.phase === 'play';
+      const bits = [[`생존 ${S.cars.filter(x => !x.out).length}명`]];
+      if (play) bits.push(left ? [`⏱️ 경기장 축소까지 ${left}초`] : ['🔥 경기장 줄어드는 중!', 'bc-hot']);
+      if (play && S.away) bits.push(['🐢 방장 쪽이 느려지고 있어요', 'bc-hot']);
+      if (play && c && !c.out) {
         const cool = Math.max(0, (c.cd || 0) - t);
-        bits.push(h('span', { class: 'bc-dash' }, cool > 0 ? `🚀 돌진 ${(cool / 1000).toFixed(1)}초` : '🚀 돌진 준비!'));
+        bits.push([cool > 0 ? `🚀 돌진 ${(cool / 1000).toFixed(1)}초` : '🚀 돌진 준비!', 'bc-dash']);
       }
-      if (S.phase === 'play' && c?.out) {
+      if (play && c?.out) {
         const cool = Math.max(0, (S.ghosts?.[me]?.cd || 0) - t);
-        bits.push(h('span', { class: 'bc-dash' }, cool > 0 ? `🍌 ${Math.ceil(cool / 1000)}초` : '🍌 바나나 준비!'));
+        bits.push([cool > 0 ? `🍌 ${Math.ceil(cool / 1000)}초` : '🍌 바나나 준비!', 'bc-dash']);
       }
-      if (S.phase === 'intro') bits.push(countdown(S.phaseEndsAt, INTRO_TIME));
-      const key = bits.map(b => b.textContent).join('|');
+      const key = JSON.stringify([bits, S.phase === 'intro' && S.phaseEndsAt]);
       if (key === topKey) return;
       topKey = key;
-      top.replaceChildren(...bits);
+      top.replaceChildren(...bits.map(([text, cls]) => h('span', { class: cls }, text)),
+        ...(S.phase === 'intro' ? [countdown(S.phaseEndsAt, INTRO_TIME)] : []));
     }
 
     function panelView() {
@@ -896,18 +902,16 @@ export default {
 
     function renderSide() {
       const t = api.now();
-      const rows = S.cars.filter(c => !c.out).map(c => {
-        const badges = [(c.g || 0) > t ? '🍄' : '', (c.slip || 0) > t ? '🛢️' : '', S.kills[c.id] ? `💀${S.kills[c.id]}` : ''].join(' ').trim();
-        return h('li', { class: c.id === me ? 'me' : '' }, avatar(who(c.id)), h('span', {}, who(c.id).name), badges ? h('em', {}, badges) : null);
-      });
-      const dead = [...S.outOrder].reverse().map(id => {
-        const by = S.dead[id];
-        return h('li', { class: 'dead' }, avatar(who(id)), h('span', {}, who(id).name),
-          h('em', {}, by && by !== '-' ? `← ${who(by).name}` : '자폭'));
-      });
-      const key = JSON.stringify([rows.map(r => r.textContent), dead.map(r => r.textContent)]);
+      const living = S.cars.filter(c => !c.out)
+        .map(c => [c.id, [(c.g || 0) > t ? '🍄' : '', (c.slip || 0) > t ? '🛢️' : '', S.kills[c.id] ? `💀${S.kills[c.id]}` : ''].join(' ').trim()]);
+      const gone = [...S.outOrder].reverse().map(id => [id, S.dead[id]]);
+      const key = JSON.stringify([living, gone]);
       if (key === sideKey) return;
       sideKey = key;
+      const rows = living.map(([id, badges]) => h('li', { class: id === me ? 'me' : null },
+        avatar(who(id)), h('span', {}, who(id).name), badges ? h('em', {}, badges) : null));
+      const dead = gone.map(([id, by]) => h('li', { class: 'dead' }, avatar(who(id)), h('span', {}, who(id).name),
+        h('em', {}, by && by !== '-' ? `← ${who(by).name}` : '자폭')));
       side.replaceChildren(...[
         h('h3', {}, `생존 ${rows.length}명`),
         h('ol', { class: 'bc-list' }, rows),
@@ -917,7 +921,7 @@ export default {
         h('ul', { class: 'rules' },
           h('li', {}, '← → ↑ ↓ / WASD 밀기 (8방향)'),
           h('li', {}, '스페이스 꾹 → 떼면 돌진 (최대 0.9초 모으기, 쿨타임 1.2초)'),
-          h('li', {}, '모으는 동안은 거의 멈춰 서요'),
+          h('li', {}, '모으는 동안은 멈춰 서서 잘 안 밀려요 (버티기)'),
           h('li', {}, '👻 유령: 방향키 이동 · 스페이스 🍌')),
       ].filter(Boolean));
     }

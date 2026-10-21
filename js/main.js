@@ -1,11 +1,11 @@
 import { connect } from './net/index.js';
-import { MAX_PLAYERS, RoomSession, createRoom, roomExists, sortedPlayers } from './room.js';
+import { MAX_PLAYERS, RoomSession, createRoom, roomExists, sortedPlayers, withNick } from './room.js';
 import { GameHost, nemesisOf } from './host.js';
 import { createChat } from './chat.js';
 import { CATEGORIES, COMING, GAMES, TAG_COLORS, getGame } from './games/index.js';
 import { digitOf, h, isTyping, josa, randId, session, store, toast } from './util.js';
 import {
-  FACE_COUNT, STICKERS, avatar, countdown, icon, keyNav, setStickerSource, startTimerLoop, stickerInfo,
+  FACE_COUNT, NICKS, NICK_MAX, STICKERS, avatar, cleanNick, countdown, icon, keyNav, setStickerSource, startTimerLoop, stickerInfo,
 } from './ui.js';
 
 const app = document.getElementById('app');
@@ -57,9 +57,13 @@ function codeFromHash() {
   return m ? m[0].toUpperCase() : '';
 }
 
+// 닉네임은 2글자까지 (꼴찌하면 1등이 앞에 별명을 붙이니까: 민준 → 바보같은 민준)
+const NAME_MAX = 2;
+const shortName = n => Array.from(String(n || '').trim()).slice(0, NAME_MAX).join('');
+
 // 탭별 이름이 우선이라 새로고침해도 그 탭의 이름으로 다시 들어온다.
 function savedName() {
-  return session.get('fcg-name') || store.get('fcg-name', '');
+  return shortName(session.get('fcg-name') || store.get('fcg-name', ''));
 }
 
 function saveName(name) {
@@ -89,19 +93,21 @@ function localBanner() {
     '🧪 로컬 테스트 모드 — 이 컴퓨터의 브라우저 탭끼리만 연결돼요. 친구들과 하려면 README의 Firebase 설정을 해 주세요.');
 }
 
-const playerOf = (state, id) => state?.roster?.find(p => p.id === id) || room?.snap.players?.[id] && { id, ...room.snap.players[id] } || { id, name: '?' };
+const playerOf = (state, id) => state?.roster?.find(p => p.id === id)
+  || room?.snap.players?.[id] && { id, ...room.snap.players[id], name: withNick(room.snap.players[id].name, room.snap.stats?.nicks?.[id]) }
+  || { id, name: '?' };
 
 /* ───────────── 홈 ───────────── */
 
 function renderHome(prefill = '') {
   screen = 'home';
   teardownGame();
-  const nameIn = h('input', { class: 'input', maxlength: 10, placeholder: '닉네임 (최대 10자)', value: savedName(), autocomplete: 'off' });
+  const nameIn = h('input', { class: 'input', maxlength: NAME_MAX, placeholder: '닉네임 (2글자)', value: savedName(), autocomplete: 'off' });
   const codeIn = h('input', { class: 'input code-input', maxlength: 4, placeholder: 'ABCD', value: prefill, autocomplete: 'off', spellcheck: 'false' });
   codeIn.addEventListener('input', () => { codeIn.value = codeIn.value.toUpperCase().replace(/[^A-Z]/g, ''); });
 
   const takeName = () => {
-    const n = nameIn.value.trim();
+    const n = shortName(nameIn.value);
     if (!n) {
       toast('닉네임을 먼저 적어 주세요');
       nameIn.focus();
@@ -163,7 +169,7 @@ function renderHome(prefill = '') {
     h('p', { class: 'home-sub' }, `${GAMES.length}개의 게임 포함 · 친구랑 같이`),
     h('div', { class: 'card-box home-card' },
       h('div', { class: 'home-me' }, faceBox, rerollBtn),
-      h('label', { class: 'label' }, '닉네임'),
+      h('label', { class: 'label' }, '닉네임 (2글자 · 꼴찌하면 1등이 앞에 별명을 붙여요)'),
       nameIn,
       createBtn,
       h('div', { class: 'or' }, h('span', {}, '친구 방에 들어가기')),
@@ -289,7 +295,7 @@ function renderLobby() {
   teardownGame();
   const { meta, players, votes, stats } = room.snap;
   const isHost = meta.hostId === room.id;
-  const list = sortedPlayers(players);
+  const list = sortedPlayers(players, stats?.nicks);
   const me = list.find(p => p.id === room.id) || { id: room.id, name: room.name };
   const selected = getGame(meta.game);
   const enough = list.length >= selected.minPlayers;
@@ -459,7 +465,8 @@ window.addEventListener('keydown', e => {
 async function startGame(gameId, prev = null) {
   if (busy) return;
   const game = getGame(gameId);
-  const roster = sortedPlayers(room.snap.players).map(({ id, name, color, face, bot }) => ({ id, name, color, face, bot }));
+  // 게임 안 이름 = 별명까지 붙은 이름 (킬로그·결과·채팅 모두)
+  const roster = sortedPlayers(room.snap.players, room.snap.stats?.nicks).map(({ id, name, color, face, bot }) => ({ id, name, color, face, bot }));
   if (roster.length < game.minPlayers) {
     toast(`${josa(game.title, '은', '는')} ${game.minPlayers}명 이상 필요해요`);
     return;
@@ -595,19 +602,94 @@ function stickerSection(result, state) {
     countdown(result.stickerUntil, 20000));
 }
 
+// 스티커 다음: 1등이 꼴찌 닉네임 앞에 붙일 별명 고르기 (숫자키 1~6 = 보기, 7 = 직접 쓰기 → Enter)
+let nickDraft = { run: null, text: '', focus: false }; // 화면이 다시 그려져도 쓰던 글자 유지
+const nickChoices = result => {
+  const start = Math.abs(Math.floor(result.at || 0)) % NICKS.length;
+  return Array.from({ length: 6 }, (_, i) => NICKS[(start + i * 7) % NICKS.length]);
+};
+
+function nickSection(result, state) {
+  if (!result.sticker || !result.nickUntil || !result.winners?.length || !result.losers?.length) return null;
+  const baseOf = id => room.snap.players?.[id]?.name || playerOf(state, id).name;
+  const loserNames = result.losers.map(id => playerOf(state, id).name).join(', ');
+  const total = result.nickUntil - (result.nickAt || result.nickUntil - 20000);
+  if (result.nick) {
+    const by = result.nick.by ? `${josa(playerOf(state, result.nick.by).name, '이', '가')} 지어 준 별명` : '시간 초과! 랜덤 별명';
+    return h('div', { class: 'rb-sticker done' },
+      h('span', {}, `🏷️ ${by} → `), h('b', {}, result.losers.map(id => withNick(baseOf(id), result.nick.text)).join(', ')));
+  }
+  const winnerNames = result.winners.map(id => playerOf(state, id).name).join(', ');
+  if (!result.winners.includes(room.id)) {
+    return h('div', { class: 'rb-sticker wait' },
+      h('span', { class: 'dots' }, result.losers.includes(room.id)
+        ? `😭 ${josa(winnerNames, '이', '가')} 내 별명 짓는 중`
+        : `🏷️ ${josa(winnerNames, '이', '가')} ${loserNames} 별명 짓는 중`),
+      countdown(result.nickUntil, total));
+  }
+  const target = baseOf(result.losers[0]);
+  if (nickDraft.run !== result.run) nickDraft = { run: result.run, text: '', focus: false };
+  const input = h('input', {
+    class: 'input nick-input', maxlength: NICK_MAX, value: nickDraft.text, autocomplete: 'off', spellcheck: 'false',
+    placeholder: `직접 쓰기 (${NICK_MAX}글자까지) · Enter`,
+  });
+  const preview = h('b', { class: 'nick-preview' }, withNick(target, cleanNick(nickDraft.text) || '???'));
+  let sent = false;
+  const choose = text => {
+    const t = cleanNick(text);
+    if (!t || sent) return;
+    sent = true;
+    for (const b of [...btns, write]) b.disabled = true;
+    input.disabled = true;
+    room.send('__nick', { text: t });
+  };
+  const btns = nickChoices(result).map(t => h('button', { class: 'nick-btn', tabindex: '-1', onClick: () => choose(t) }, withNick(target, t)));
+  const write = h('button', { class: 'nick-btn write', tabindex: '-1', onClick: () => input.focus() }, '✏️ 직접 쓰기');
+  input.addEventListener('input', () => {
+    nickDraft.text = input.value;
+    preview.textContent = withNick(target, cleanNick(input.value) || '???');
+  });
+  input.addEventListener('focus', () => { nickDraft.focus = true; });
+  input.addEventListener('blur', () => { nickDraft.focus = false; });
+  input.addEventListener('keydown', e => {
+    if (e.isComposing || e.keyCode === 229) return; // 한글 조합 중
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.stopPropagation(); // 채팅이 열리지 않게
+      choose(input.value);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      input.blur();
+    }
+  });
+  if (nickDraft.focus) queueMicrotask(() => input.focus());
+  shell.footerNav = keyNav([...btns, write]);
+  return h('div', { class: 'rb-sticker pick' },
+    h('b', {}, `🏷️ 이제 ${loserNames} 별명도 지어 줘! (숫자키 · 7 = 직접 쓰고 Enter)`),
+    h('div', { class: 'nick-grid' }, btns, write),
+    h('div', { class: 'nick-write' }, input, preview),
+    countdown(result.nickUntil, total));
+}
+
 function updateShell(isHost, state) {
   const { players, meta, stats } = room.snap;
   const spectating = state && !state.roster.some(p => p.id === room.id);
   shell.hostBtn.hidden = !isHost || !!state?.over;
-  shell.info.replaceChildren(...[
-    spectating ? h('span', { class: 'chip warn' }, '👀 관전 중') : null,
-    isHost ? h('span', { class: 'chip' }, '👑 방장') : null,
-    h('span', { class: 'chip' }, `방 ${room.code}`),
-    h('span', { class: 'chip' }, `👥 ${Object.keys(players || {}).length}`),
-  ].filter(Boolean));
+  // 게임 상태가 초당 여러 번 오니(범퍼카는 20번) 위쪽 칩은 바뀔 때만 다시 만든다
+  const count = Object.keys(players || {}).length;
+  const infoKey = JSON.stringify([!!spectating, isHost, room.code, count]);
+  if (infoKey !== shell.infoKey) {
+    shell.infoKey = infoKey;
+    shell.info.replaceChildren(...[
+      spectating ? h('span', { class: 'chip warn' }, '👀 관전 중') : null,
+      isHost ? h('span', { class: 'chip' }, '👑 방장') : null,
+      h('span', { class: 'chip' }, `방 ${room.code}`),
+      h('span', { class: 'chip' }, `👥 ${count}`),
+    ].filter(Boolean));
+  }
 
   const result = room.snap.result?.run === meta.run ? room.snap.result : null;
-  const key = JSON.stringify([!!state?.over, isHost, result, stats?.stickers]);
+  const key = JSON.stringify([!!state?.over, isHost, result, stats?.stickers, stats?.nicks]);
   if (key === shell.footerKey) return;
   shell.footerKey = key;
   shell.footerNav?.destroy();
@@ -621,6 +703,7 @@ function updateShell(isHost, state) {
   shell.footer.replaceChildren(...[
     result ? resultSummary(result, state) : h('div', { class: 'muted dots' }, '결과 정리 중'),
     result ? stickerSection(result, state) : null,
+    result ? nickSection(result, state) : null,
     h('div', { class: 'rb-actions' }, ...(isHost
       ? [h('button', { class: 'btn primary', tabindex: '-1', onClick: restartGame }, '🔁 한 판 더', h('kbd', {}, 'R')),
         h('button', { class: 'btn', tabindex: '-1', onClick: backToLobby }, '🎮 다른 게임 고르기', h('kbd', {}, 'L'))]
