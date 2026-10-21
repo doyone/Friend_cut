@@ -604,6 +604,70 @@ button, input { font: inherit; color: inherit; }
 .tw-bag li.dead { opacity: .4; text-decoration: line-through; }
 .tw-bag li.dead .avatar { filter: grayscale(1); }
 
+/* ── 범퍼카 난투 ── (SVG 안 글자 크기 px = 경기장 m) */
+.bc { display: grid; grid-template-columns: 1fr 300px; gap: 18px; }
+.bc-box {
+  position: relative; overflow: hidden; display: flex; flex-direction: column;
+  background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 4px 0 var(--line);
+  user-select: none; -webkit-user-select: none;
+}
+.bc-box.shaking { animation: shake .1s linear 5; }
+.bc-top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 12px 18px; font-weight: 800; color: var(--muted-2); border-bottom: 1px solid var(--line); }
+.bc-top .countdown { margin-left: auto; width: 220px; }
+.bc-hot { color: var(--red); animation: bc-blink 1s steps(2) infinite; }
+@keyframes bc-blink { 50% { opacity: .5; } }
+.bc-dash { margin-left: auto; color: var(--ink); }
+.bc-stage { position: relative; background: #1f4e79; }
+.bc-svg { display: block; width: 100%; height: min(62vh, 600px); }
+.bc-water { fill: #1f4e79; }
+.bc-ice { fill: #eaf6fd; stroke: #b9e0f7; stroke-width: .12; }
+.bc-ice-line { fill: none; stroke: #d3ecfa; stroke-width: .06; }
+.bc-edge { fill: none; stroke: #fff; stroke-width: .18; }
+.bc-edge.shrinking { stroke: var(--red); stroke-width: .24; stroke-dasharray: .6 .35; animation: bc-edge 1s linear infinite; }
+@keyframes bc-edge { to { stroke-dashoffset: -1.9; } }
+.bc-bumper { fill: #34495e; stroke: #1b2631; stroke-width: .08; }
+.bc-car.mine .bc-bumper { stroke: var(--yellow); stroke-width: .16; }
+.bc-car.dashing .bc-bumper { stroke: #fff; stroke-width: .2; }
+.bc-nose { fill: #34495e; stroke: #fff; stroke-width: .06; }
+.bc-car.mine .bc-nose { fill: var(--yellow); stroke: var(--ink); }
+.bc-charge { fill: none; stroke: var(--orange); stroke-width: .16; stroke-linecap: round; transform: rotate(-90deg); transform-box: fill-box; transform-origin: center; }
+.bc-charge.full { stroke: var(--red); animation: bc-pulse .25s ease-in-out infinite alternate; }
+.bc-charge.cooling { stroke: #95a5a6; }
+@keyframes bc-pulse { to { stroke-width: .28; } }
+.bc-oil { fill: #2c2c2c; opacity: .45; }
+.bc-name { font-size: .5px; font-weight: 800; text-anchor: middle; fill: var(--ink); stroke: #fff; stroke-width: .12px; paint-order: stroke fill; }
+.bc-name.me { fill: #b7950b; }
+.bc-item circle { fill: #fff; stroke: var(--yellow); stroke-width: .1; }
+.bc-item text, .bc-banana text, .bc-ghost text { text-anchor: middle; dominant-baseline: central; }
+.bc-item text { font-size: .62px; }
+.bc-item > * { animation: bc-bob .8s ease-in-out infinite alternate; }
+@keyframes bc-bob { to { transform: translateY(-.15px); } }
+.bc-banana text { font-size: .72px; }
+.bc-ghost { opacity: .7; }
+.bc-ghost.mine { opacity: 1; }
+.bc-ghost text { font-size: .8px; }
+.bc-ghost .bc-name { font-size: .42px; }
+.bc-aim { fill: rgba(241, 196, 15, .2); stroke: var(--yellow); stroke-width: .08; stroke-dasharray: .25 .15; }
+.bc-spark, .bc-splash, .bc-wave { font-size: .9px; text-anchor: middle; dominant-baseline: central; transform-box: fill-box; transform-origin: center; animation: bc-burst .55s ease-out forwards; }
+.bc-wave { font-size: 4px; fill: var(--blue); }
+@keyframes bc-burst { from { transform: scale(.3); opacity: 1; } to { transform: scale(1.6); opacity: 0; } }
+.bc-fx { position: absolute; inset: 0; pointer-events: none; display: grid; justify-items: center; align-content: start; gap: 6px; padding-top: 14px; }
+.bc-flash {
+  white-space: nowrap; background: var(--ink); color: #fff; padding: 7px 15px; border-radius: 999px; font-weight: 800; font-size: 16px;
+  animation: now-pop .3s cubic-bezier(.2, 1.6, .4, 1);
+}
+.bc-flash.bad { background: var(--red); font-family: var(--display); font-size: 22px; }
+.bc-panel { padding: 14px 18px; min-height: 64px; display: grid; place-items: center; text-align: center; border-top: 1px solid var(--line); }
+.bc-help { margin: 0; font-weight: 700; color: var(--muted-2); }
+.bc-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.bc-list li { display: flex; align-items: center; gap: 8px; padding: 5px 10px 5px 5px; border-radius: 10px; background: var(--pill); font-weight: 800; font-size: 14px; }
+.bc-list li .avatar { width: 26px; height: 26px; }
+.bc-list li em { margin-left: auto; font-style: normal; font-size: 12px; color: var(--muted-2); }
+.bc-list li.me { box-shadow: inset 0 0 0 2px var(--yellow); background: #fffbe6; }
+.bc-list li.dead { opacity: .55; }
+.bc-list li.dead span { text-decoration: line-through; }
+.bc-list li.dead .avatar { filter: grayscale(1); }
+
 /* ── 알림 ── */
 #toast {
   position: fixed; left: 50%; top: 18px; z-index: 50; max-width: calc(100% - 32px);
@@ -705,7 +769,7 @@ kbd.num { position: absolute; top: 10px; left: 10px; margin: 0; z-index: 1; back
   .layout { padding-bottom: 150px; }
   .layout { grid-template-columns: 1fr; }
   .sidebar { position: static; height: auto; }
-  .rx, .lr, .tc, .bt, .tw { grid-template-columns: 1fr; }
+  .rx, .lr, .tc, .bt, .tw, .bc { grid-template-columns: 1fr; }
   .side { position: static; max-height: none; }
   .main { padding: 20px 16px 40px; }
   .shell-head { flex-wrap: wrap; }

@@ -90,7 +90,7 @@ export class GameHost {
       for (const k of this.done) if (!(k in this.inbox)) this.done.delete(k);
       this.step(); // 탭이 백그라운드라 타이머가 느려져도 입력은 바로 처리
     });
-    this.timer = setInterval(() => this.step(), 100);
+    this.timer = setInterval(() => this.step(), this.game.tickMs || 100); // 움직임이 많은 게임은 더 자주
   }
 
   step() {

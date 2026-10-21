@@ -4,12 +4,11 @@ import bomb from './bomb.js';
 import tower from './tower.js';
 import reaction from './reaction.js';
 import liar from './liar.js';
+import bumper from './bumper.js';
 
-export const GAMES = [timer, bomb, tower, reaction, liar];
+export const GAMES = [timer, bomb, tower, bumper, reaction, liar];
 
-export const COMING = [
-  { emoji: '🚗', title: '범퍼카 난투', tag: '액션', color: '#9b59b6', desc: '얼음 경기장에서 들이받아 떨구기. 마지막 1대가 우승' },
-];
+export const COMING = [];
 
 export const CATEGORIES = [
   { id: 'all', label: '전체', emoji: '🎮' },
