@@ -1,11 +1,12 @@
 // 범퍼카 난투: 둥근 얼음 경기장에서 서로 들이받아 밖으로 떨군다. 목숨은 하나, 마지막 1대가 우승.
 // 방향키·WASD로 밀고, 스페이스를 꾹 눌러 모았다가 떼면 그 방향으로 돌진(확 튀어나갔다가 급제동).
-// 30초부터 경기장이 줄어든다. 떨어지기 3초 안에 마지막으로 부딪힌 사람이 킬, 아무도 없었으면 자폭.
+// 30초부터 경기장이 줄어든다. 마지막 두 명은 3초 예고 뒤 결투 축소. 떨어지기 3초 안에 마지막으로 부딪힌 사람이 킬.
 // 아이템: 🍄 거대화(크고 무거워짐) · 🌀 스프링(주변 차 튕겨냄) · 🛢️ 기름(나 빼고 다 미끌).
 // 탈락하면 👻 유령: 방향키로 떠다니다 스페이스로 🍌 바나나를 깐다. 밟은 차는 빙글 돌며 미끄러진다.
 // 물리는 방장 컴퓨터만 계산한다(원끼리 부딪히는 것뿐이라 직접 계산). 다른 사람은 위치만 받아서 그린다.
 import { h, isTyping, josa, shuffle } from '../util.js';
 import { avatar, countdown, podium } from '../ui.js';
+import { createBumperAudio } from './bumper-audio.js';
 
 const TICK = 50;              // 방장이 상태를 보내는 주기(ms). 움직임이 많아서 다른 게임(100ms)의 두 배로
 const STEP = 1000 / 60;       // 물리 한 걸음
@@ -17,17 +18,19 @@ const SHRINK_TIME = 30000;    // MIN_R까지 줄어드는 시간
 const FINAL_SHRINK = 15000;   // 그래도 안 끝나면 이만큼 더 줄여서 0으로 (끝까지 버티기 방지)
 const CAR_R = 0.7;
 const GIANT_R = 1.15;
-const THRUST = 20;            // 방향키 가속 (m/s²)
-const MAX_SPEED = 6.5;        // 방향키로 낼 수 있는 최고 속도
-const ICE = 2.2;              // 얼음 마찰 (클수록 빨리 멈춤). 보통 박치기에 3.5m, 풀돌진에 6m쯤 밀린다
-const CHARGE_TIME = 900;      // 이만큼 모으면 최대 돌진
+const THRUST = 12;            // 초반에는 부드럽게 출발 (m/s²)
+const THRUST_MAX = 40;        // 계속 주행하면 가속력이 점점 커진다
+const THRUST_RAMP = 3000;     // 3초에 걸쳐 기본 가속 → 최대 가속
+const MAX_SPEED = 13;         // 방향키 최고 속도: 기존 6.5의 2배
+const ICE = 2.2;              // 얼음 마찰 (클수록 빨리 멈춤)
+const CHARGE_TIME = 900;      // 최대 돌진까지 충전: 원래 0.9초
 const CHARGE_GRIP = 3.5;      // 모으는 동안 마찰 (버티고 서 있기)
 const BRACE = 1.6;            // 모으는 동안 무게 배수 (버티기)
-const DASH_MIN = 7;
-const DASH_MAX = 12;
+const DASH_MIN = 12;         // 짧은 차지 돌진 속도
+const DASH_MAX = 20;         // 최대 차지 돌진 속도
 const DASH_BURST = 350;       // 돌진하고 이만큼은 쭉 나가다가
 const DASH_BRAKE = 450;       // 이만큼 급제동 (빗나가도 혼자 끝까지 날아가진 않게)
-const DASH_COOL = 1200;
+const DASH_COOL = 3000;
 const BOUNCE = 0.8;           // 세게 부딪힐 때 튕김
 const BUMP = 3.5;             // 세게 부딪히면 덤으로 밀어내는 속도 (범퍼카 손맛)
 const SPAWN_R = 4.5;          // 처음 서는 원 반지름
@@ -43,6 +46,8 @@ const BANANA_LIFE = 12000;
 const SPIN_TIME = 900;
 const FALL_ANIM = 700;
 const GHOST_SPEED = 8;
+const DUEL_WARNING = 3000;
+const DUEL_SHRINK_SPEED = 0.24; // 결투 예고 뒤 초당 줄어드는 반지름(m)
 
 const ITEMS = {
   giant: { emoji: '🍄', name: '거대화' },
@@ -59,12 +64,28 @@ const radiusOf = (c, now) => (isGiant(c, now) ? GIANT_R : CAR_R);
 const massOf = (c, now) => (isGiant(c, now) ? 3 : 1) * (c.ch ? BRACE : 1);
 
 // 경기장 반지름: 30초 그대로 → 30초에 걸쳐 MIN_R까지 → 그래도 남아 있으면 0까지
-export function arenaR(S, now) {
-  const t = now - (S.startAt || now);
+function normalArenaR(S, now) {
+  const t = now - (S.startAt ?? now);
   if (t < SHRINK_AT) return ARENA_R;
   const k = (t - SHRINK_AT) / SHRINK_TIME;
   if (k < 1) return ARENA_R - (ARENA_R - MIN_R) * k;
   return MIN_R * Math.max(0, 1 - (t - SHRINK_AT - SHRINK_TIME) / FINAL_SHRINK);
+}
+
+export function arenaR(S, now) {
+  if (S.over) now = S.endAt ?? now;
+  const normal = normalArenaR(S, now);
+  if (S.duelAt == null) return normal;
+  const elapsed = Math.max(0, now - S.duelAt - DUEL_WARNING) / 1000;
+  return Math.min(normal, Math.max(0, S.duelRadius - elapsed * DUEL_SHRINK_SPEED));
+}
+
+function startDuel(ctx, now) {
+  const S = ctx.state;
+  if (S.duelAt != null || S.cars.filter(c => !c.out).length !== 2) return;
+  S.duelRadius = arenaR(S, now);
+  S.duelAt = now;
+  ctx.announce('⚔️ 최후의 결투! 3초 뒤 경기장이 점점 좁아집니다.');
 }
 
 // 돌진 모으기: 쿨타임이 끝난 뒤부터 센다
@@ -103,13 +124,17 @@ function stepWorld(ctx, now) {
     const spinning = (c.spin || 0) > now;
     const slippery = (c.slip || 0) > now;
     const len = Math.hypot(c.ix || 0, c.iy || 0);
+    if (!len || spinning || c.ch) c.driveFor = 0;
+    const ramp = clamp((c.driveFor || 0) / THRUST_RAMP, 0, 1);
+    const thrust = THRUST + (THRUST_MAX - THRUST) * ramp * ramp;
+    if (len && !spinning && !c.ch) c.driveFor = Math.min(THRUST_RAMP, (c.driveFor || 0) + STEP);
     if (len && !spinning) {
       const dx = c.ix / len;
       const dy = c.iy / len;
       c.a = Math.atan2(dy, dx);
       const along = c.vx * dx + c.vy * dy;
       if (along < MAX_SPEED) {
-        const add = Math.min(THRUST * (slippery ? 0.2 : c.ch ? 0.25 : 1) * dt, MAX_SPEED - along);
+        const add = Math.min(thrust * (slippery ? 0.2 : c.ch ? 0.25 : 1) * dt, MAX_SPEED - along);
         c.vx += dx * add;
         c.vy += dy * add;
       }
@@ -134,6 +159,7 @@ function stepWorld(ctx, now) {
   const out = live.filter(c => Math.hypot(c.x, c.y) > R).sort((a, b) => Math.hypot(b.x, b.y) - Math.hypot(a.x, a.y));
   for (const c of out) eliminate(ctx, c, now);
   if (S.cars.filter(c => !c.out).length <= 1) finish(ctx, now);
+  else startDuel(ctx, now);
 }
 
 function bump(ctx, A, B, now) {
@@ -157,16 +183,22 @@ function bump(ctx, A, B, now) {
   const vn = (A.vx - B.vx) * nx + (A.vy - B.vy) * ny; // 서로 다가오는 속도
   if (vn <= 0) return;
   const hard = vn > 1;
-  const j = ((1 + (hard ? BOUNCE : 0.2)) * vn + (hard ? BUMP : 0)) / inv;
+  const fullDash = c => c.dashPower >= .98 && !c.dashClashed && now >= c.dt && now - c.dt < DASH_BURST;
+  const clash = fullDash(A) && fullDash(B)
+    && Math.cos(A.dashAngle) * nx + Math.sin(A.dashAngle) * ny > .75
+    && Math.cos(B.dashAngle) * nx + Math.sin(B.dashAngle) * ny < -.75
+    && A.vx * nx + A.vy * ny > 3 && B.vx * nx + B.vy * ny < -3;
+  const j = ((1 + (clash ? 1 : hard ? BOUNCE : 0.2)) * vn + (clash ? BUMP + 6 : hard ? BUMP : 0)) / inv;
   A.vx -= (nx * j) / ma;
   A.vy -= (ny * j) / ma;
   B.vx += (nx * j) / mb;
   B.vy += (ny * j) / mb;
   if (!hard) return;
+  if (clash) { A.dashClashed = true; B.dashClashed = true; }
   // 서로를 '마지막으로 부딪힌 사람'으로 적어 둔다 (박고 튕겨 나가 떨어져도 상대 킬)
   hit(ctx, A, B.id, now, 'bump');
   hit(ctx, B, A.id, now, 'bump');
-  fx(ctx.state, now, { k: 'bump', x: r2(A.x + nx * ra), y: r2(A.y + ny * ra), p: r2(vn), ids: [A.id, B.id] });
+  fx(ctx.state, now, { k: clash ? 'clash' : 'bump', x: r2(A.x + nx * ra), y: r2(A.y + ny * ra), p: r2(vn), angle: Math.atan2(ny, nx), ids: [A.id, B.id] });
 }
 
 function pickItems(ctx, live, now) {
@@ -289,7 +321,8 @@ function dash(car, now, data) {
   const speed = DASH_MIN + (DASH_MAX - DASH_MIN) * power;
   car.vx = (dx / len) * speed + car.vx * 0.2;
   car.vy = (dy / len) * speed + car.vy * 0.2;
-  Object.assign(car, { a: Math.atan2(dy, dx), ch: 0, cd: now + DASH_COOL, dt: now });
+  Object.assign(car, { a: Math.atan2(dy, dx), ch: 0, cd: now + DASH_COOL, dt: now,
+    dashPower: power, dashAngle: Math.atan2(dy, dx), dashClashed: false });
   return true;
 }
 
@@ -484,7 +517,12 @@ export default {
     if (S.phase !== 'play' || !car) return false;
     if (!car.out) {
       // 움직임은 다음 틱에 같이 보내면 되니 false (입력마다 상태를 보내면 너무 많다)
-      if (type === 'move') Object.assign(car, { ix: sign(Number(data.x) || 0), iy: sign(Number(data.y) || 0) });
+      if (type === 'move') {
+        const ix = sign(Number(data.x) || 0), iy = sign(Number(data.y) || 0);
+        // 키를 놓거나 반대/직각 방향으로 꺾으면 기본 가속부터 다시 시작.
+        if ((!ix && !iy) || ix * (car.ix || 0) + iy * (car.iy || 0) <= 0) car.driveFor = 0;
+        Object.assign(car, { ix, iy });
+      }
       if (type === 'charge' && !car.ch) car.ch = now;
       if (type === 'dash') return dash(car, now, data);
       return false;
@@ -516,6 +554,7 @@ export default {
       if (now < S.phaseEndsAt) return false;
       S.phase = 'play';
       ctx.simAt = now;
+      startDuel(ctx, now);
       return true;
     }
     if (S.phase !== 'play') return false;
@@ -568,6 +607,7 @@ export default {
     const ice = svg('circle', { class: 'bc-ice', r: ARENA_R });
     const lines = [0.33, 0.66].map(k => svg('circle', { class: 'bc-ice-line', r: ARENA_R * k }));
     const edge = svg('circle', { class: 'bc-edge', r: ARENA_R });
+    const aimsG = svg('g', { class: 'bc-aims' });
     const itemsG = svg('g');
     const bananasG = svg('g');
     const carsG = svg('g');
@@ -575,10 +615,15 @@ export default {
     const fxG = svg('g');
     const stage = svg('svg', { class: 'bc-svg', viewBox: '-10 -10 20 20' },
       svg('rect', { class: 'bc-water', x: -12, y: -12, width: 24, height: 24 }),
-      ice, lines, edge, itemsG, bananasG, carsG, ghostsG, fxG);
+      ice, lines, edge, aimsG, itemsG, bananasG, carsG, ghostsG, fxG);
     const flashes = h('div', { class: 'bc-fx' });
+    const audio = createBumperAudio();
+    const sound = h('button', { class: 'bc-sound', type: 'button', tabindex: '-1', 'aria-label': '게임 소리 켜기 또는 끄기' });
+    const soundLabel = () => { sound.textContent = audio.enabled ? '🔊 소리 켜짐' : '🔇 소리 꺼짐'; sound.setAttribute('aria-pressed', String(audio.enabled)); };
+    soundLabel();
+    sound.addEventListener('click', () => { audio.toggle(); soundLabel(); sound.blur(); });
     const panel = h('div', { class: 'bc-panel' });
-    const box = h('div', { class: 'bc-box' }, top, h('div', { class: 'bc-stage' }, stage, flashes), panel);
+    const box = h('div', { class: 'bc-box' }, top, h('div', { class: 'bc-stage' }, stage, flashes, sound), panel);
     const side = h('aside', { class: 'side' });
     root.append(h('div', { class: 'bc' }, box, side));
     document.activeElement?.blur?.();
@@ -594,6 +639,15 @@ export default {
     let sideKey = '';
     let lastPhase = null;
     let warned = false;
+    let seenDuel = null;
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const timers = new Set();
+    function later(fn, ms) {
+      const id = setTimeout(() => { timers.delete(id); fn(); }, ms);
+      timers.add(id); return id;
+    }
+    const unlockAudio = () => { void audio.unlock(); };
+    box.addEventListener('pointerdown', unlockAudio);
     // 내 입력 (방향은 바뀔 때만 보낸다)
     const keys = new Set();
     let sentMove = '';
@@ -628,6 +682,7 @@ export default {
       }
       const down = e.type === 'keydown';
       const d = DIRS[e.code];
+      if (down && (d || e.code === 'Space')) unlockAudio();
       if (d) {
         e.preventDefault();
         if (down) keys.add(d);
@@ -662,13 +717,20 @@ export default {
       const f = face.firstElementChild;
       if (f) for (const [k, v] of Object.entries({ x: -0.62, y: -0.62, width: 1.24, height: 1.24 })) f.setAttribute(k, v);
       const body = svg('g', {}, svg('circle', { class: 'bc-bumper', r: CAR_R }), face);
+      const impact = svg('g', {}, body);
       const nose = svg('g', {}, svg('path', { class: 'bc-nose', d: 'M0.74,-0.3 L1.12,0 L0.74,0.3 Z' }));
       const charge = svg('circle', { class: 'bc-charge', r: CAR_R + 0.2, pathLength: 100 });
+      const ready = svg('circle', { class: 'bc-ready-flash', r: CAR_R + .35, opacity: 0 });
+      const aim = svg('g', { class: 'bc-charge-aim' },
+        svg('path', { class: 'bc-charge-lane', d: 'M0.7,-0.22 L2.8,-0.22 L3.25,0 L2.8,0.22 L0.7,0.22 Z' }),
+        svg('path', { class: 'bc-charge-chevron', d: 'M1.5,-.22 L1.8,0 L1.5,.22 M2.15,-.22 L2.45,0 L2.15,.22' }));
+      aimsG.append(aim);
+      aim.style.display = 'none';
       const oil = svg('ellipse', { class: 'bc-oil', rx: 1.1, ry: 0.85 });
       const name = svg('text', { class: `bc-name${c.id === me ? ' me' : ''}` }, c.id === me ? '나' : p.name);
-      const g = svg('g', { class: `bc-car${c.id === me ? ' mine' : ''}` }, oil, charge, nose, body, name);
+      const g = svg('g', { class: `bc-car${c.id === me ? ' mine' : ''}` }, oil, charge, ready, nose, impact, name);
       carsG.append(g);
-      return { g, body, nose, charge, oil, name, keys: [c, c], t: performance.now() };
+      return { g, body, impact, nose, charge, ready, aim, oil, name, keys: [c, c], t: performance.now(), hitUntil: 0, wasFull: false, flashUntil: 0 };
     }
 
     function syncCars() {
@@ -724,7 +786,7 @@ export default {
       ice.setAttribute('r', R);
       edge.setAttribute('r', R);
       lines.forEach((l, i) => l.setAttribute('r', R * [0.33, 0.66][i]));
-      edge.classList.toggle('shrinking', S.phase === 'play' && t - S.startAt >= SHRINK_AT);
+      edge.classList.toggle('shrinking', S.phase === 'play' && (t - S.startAt >= SHRINK_AT || (S.duelAt != null && t >= S.duelAt + DUEL_WARNING)));
       for (const c of S.cars) {
         const v = cars.get(c.id);
         if (!v) continue;
@@ -742,6 +804,7 @@ export default {
           const e = clamp((t - c.out) / FALL_ANIM, 0, 1);
           if (e >= 1) {
             v.g.style.display = 'none';
+            v.aim.style.display = 'none';
             continue;
           }
           x = c.x + (c.vx || 0) * e * 0.35;
@@ -753,19 +816,38 @@ export default {
         v.g.style.display = '';
         v.g.style.opacity = opacity;
         v.g.setAttribute('transform', `translate(${x} ${y})`);
-        v.body.setAttribute('transform', `rotate(${spin}) scale(${scale})`);
+        const squash = reducedMotion.matches ? 0 : Math.sin(clamp((v.hitUntil - now) / 240, 0, 1) * Math.PI) * .22;
+        const hitAngle = deg(v.hitAngle || 0);
+        v.impact.setAttribute('transform', `rotate(${hitAngle}) scale(${1 - squash} ${1 + squash * .65}) rotate(${-hitAngle})`);
         v.nose.setAttribute('transform', `rotate(${deg(c.a || 0)}) scale(${scale})`);
         v.nose.style.display = c.out ? 'none' : '';
         v.oil.style.display = (c.slip || 0) > t && !c.out ? '' : 'none';
         v.name.setAttribute('y', -(CAR_R * scale + 0.38));
         // 돌진 모으기 고리 (내 차는 누르자마자 바로)
-        const mineCharging = c.id === me && !!charging;
+        const mineCharging = c.id === me && !!charging && !c.out && !(c.spin > t) && S.phase === 'play';
         const level = mineCharging ? clamp((now - charging) / CHARGE_TIME, 0, 1) : chargeOf(c, t);
-        v.charge.style.display = (mineCharging || c.ch) && !c.out ? '' : 'none';
+        const isCharging = (mineCharging || c.ch) && !c.out && S.phase === 'play';
+        const telegraph = isCharging && level > 0;
+        const wobble = telegraph && !reducedMotion.matches ? Math.sin(now * .085) * (.012 + level * .035) : 0;
+        v.body.setAttribute('transform', `translate(${wobble} ${wobble * .6}) rotate(${spin}) scale(${scale})`);
+        v.charge.style.display = isCharging ? '' : 'none';
         v.charge.setAttribute('r', (CAR_R + 0.2) * scale);
         v.charge.setAttribute('stroke-dasharray', `${Math.max(2, level * 100)} 100`);
         v.charge.classList.toggle('full', level >= 1);
         v.charge.classList.toggle('cooling', mineCharging && now < charging); // 쿨타임 끝나기 전엔 회색
+        const [aimX, aimY] = mineCharging ? dir() : [0, 0];
+        const angle = mineCharging && (aimX || aimY) ? Math.atan2(aimY, aimX) : c.a || 0;
+        v.aim.style.display = telegraph ? '' : 'none';
+        v.aim.style.opacity = .25 + level * .55;
+        v.aim.classList.toggle('full', level >= 1);
+        v.aim.setAttribute('transform', `translate(${x} ${y}) rotate(${deg(angle)}) scale(${(.45 + level * .55) * scale} ${scale})`);
+        if (isCharging && level >= 1 && !v.wasFull) {
+          v.flashUntil = now + 220;
+          if (c.id === me) audio.ready();
+        }
+        v.wasFull = !!isCharging && level >= 1;
+        v.ready.setAttribute('opacity', !c.out && now < v.flashUntil ? .7 * (v.flashUntil - now) / 220 : 0);
+        v.ready.setAttribute('r', (CAR_R + .35) * scale);
         v.g.classList.toggle('dashing', t - (c.dt ?? -1e9) < DASH_BURST);
       }
       // 내 유령: 내 화면에서 바로 움직이고 방장에게는 가끔 알려 준다
@@ -795,21 +877,37 @@ export default {
       raf = requestAnimationFrame(loop);
     });
 
-    function flash(text, cls = '') {
+    function flash(text, cls = '', duration = 1600) {
       const el = h('div', { class: `bc-flash ${cls}` }, text);
       flashes.append(el);
-      setTimeout(() => el.remove(), 1600);
+      later(() => el.remove(), duration);
     }
     function shake() {
-      box.classList.remove('shaking');
+      if (reducedMotion.matches) return;
+      box.classList.remove('bc-impact-shake');
       void box.offsetWidth;
-      box.classList.add('shaking');
-      setTimeout(() => box.classList.remove('shaking'), 500);
+      box.classList.add('bc-impact-shake');
+      later(() => box.classList.remove('bc-impact-shake'), 220);
     }
     function burst(x, y, cls, text) {
       const el = svg('g', { transform: `translate(${x} ${y})` }, svg('text', { class: cls }, text));
       fxG.append(el);
-      setTimeout(() => el.remove(), 600);
+      later(() => el.remove(), 600);
+    }
+
+    function collisionBurst(e, clash) {
+      const effect = svg('g', { transform: `translate(${e.x} ${e.y})`, class: 'bc-collision' });
+      const rays = clash ? 12 : 7;
+      for (let i = 0; i < rays; i++) {
+        const a = i * Math.PI * 2 / rays;
+        const length = (clash ? 1.4 : .8) + (i % 3) * .17;
+        effect.append(svg('line', { class: 'bc-impact-ray', x1: Math.cos(a) * .18, y1: Math.sin(a) * .18,
+          x2: Math.cos(a) * length, y2: Math.sin(a) * length }));
+      }
+      effect.append(svg('circle', { class: clash ? 'bc-shock-ring clash' : 'bc-shock-ring', r: .8 }));
+      if (clash) effect.append(svg('circle', { class: 'bc-shock-ring second', r: .5 }));
+      fxG.append(effect);
+      later(() => effect.remove(), 650);
     }
 
     function playFx() {
@@ -821,9 +919,18 @@ export default {
       for (const e of list) {
         if (e.n <= seenFx) continue;
         seenFx = e.n;
-        if (e.k === 'bump') {
-          burst(e.x, e.y, 'bc-spark', e.p > 7 ? '💥' : '✦');
-          if (e.ids?.includes(me) && e.p > 5) shake();
+        if (e.k === 'bump' || e.k === 'clash') {
+          const clash = e.k === 'clash', personal = !!e.ids?.includes(me);
+          if (clash || e.p > 7) {
+            collisionBurst(e, clash);
+            audio.impact(clash, personal);
+            for (const id of e.ids || []) {
+              const v = cars.get(id);
+              if (v) { v.hitUntil = performance.now() + 240; v.hitAngle = e.angle || 0; }
+            }
+          } else burst(e.x, e.y, 'bc-spark', '✦');
+          if (personal && (clash || e.p > 7)) shake();
+          if (clash) flash('⚡ 풀차지 정면충돌!', 'clash');
         } else if (e.k === 'fall') {
           burst(e.x, e.y, 'bc-splash', '💦');
           if (e.to === me) {
@@ -847,10 +954,12 @@ export default {
     // 위·옆 줄은 초당 20번 오는 상태마다 다시 만들면 무거워서(얼굴 그림 등) 내용이 바뀔 때만 다시 그린다
     function renderTop() {
       const t = api.now();
-      const left = Math.max(0, Math.ceil((S.startAt + SHRINK_AT - t) / 1000));
+      const shrinkAt = S.duelAt == null ? S.startAt + SHRINK_AT : Math.min(S.startAt + SHRINK_AT, S.duelAt + DUEL_WARNING);
+      const left = Math.max(0, Math.ceil((shrinkAt - t) / 1000));
       const c = myCar();
       const play = S.phase === 'play';
       const bits = [[`생존 ${S.cars.filter(x => !x.out).length}명`]];
+      if (play && S.duelAt != null) bits.push(['⚔️ 최후의 결투', 'bc-duel-label']);
       if (play) bits.push(left ? [`⏱️ 경기장 축소까지 ${left}초`] : ['🔥 경기장 줄어드는 중!', 'bc-hot']);
       if (play && S.away) bits.push(['🐢 방장 쪽이 느려지고 있어요', 'bc-hot']);
       if (play && c && !c.out) {
@@ -876,7 +985,8 @@ export default {
           h('ul', { class: 'rules big' },
             h('li', {}, '방향키·WASD로 밀기 · 스페이스를 꾹 눌렀다 떼면 돌진 (오래 모을수록 셈)'),
             h('li', {}, '경기장 밖으로 떨어지면 탈락. 3초 안에 마지막으로 박은 사람이 킬, 아니면 자폭'),
-            h('li', {}, '🍄 거대화 · 🌀 스프링 · 🛢️ 기름 아이템, 30초부터 경기장이 줄어들어요'),
+            h('li', {}, '🍄 거대화 · 🌀 스프링 · 🛢️ 기름. 30초부터 축소, 마지막 두 명은 3초 예고 후 결투!'),
+            h('li', {}, '차지 방향을 읽고 피하세요. 풀차지끼리 정면충돌하면 둘 다 크게 튕겨요!'),
             h('li', {}, '떨어지면 👻 유령: 방향키로 떠다니다 스페이스로 🍌 바나나 깔기')));
       }
       if (S.phase === 'final') {
@@ -920,7 +1030,7 @@ export default {
         h('h3', {}, '조작'),
         h('ul', { class: 'rules' },
           h('li', {}, '← → ↑ ↓ / WASD 밀기 (8방향)'),
-          h('li', {}, '스페이스 꾹 → 떼면 돌진 (최대 0.9초 모으기, 쿨타임 1.2초)'),
+          h('li', {}, '스페이스 꾹 → 떼면 돌진 (최대 0.9초 모으기, 쿨타임 3초)'),
           h('li', {}, '모으는 동안은 멈춰 서서 잘 안 밀려요 (버티기)'),
           h('li', {}, '👻 유령: 방향키 이동 · 스페이스 🍌')),
       ].filter(Boolean));
@@ -930,12 +1040,21 @@ export default {
       update({ state }) {
         S = state;
         norm(S);
+        audio.mode(S.phase === 'play', S.duelAt != null);
+        box.classList.toggle('duel', S.phase === 'play' && S.duelAt != null);
+        if (S.duelAt != null && seenDuel !== S.duelAt) {
+          seenDuel = S.duelAt;
+          if (S.phase === 'play' && api.now() - S.duelAt < DUEL_WARNING) {
+            flash('⚔️ 최후의 결투 · 3초 뒤 경기장 축소!', 'duel', DUEL_WARNING);
+            audio.duel();
+          }
+        }
         if (S.phase !== lastPhase) {
           if (S.phase === 'play' && lastPhase === 'intro') flash('GO! 🚗💨');
           if (S.phase === 'play') sendMove(true); // 미리 누르고 있던 방향키도 바로 반영
           lastPhase = S.phase;
         }
-        if (S.phase === 'play' && !warned && api.now() - S.startAt > SHRINK_AT - 3000) {
+        if (S.phase === 'play' && S.duelAt == null && !warned && api.now() - S.startAt > SHRINK_AT - 3000) {
           warned = true;
           if (api.now() - S.startAt < SHRINK_AT) flash('⚠️ 3초 뒤 경기장이 줄어들어요!');
         }
@@ -968,6 +1087,10 @@ export default {
       },
       unmount() {
         cancelAnimationFrame(raf);
+        for (const id of timers) clearTimeout(id);
+        timers.clear();
+        audio.dispose();
+        box.removeEventListener('pointerdown', unlockAudio);
         window.removeEventListener('keydown', onKey);
         window.removeEventListener('keyup', onKey);
         window.removeEventListener('blur', releaseAll);
