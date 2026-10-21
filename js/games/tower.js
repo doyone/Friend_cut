@@ -1,28 +1,31 @@
 // 독박 타워: 좁은 받침대에 돌아가며 물리 블록을 쌓는다.
-// 블록은 🎰 룰렛(보통 + 특이한 모양 중 완전 랜덤)으로 정해지고,
-// 각자 한 판에 한 번 '😈 악마 카드'로 다음 사람에게 악마 블록을 강제로 줄 수 있다 (그걸로 죽으면 내 킬).
+// 블록은 🎰 룰렛(기본 4칸 블록 7종 + 추가 블록, 완전 랜덤)으로 차례가 시작될 때 뽑는다. NEXT는 '?'로만 보인다.
+// 각자 한 판에 한 번 '😈 악마 카드'로 다음 사람 블록을 내가 고른 악마 블록으로 정해 버릴 수 있다 (그걸로 죽으면 내 킬).
+// 카드는 내 차례 내내 쓸 수 있고, 내 블록이 멈춘 뒤에도 최대 10초 고민할 수 있다.
 // 블록이 하나라도 떨어지면 놓은 사람 탈락. 순서는 바퀴마다 섞는다(테트리스 가방처럼). 마지막 1명 우승.
 // 물리는 방장 컴퓨터만 계산하고(planck.js), 다른 사람은 위치만 받아서 그린다.
-import { h, isTyping, josa, pick, shuffle } from '../util.js';
-import { avatar, countdown, keyNav, podium } from '../ui.js';
+import { h, isTyping, josa, pick, shuffle, digitOf } from '../util.js';
+import { avatar, countdown, podium } from '../ui.js';
 
 const PLANCK_URL = 'https://cdn.jsdelivr.net/npm/planck@1.4.2/+esm';
 const INTRO_TIME = 7000;
-const DEVIL_TIME = 5000;     // 악마 카드 쓸지 고민하는 시간
-const SPIN_TIME = 1700;      // 룰렛 도는 시간
+const DECIDE_TIME = 10000;   // 내 블록이 멈춘 뒤 악마 카드 고민 시간 (고르면 바로 끝)
+const RESULT_TIME = 1500;    // 결과 잠깐 보여 주기
+const SPIN_TIME = 1300;      // 차례 시작할 때 룰렛 도는 시간
 const SETTLE_MAX = 5000;     // 떨군 뒤 최대 이만큼 기다리면 다음 차례
 const DEVIL_CARDS = 1;       // 한 판에 1인당 악마 카드
-const PLATFORM_W = 5.2;
+const PLATFORM_W = 6.24;     // 받침대 폭 (예전 5.2의 1.2배)
 const PLATFORM_H = 0.6;
+const GRAVITY = 16;          // 실제(10)보다 세게: 빨리 떨어지고 쿵 내려앉아서 묵직하다
+const DROP_GAP = 1.5;        // 떨구는 높이: 블록 맨 아래가 탑 꼭대기보다 이만큼 위
 const FALL_Y = -2;           // 이 아래로 내려가면 떨어진 것
 const X_LIMIT = 5;           // 조준 좌우 한계
 const ROT_STEP = Math.PI / 12; // 15도
 const MOVE_SPEED = 5;        // 초당
-const GUST = 6;              // 유령 입김 세기
 
 /* ───────── 블록 모양 (단위: m, 몸통 기준점 0,0) ─────────
    물리 엔진은 볼록한 조각만 받아서, 오목한 모양은 여러 조각(parts)으로 나눈다.
-   kind: normal(보통) · odd(특이한 모양) → 룰렛 / devil(악마) → 악마 카드 전용 */
+   kind: base(기본 4칸) · extra(추가) → 룰렛 / devil(악마) → 악마 카드 전용 */
 const deg = d => (d * Math.PI) / 180;
 const P = (x, y) => [Math.round(x * 1000) / 1000, Math.round(y * 1000) / 1000];
 const ellipse = (n, rx, ry = rx) => Array.from({ length: n }, (_, k) => P(rx * Math.cos(deg((360 * k) / n)), ry * Math.sin(deg((360 * k) / n))));
@@ -35,26 +38,32 @@ function starParts(ro, ri) {
   const inner = Array.from({ length: 5 }, (_, k) => at(ri, 126 + 72 * k));
   return [{ poly: inner }, ...inner.map((p, k) => ({ poly: [inner[(k + 4) % 5], p, at(ro, 90 + 72 * k)] }))];
 }
+// 4칸 블록: 칸 좌표로 정의하고 무게중심을 0,0에 맞춘다
+const CELL = 0.6;
+function cells(list) {
+  const cx = list.reduce((s, [x]) => s + x, 0) / list.length;
+  const cy = list.reduce((s, [, y]) => s + y, 0) / list.length;
+  return list.map(([x, y]) => ({ box: [CELL / 2, CELL / 2], at: P((x - cx) * CELL, (y - cy) * CELL) }));
+}
 
 export const SHAPES = {
-  // 보통
-  plank: { name: '널빤지', kind: 'normal', parts: [{ box: [1.6, 0.25] }] },
-  brick: { name: '벽돌', kind: 'normal', parts: [{ box: [1.0, 0.4] }] },
-  cube: { name: '정육면체', kind: 'normal', parts: [{ box: [0.6, 0.6] }] },
-  pillar: { name: '기둥', kind: 'normal', parts: [{ box: [0.35, 1.0] }] },
-  lblock: { name: 'L블록', kind: 'normal', parts: [{ box: [0.9, 0.3], at: [0, -0.3] }, { box: [0.3, 0.6], at: [-0.6, 0.3] }] },
-  tblock: { name: 'T블록', kind: 'normal', parts: [{ box: [1.0, 0.25], at: [0, 0.35] }, { box: [0.25, 0.6], at: [0, -0.35] }] },
-  // 특이한 모양
-  hexagon: { name: '육각형', kind: 'odd', parts: [{ poly: ellipse(6, 0.65) }] },
-  star: { name: '별', kind: 'odd', parts: starParts(0.95, 0.38) },
-  stairs: { name: '계단', kind: 'odd', parts: [{ box: [0.9, 0.2], at: [0, -0.4] }, { box: [0.6, 0.2], at: [0.3, 0] }, { box: [0.3, 0.2], at: [0.6, 0.4] }] },
-  cross: { name: '십자가', kind: 'odd', parts: [{ box: [0.9, 0.2] }, { box: [0.2, 0.9] }] },
-  halfmoon: { name: '반달', kind: 'odd', parts: [{ poly: halfDisc(0.85, 8) }] },
-  ushape: { name: 'U자', kind: 'odd', parts: [{ box: [0.9, 0.15], at: [0, -0.45] }, { box: [0.15, 0.45], at: [-0.75, 0] }, { box: [0.15, 0.45], at: [0.75, 0] }] },
-  house: { name: '집', kind: 'odd', parts: [{ box: [0.6, 0.45], at: [0, -0.25] }, { poly: [[-0.8, 0.2], [0.8, 0.2], [0, 0.9]] }] },
-  trapezoid: { name: '사다리꼴', kind: 'odd', parts: [{ poly: [[-1.0, -0.4], [1.0, -0.4], [0.55, 0.4], [-0.55, 0.4]] }] },
+  // 기본 4칸 블록
+  I: { name: 'I블록', kind: 'base', parts: cells([[0, 0], [1, 0], [2, 0], [3, 0]]) },
+  O: { name: 'O블록', kind: 'base', parts: cells([[0, 0], [1, 0], [0, 1], [1, 1]]) },
+  T: { name: 'T블록', kind: 'base', parts: cells([[0, 0], [1, 0], [2, 0], [1, 1]]) },
+  S: { name: 'S블록', kind: 'base', parts: cells([[0, 0], [1, 0], [1, 1], [2, 1]]) },
+  Z: { name: 'Z블록', kind: 'base', parts: cells([[0, 1], [1, 1], [1, 0], [2, 0]]) },
+  J: { name: 'J블록', kind: 'base', parts: cells([[0, 1], [0, 0], [1, 0], [2, 0]]) },
+  L: { name: 'L블록', kind: 'base', parts: cells([[2, 1], [0, 0], [1, 0], [2, 0]]) },
+  // 추가 블록
+  cross: { name: '십자가', kind: 'extra', parts: [{ box: [0.9, 0.2] }, { box: [0.2, 0.9] }] },
+  ushape: { name: 'U자', kind: 'extra', parts: [{ box: [0.9, 0.15], at: [0, -0.45] }, { box: [0.15, 0.45], at: [-0.75, 0] }, { box: [0.15, 0.45], at: [0.75, 0] }] },
+  halfmoon: { name: '반달', kind: 'extra', parts: [{ poly: halfDisc(0.85, 8) }] },
+  house: { name: '집', kind: 'extra', parts: [{ box: [0.6, 0.45], at: [0, -0.25] }, { poly: [[-0.8, 0.2], [0.8, 0.2], [0, 0.9]] }] },
+  hexagon: { name: '육각형', kind: 'extra', parts: [{ poly: ellipse(6, 0.65) }] },
+  star: { name: '별', kind: 'extra', parts: starParts(0.95, 0.38) },
   bone: {
-    name: '뼈다귀', kind: 'odd',
+    name: '뼈다귀', kind: 'extra',
     parts: [{ box: [0.8, 0.15] }, { circle: 0.22, at: [-0.85, 0.15] }, { circle: 0.22, at: [-0.85, -0.15] }, { circle: 0.22, at: [0.85, 0.15] }, { circle: 0.22, at: [0.85, -0.15] }],
   },
   // 😈 악마 (악마 카드로만)
@@ -83,6 +92,8 @@ for (const def of Object.values(SHAPES)) {
 }
 export const ROULETTE = Object.keys(SHAPES).filter(k => SHAPES[k].kind !== 'devil');
 export const DEVILS = Object.keys(SHAPES).filter(k => SHAPES[k].kind === 'devil');
+// 예전 판에서 넘어온 모르는 모양이 있어도 깨지지 않게
+const shapeOf = s => SHAPES[s] || SHAPES.O;
 const isDevil = s => SHAPES[s]?.kind === 'devil';
 
 // 블록 맨 윗부분의 높이 (실제 모양과 회전을 반영)
@@ -91,7 +102,7 @@ function topOf(s, x, y, a) {
   const sn = Math.sin(a);
   const wy = (lx, ly) => y + lx * sn + ly * c;
   let top = -Infinity;
-  for (const part of SHAPES[s].parts) {
+  for (const part of shapeOf(s).parts) {
     const [ax, ay] = part.at || [0, 0];
     if (part.circle) {
       top = Math.max(top, wy(ax, ay) + part.circle);
@@ -128,7 +139,7 @@ const round3 = v => Math.round(v * 1000) / 1000;
 
 function makeSim(S) {
   const { World, Vec2, Box } = planck;
-  const world = new World({ gravity: new Vec2(0, -10) });
+  const world = new World({ gravity: new Vec2(0, -GRAVITY) });
   const ground = world.createBody();
   ground.createFixture(new Box(PLATFORM_W / 2, PLATFORM_H / 2, new Vec2(0, -PLATFORM_H / 2), 0), { friction: 0.9 });
   const sim = { world, bodies: new Map(), meta: new Map() };
@@ -139,7 +150,7 @@ function makeSim(S) {
 
 function addBody(sim, b, awake) {
   const { Vec2, Box, Circle, Polygon } = planck;
-  const def = SHAPES[b.s];
+  const def = shapeOf(b.s);
   const props = def.props || {};
   const body = sim.world.createBody({ type: 'dynamic', position: new Vec2(b.x, b.y), angle: b.a, awake });
   for (const part of def.parts) {
@@ -148,7 +159,8 @@ function addBody(sim, b, awake) {
     if (part.box) shape = new Box(part.box[0], part.box[1], new Vec2(ax, ay), part.rot || 0);
     else if (part.circle) shape = new Circle(new Vec2(ax, ay), part.circle);
     else shape = new Polygon(part.poly.map(([x, y]) => new Vec2(x + ax, y + ay)));
-    body.createFixture(shape, { density: props.density ?? 1, friction: props.friction ?? 0.7, restitution: props.restitution ?? 0.05 });
+    // 튕김 없음(탱탱볼만 예외): 떨어지면 그 자리에 철퍼덕
+    body.createFixture(shape, { density: props.density ?? 1, friction: props.friction ?? 0.7, restitution: props.restitution ?? 0 });
   }
   sim.bodies.set(b.id, body);
   sim.meta.set(b.id, { s: b.s, by: b.by });
@@ -169,7 +181,9 @@ function snapshot(ctx) {
   S.top = round3(top);
 }
 
-const spawnY = S => (S.top || 0) + 3;
+// 떨굴 때 블록 중심 높이: 블록 맨 아래가 탑 꼭대기 + DROP_GAP에 오게 (모양·회전 반영).
+// 180° 더 돌린 모양의 꼭대기 = 지금 모양에서 중심부터 맨 아래까지 깊이
+const spawnY = (S, s, a) => (S.top || 0) + DROP_GAP + topOf(s, 0, 0, a + Math.PI);
 
 /* ───────── 진행 ───────── */
 
@@ -199,26 +213,45 @@ export function nextInBag(S, justPlayed) {
   return newBag(S, justPlayed);
 }
 
-// 다음 사람 블록 정하기: 악마 카드를 썼으면 그 블록, 아니면 룰렛(완전 랜덤)
-function startSpin(ctx, now, devil) {
+// 다음 사람은 미리 정하지만(순서 가방), 그 사람 블록은 비밀이다 — 차례가 시작될 때 룰렛으로 뽑는다.
+// 악마 카드를 쓰면 그때 '내가 고른 악마 블록'으로 정해져서 모두에게 보인다.
+function rollNext(ctx, now, after) {
   const S = ctx.state;
+  S.next = { id: nextInBag(S, after), kind: 'random', lap: S.lap, at: now };
+}
+
+function startTurn(ctx, now) {
+  const S = ctx.state;
+  const n = S.next;
   S.phase = 'spin';
-  S.spinKind = devil ? 'devil' : 'roulette';
-  S.piece = devil || pick(ROULETTE);
-  S.chooser = devil ? S.picker : null;
+  S.turn = n.id;
+  S.spinKind = n.kind === 'devil' ? 'devil' : 'roulette';
+  S.piece = n.kind === 'devil' ? n.piece : pick(ROULETTE);
+  S.chooser = n.kind === 'devil' ? n.by : null;
+  S.turnLap = n.lap;
   S.spinEnd = now + SPIN_TIME;
-  S.options = null;
+  S.aim = { x: 0, a: 0 };
+  S.devilOptions = shuffle(DEVILS).slice(0, 3); // 이번 차례에 내가 쓸 수 있는 악마 블록 3개
+  rollNext(ctx, now, S.turn);
   return true;
 }
 
-function startAim(ctx, now) {
+// 지금 차례인 사람만, 내 차례 동안(룰렛·조준·낙하·고민) 다음 사람에게 쓸 수 있다
+const canUseCard = (S, pid) => pid === S.turn && ['spin', 'aim', 'fall', 'decide'].includes(S.phase)
+  && (S.cards?.[pid] || 0) > 0 && !!S.next && S.next.kind !== 'devil';
+
+function useCard(ctx, pid, i, now) {
   const S = ctx.state;
-  S.phase = 'aim';
-  S.turn = S.nextTurn;
-  S.aim = { x: 0, a: 0 };
-  S.phaseEndsAt = now + aimTime(S.lap);
-  S.picker = null;
-  S.gusted = null;
+  const shape = S.devilOptions?.[i];
+  if (!shape || !canUseCard(S, pid)) return false;
+  S.cards = { ...S.cards, [pid]: S.cards[pid] - 1 };
+  S.next = { ...S.next, piece: shape, kind: 'devil', by: pid, at: now };
+  S.cardUses = [...(S.cardUses || []), { by: pid, to: S.next.id, s: shape, at: now }].slice(-8);
+  ctx.announce(`😈 ${josa(ctx.nameOf(pid), '이', '가')} ${ctx.nameOf(S.next.id)}의 블록을 바꿔치기! → ${SHAPES[shape].name}`);
+  if (S.phase === 'decide') {
+    S.phase = 'result';
+    S.phaseEndsAt = now + RESULT_TIME;
+  }
   return true;
 }
 
@@ -228,7 +261,7 @@ function drop(ctx, now, aim) {
   const id = `k${S.bodyNo}`;
   const x = Math.max(-X_LIMIT, Math.min(X_LIMIT, Number(aim?.x) || 0));
   const a = Number(aim?.a) || 0;
-  addBody(ctx.sim, { id, s: S.piece, by: S.turn, x, y: spawnY(S), a }, true);
+  addBody(ctx.sim, { id, s: S.piece, by: S.turn, x, y: spawnY(S, S.piece, a), a }, true);
   S.pieceId = id;
   S.phase = 'fall';
   S.dropAt = now;
@@ -263,19 +296,21 @@ function settle(ctx, now) {
   const S = ctx.state;
   const name = ctx.nameOf;
   const active = S.turn;
+  const toppled = S.toppled || 0;
   S.turnsPlayed = (S.turnsPlayed || 0) + 1;
-  if (S.toppled) {
-    S.fails = [...(S.fails || []), { id: active, at: now, n: S.toppled }].slice(-8);
+  S.lastResult = { id: active, ok: !toppled, n: toppled, at: now };
+  if (toppled) {
+    S.fails = [...(S.fails || []), { id: active, at: now, n: toppled }].slice(-8);
     if (S.alive.includes(active)) {
       S.alive = S.alive.filter(id => id !== active);
       S.outOrder = [...(S.outOrder || []), active];
       const killer = S.chooser && S.chooser !== active ? S.chooser : null;
       S.dead = { ...(S.dead || {}), [active]: killer || '-' };
       if (killer) {
-        ctx.kill(killer, active, `😈 ${SHAPES[S.piece].name}`);
+        ctx.kill(killer, active, `😈 ${shapeOf(S.piece).name}`);
         S.kills = { ...(S.kills || {}), [killer]: (S.kills?.[killer] || 0) + 1 };
       } else {
-        ctx.announce(`🎰 룰렛의 저주! ${name(active)} 탈락 (${SHAPES[S.piece].name} · 블록 ${S.toppled}개 추락)`);
+        ctx.announce(`🎰 룰렛의 저주! ${name(active)} 탈락 (${shapeOf(S.piece).name} · 블록 ${toppled}개 추락)`);
       }
     }
   } else if (!S.best || S.top > S.best.h) {
@@ -284,16 +319,15 @@ function settle(ctx, now) {
   S.toppled = 0;
   S.pieceId = null;
   if (S.alive.length <= 1) return finish(ctx);
-  // 방금 둔 사람(죽었어도 유령으로)에게 악마 카드가 남았으면 쓸지 고를 기회
-  S.picker = active;
-  S.nextTurn = nextInBag(S, active);
-  if ((S.cards?.[active] || 0) > 0) {
-    S.phase = 'devil';
-    S.options = shuffle(DEVILS).slice(0, 3);
-    S.phaseEndsAt = now + DEVIL_TIME;
-    return true;
+  // 카드가 남았으면(탈락했어도 유령으로) 넉넉하게 고민할 시간, 아니면 결과만 잠깐
+  if (canUseCard({ ...S, phase: 'decide' }, active)) {
+    S.phase = 'decide';
+    S.phaseEndsAt = now + DECIDE_TIME;
+  } else {
+    S.phase = 'result';
+    S.phaseEndsAt = now + RESULT_TIME;
   }
-  return startSpin(ctx, now, null);
+  return true;
 }
 
 function finish(ctx) {
@@ -309,6 +343,7 @@ function finish(ctx) {
   if (kills >= 1) add(killer, `😈 악마의 선택 (${kills}킬)`);
   if (S.best?.h >= 3) add(S.best.id, `🏗️ 최고층 ${S.best.h.toFixed(1)}m`);
   S.titles = titles;
+  S.next = null;
   S.phase = 'final';
   S.over = true;
   return true;
@@ -326,7 +361,7 @@ function svg(tag, attrs = {}, ...kids) {
 const safeColor = c => (/^#[0-9a-f]{6}$/i.test(c || '') ? c : '#bdc3c7');
 
 function shapeGroup(s, color) {
-  const def = SHAPES[s] || SHAPES.cube;
+  const def = shapeOf(s);
   const style = { fill: safeColor(def.look?.fill || color), stroke: '#2c3e50', 'stroke-width': 0.07, 'stroke-linejoin': 'round' };
   const parts = def.parts.map(part => {
     const [ax, ay] = part.at || [0, 0];
@@ -348,7 +383,7 @@ function shapeGroup(s, color) {
 }
 
 function shapeIcon(s, color) {
-  const r = (SHAPES[s] || SHAPES.cube).r + 0.15;
+  const r = shapeOf(s).r + 0.15;
   return svg('svg', { viewBox: `${-r} ${-r} ${2 * r} ${2 * r}`, class: 'tw-icon' },
     svg('g', { transform: 'scale(1,-1)' }, shapeGroup(s, color)));
 }
@@ -359,7 +394,7 @@ export default {
   emoji: '🧱',
   tag: '우정파괴',
   color: '#e67e22',
-  desc: '돌아가며 블록을 쌓아요. 블록은 🎰 룰렛! 한 판에 한 번 😈 악마 카드로 다음 사람에게 악마 블록을 줄 수 있어요. 떨어뜨리면 탈락!',
+  desc: '돌아가며 블록을 쌓아요. 블록은 🎰 룰렛! 한 판에 한 번 😈 악마 카드로 다음 사람 블록을 내가 정해 버릴 수 있어요. 떨어뜨리면 탈락',
   minPlayers: 2,
   maxPlayers: 8,
 
@@ -384,25 +419,8 @@ export default {
       return true;
     }
     if (type === 'drop' && S.phase === 'aim' && pid === S.turn && ctx.sim) return drop(ctx, now, data);
-    if (type === 'devil' && S.phase === 'devil' && pid === S.picker && (S.cards?.[pid] || 0) > 0
-        && Number.isInteger(data.i) && S.options?.[data.i]) {
-      const shape = S.options[data.i];
-      S.cards = { ...S.cards, [pid]: S.cards[pid] - 1 };
-      S.cardUses = [...(S.cardUses || []), { by: pid, to: S.nextTurn, s: shape, at: now }].slice(-8);
-      ctx.announce(`😈 ${josa(ctx.nameOf(pid), '이', '가')} ${ctx.nameOf(S.nextTurn)}에게 악마 카드! → ${SHAPES[shape].name}`);
-      return startSpin(ctx, now, shape);
-    }
-    if (type === 'pass' && S.phase === 'devil' && pid === S.picker) return startSpin(ctx, now, null);
-    if (type === 'gust' && S.phase === 'fall' && ctx.sim) {
-      const ghost = S.roster.some(p => p.id === pid) && !S.alive.includes(pid);
-      const piece = ctx.sim.bodies.get(S.pieceId);
-      if (!ghost || !piece || S.gusted?.[pid] || now - S.dropAt > 2500) return false;
-      const dir = data.dir < 0 ? -1 : 1;
-      piece.applyLinearImpulse(new planck.Vec2(dir * GUST * piece.getMass() * 0.25, 0), piece.getWorldCenter(), true);
-      S.gusted = { ...(S.gusted || {}), [pid]: true };
-      S.gusts = [...(S.gusts || []), { by: pid, dir, at: now }].slice(-10);
-      return true;
-    }
+    if (type === 'devil' && Number.isInteger(data.i)) return useCard(ctx, pid, data.i, now);
+    if (type === 'pass' && S.phase === 'decide' && pid === S.turn) return startTurn(ctx, now);
     return false;
   },
 
@@ -418,39 +436,65 @@ export default {
       ctx.simAt = now;
     }
     switch (S.phase) {
-      case 'intro':
+      case 'intro': {
         if (now < S.phaseEndsAt) return false;
-        S.nextTurn = newBag(S, null);
-        S.picker = null;
-        return startSpin(ctx, now, null);
-      case 'devil':
-        if (now < S.phaseEndsAt && ctx.isOnline(S.picker)) return false;
-        return startSpin(ctx, now, null);
+        const first = newBag(S, null);
+        S.next = { id: first, kind: 'random', lap: S.lap, at: now };
+        return startTurn(ctx, now);
+      }
       case 'spin':
-        return now >= S.spinEnd && startAim(ctx, now);
+        if (now < S.spinEnd) return false;
+        S.phase = 'aim';
+        S.phaseEndsAt = now + aimTime(S.turnLap);
+        return true;
       case 'aim':
         if (now < S.phaseEndsAt && ctx.isOnline(S.turn)) return false;
         return drop(ctx, now, S.aim);
       case 'fall':
         return stepFall(ctx, now);
+      case 'decide':
+        if (now < S.phaseEndsAt && ctx.isOnline(S.turn)) return false;
+        return startTurn(ctx, now);
+      case 'result':
+        return now >= S.phaseEndsAt && startTurn(ctx, now);
       default:
         return false;
     }
   },
 
-  // 봇: 탑 꼭대기 근처를 노려 천천히 조준하고 떨군다. 악마 카드는 탑이 높을수록·막판일수록 잘 씀. 유령이면 가끔 입김.
+  // 봇: 내 차례 동안 악마 카드를 쓸지 정하고(탑이 높을수록·막판일수록·죽었을 때 잘 씀),
+  // 탑 꼭대기 근처를 노려 천천히 조준하고 떨군다.
   bot(ctx, id, mem) {
     const S = ctx.state;
     const now = ctx.now();
+    if (canUseCard(S, id)) {
+      const key = `${S.turn}:${(S.devilOptions || []).join()}`;
+      if (mem.cardKey !== key) {
+        mem.cardKey = key;
+        const chance = 0.25 + Math.min(0.35, (S.top || 0) * 0.05) + (S.alive.length <= 2 ? 0.3 : 0)
+          + (S.alive.includes(id) ? 0 : 0.4);
+        mem.useCard = Math.random() < chance;
+        mem.cardAt = now + 2000 + Math.random() * 6000;
+        mem.passAt = 0;
+      }
+      if (mem.useCard && (now >= mem.cardAt || S.phase === 'decide')) {
+        mem.useCard = false;
+        return { type: 'devil', data: { i: Math.floor(Math.random() * 3) }, say: Math.random() < 0.5 };
+      }
+      if (S.phase === 'decide' && !mem.useCard) {
+        mem.passAt ||= now + 800 + Math.random() * 1200;
+        return now >= mem.passAt ? { type: 'pass' } : null;
+      }
+    }
     if (S.phase === 'aim' && S.turn === id) {
       const key = `${S.turnsPlayed}`;
       if (mem.key !== key) {
         const topBody = [...(S.bodies || [])].sort((a, b) => b.y - a.y)[0];
         mem.key = key;
         mem.x = 0;
-        mem.tx = Math.max(-2, Math.min(2, (topBody?.x || 0) + (Math.random() - 0.5) * 0.9));
+        mem.tx = Math.max(-2.4, Math.min(2.4, (topBody?.x || 0) + (Math.random() - 0.5) * 0.9));
         mem.ta = isDevil(S.piece) && Math.random() < 0.5 ? ROT_STEP * pick([-1, 1]) : 0;
-        mem.dropAt = now + 1500 + Math.random() * 2500;
+        mem.dropAt = now + 2000 + Math.random() * 3500;
         mem.sent = 0;
       }
       if (now >= mem.dropAt) return { type: 'drop', data: { x: mem.tx, a: mem.ta }, say: Math.random() < 0.1 };
@@ -459,18 +503,6 @@ export default {
         mem.x += Math.sign(mem.tx - mem.x) * Math.min(0.5, Math.abs(mem.tx - mem.x));
         return { type: 'aim', data: { x: mem.x, a: mem.ta } };
       }
-      return null;
-    }
-    if (S.phase === 'devil' && S.picker === id) {
-      mem.decideAt ||= now + 800 + Math.random() * 1500;
-      if (now < mem.decideAt) return null;
-      mem.decideAt = 0;
-      const chance = 0.25 + Math.min(0.4, (S.top || 0) * 0.06) + (S.alive.length <= 2 ? 0.3 : 0);
-      if (Math.random() < chance) return { type: 'devil', data: { i: Math.floor(Math.random() * 3) }, say: Math.random() < 0.5 };
-      return { type: 'pass' };
-    }
-    if (S.phase === 'fall' && !S.alive.includes(id) && !S.gusted?.[id] && now - S.dropAt > 250 && Math.random() < 0.04) {
-      return { type: 'gust', data: { dir: pick([-1, 1]) } };
     }
     return null;
   },
@@ -479,14 +511,17 @@ export default {
     const me = api.me;
     const top = h('div', { class: 'tw-top' });
     const bodiesG = svg('g');
-    const previewG = svg('g', { class: 'tw-preview' });
+    const guide = svg('line', { class: 'tw-guide', x1: 0, y1: 0, x2: 0, y2: 0 });
+    const previewPiece = svg('g');
+    const previewG = svg('g', { class: 'tw-preview' }, guide, previewPiece);
     const platform = svg('g', {},
       svg('rect', { x: -PLATFORM_W / 2, y: -PLATFORM_H, width: PLATFORM_W, height: PLATFORM_H, rx: 0.08, fill: '#34495e', stroke: '#2c3e50', 'stroke-width': 0.08 }),
       svg('rect', { x: -0.35, y: -9, width: 0.7, height: 9 - PLATFORM_H, fill: '#34495e' }));
     const stage = svg('svg', { class: 'tw-svg', preserveAspectRatio: 'xMidYMax meet' },
       svg('g', { transform: 'scale(1,-1)' }, platform, bodiesG, previewG));
     const fx = h('div', { class: 'tw-fx' });
-    const stageWrap = h('div', { class: 'tw-stage' }, stage, fx);
+    const nextBox = h('div', { class: 'tw-next', hidden: true });
+    const stageWrap = h('div', { class: 'tw-stage' }, stage, nextBox, fx);
     const panel = h('div', { class: 'tw-panel' });
     const box = h('div', { class: 'tw-box' }, top, stageWrap, panel);
     const side = h('aside', { class: 'side' });
@@ -497,10 +532,9 @@ export default {
     const shown = new Map(); // id → { el, from, to, t }
     let camTop = 9;
     let panelKey = '';
-    let nav = null;
+    let nextKey = '';
     let reelTimer = 0;
     let seenFail = null;
-    let seenGust = null;
     let seenCard = null;
     let seenLap = null;
     // 내 차례일 때 조준 (내 화면에서 바로 움직이고, 방장에게는 가끔 알려 준다)
@@ -509,32 +543,36 @@ export default {
     const who = id => S.roster.find(p => p.id === id) || { id, name: '?' };
     const colorOf = id => who(id).color;
     const myTurn = () => S?.phase === 'aim' && S.turn === me;
-    const isGhost = () => S.roster.some(p => p.id === me) && !S.alive.includes(me);
-    const label = s => `${isDevil(s) ? '😈 ' : ''}${SHAPES[s]?.name || '?'}`;
+    const label = s => `${isDevil(s) ? '😈 ' : ''}${shapeOf(s).name}`;
+    const nextLabel = () => (S.next?.kind === 'devil' ? `😈 ${shapeOf(S.next.piece).name}` : '❓ 랜덤');
 
     function onKey(e) {
       if (isTyping(e) || !S) return;
       const down = e.type === 'keydown';
       const c = e.code;
-      // 악마 카드 고민 중: 스페이스 = 안 씀(룰렛). 숫자키는 keyNav가 받는다.
-      if (down && c === 'Space' && S.phase === 'devil' && S.picker === me) {
-        e.preventDefault();
-        if (!e.repeat) api.send('pass');
-        return;
+      // 악마 카드: 내 차례 동안 숫자키 1·2·3, 다 놓은 뒤 고민 중엔 스페이스 = 안 씀
+      if (down && !e.repeat && canUseCard(S, me)) {
+        const d = digitOf(e);
+        if (d >= 1 && d <= 3) {
+          e.preventDefault();
+          api.send('devil', { i: d - 1 });
+          return;
+        }
+        if (c === 'Space' && S.phase === 'decide') {
+          e.preventDefault();
+          api.send('pass');
+          return;
+        }
       }
       if (c === 'ArrowLeft' || c === 'KeyA' || c === 'ArrowRight' || c === 'KeyD') {
+        if (!myTurn()) return;
         const left = c === 'ArrowLeft' || c === 'KeyA';
-        if (myTurn()) {
-          e.preventDefault();
-          held[left ? 'left' : 'right'] = down;
-          // 톡 치면 조금(미세 조정), 꾹 누르면 계속 이동
-          if (down && !e.repeat && !aim.dropped) {
-            aim.x = Math.max(-X_LIMIT, Math.min(X_LIMIT, aim.x + (left ? -0.25 : 0.25)));
-            sendAim();
-          }
-        } else if (down && !e.repeat && S.phase === 'fall' && isGhost() && !S.gusted?.[me]) {
-          e.preventDefault();
-          api.send('gust', { dir: left ? -1 : 1 });
+        e.preventDefault();
+        held[left ? 'left' : 'right'] = down;
+        // 톡 치면 조금(미세 조정), 꾹 누르면 계속 이동
+        if (down && !e.repeat && !aim.dropped) {
+          aim.x = Math.max(-X_LIMIT, Math.min(X_LIMIT, aim.x + (left ? -0.25 : 0.25)));
+          sendAim();
         }
         return;
       }
@@ -608,23 +646,23 @@ export default {
         const p = current(it, now);
         it.el.setAttribute('transform', `translate(${p.x} ${p.y}) rotate(${(p.a * 180) / Math.PI})`);
       }
-      // 조준 중인 블록 미리보기
+      // 조준 중인 블록 미리보기 (떨어질 높이 그대로, 점선은 돌려도 똑바로 아래로)
       if (S.phase === 'aim') {
         const p = myTurn() ? aim : S.aim || { x: 0, a: 0 };
-        const y = spawnY(S);
+        const y = spawnY(S, S.piece, p.a);
         if (previewG.dataset.key !== `${S.turnsPlayed}:${S.piece}`) {
           previewG.dataset.key = `${S.turnsPlayed}:${S.piece}`;
-          previewG.replaceChildren(
-            svg('line', { class: 'tw-guide', x1: 0, y1: 0, x2: 0, y2: -y - 1 }),
-            shapeGroup(S.piece, colorOf(S.turn)));
+          previewPiece.replaceChildren(shapeGroup(S.piece, colorOf(S.turn)));
         }
         previewG.style.display = '';
-        previewG.setAttribute('transform', `translate(${p.x} ${y}) rotate(${(p.a * 180) / Math.PI})`);
+        previewG.setAttribute('transform', `translate(${p.x} ${y})`);
+        guide.setAttribute('y2', -y - 1);
+        previewPiece.setAttribute('transform', `rotate(${(p.a * 180) / Math.PI})`);
       } else {
         previewG.style.display = 'none';
       }
-      // 카메라: 탑이 높아지면 위로
-      const want = Math.max(9, spawnY(S) + 2.5);
+      // 카메라: 탑이 높아지면 위로 (세워 든 긴 블록도 다 보이게)
+      const want = Math.max(9, (S.top || 0) + 5.5);
       camTop += (want - camTop) * 0.08;
       stage.setAttribute('viewBox', `-7 ${-camTop} 14 ${camTop + 3}`);
     }
@@ -646,14 +684,12 @@ export default {
     }
 
     function checkEvents() {
-      if (seenLap !== null && S.lap > seenLap && S.lap > 1) flash(`🎲 ${S.lap}바퀴! 순서 다시 섞음`);
-      seenLap = S.lap || 0;
+      if (seenLap !== null && S.turnLap > seenLap && S.turnLap > 1) flash(`🎲 ${S.turnLap}바퀴! 순서 다시 섞음`);
+      seenLap = S.turnLap || 0;
       const fails = S.fails || [];
-      const gusts = S.gusts || [];
       const cards = S.cardUses || [];
       if (seenFail === null) {
         seenFail = Math.max(0, ...fails.map(x => x.at));
-        seenGust = Math.max(0, ...gusts.map(x => x.at));
         seenCard = Math.max(0, ...cards.map(x => x.at));
         return;
       }
@@ -663,45 +699,79 @@ export default {
         flash(`💥 와르르! ${who(f.id).name} 탈락`, 'bad');
         shake();
       }
-      for (const g of gusts) {
-        if (g.at <= seenGust) continue;
-        seenGust = g.at;
-        flash(`👻 ${who(g.by).name}의 입김 ${g.dir < 0 ? '←' : '→'}`);
-      }
       for (const u of cards) {
         if (u.at <= seenCard) continue;
         seenCard = u.at;
-        flash(`😈 ${who(u.by).name}의 악마 카드 → ${who(u.to).name}`, 'bad');
+        flash(`😈 ${who(u.by).name}의 바꿔치기 → ${who(u.to).name}`, 'bad');
         shake();
       }
     }
 
+    // NEXT: 다음 사람. 블록은 '?' (차례 때 룰렛) — 악마 카드로 정해졌으면 그 블록이 빨갛게 보인다.
+    function renderNext() {
+      const n = S.next;
+      const show = !!n && ['spin', 'aim', 'fall', 'decide', 'result'].includes(S.phase);
+      nextBox.hidden = !show;
+      if (!show) return;
+      const key = `${n.id}:${n.at}:${n.kind}`;
+      if (key === nextKey) return;
+      nextKey = key;
+      const devil = n.kind === 'devil';
+      nextBox.classList.toggle('devil', devil);
+      nextBox.replaceChildren(...[
+        h('div', { class: 'tw-next-label' }, n.id === me ? 'NEXT · 나!' : 'NEXT'),
+        h('div', { class: 'name-chip' }, avatar(who(n.id)), who(n.id).name),
+        devil ? h('div', { class: 'tw-next-reel' }, shapeIcon(n.piece, colorOf(n.id))) : h('div', { class: 'tw-mystery' }, '?'),
+        h('div', { class: 'tw-next-piece' }, devil ? label(n.piece) : '🎰 랜덤'),
+        devil ? h('div', { class: 'tw-next-by' }, `😈 ${josa(who(n.by).name, '이', '가')} 정함`) : null,
+      ].filter(Boolean));
+    }
+
+    // 차례 시작: 룰렛이 촤라락 돌다가 멈춘다 (악마 카드로 정해졌으면 바로 공개)
+    function runReel(reel, name) {
+      clearTimeout(reelTimer);
+      const final = S.piece;
+      const end = S.spinEnd;
+      const color = colorOf(S.turn);
+      const land = () => {
+        reel.replaceChildren(shapeIcon(final, color));
+        reel.classList.add('land');
+        name.textContent = `${label(final)}!`;
+      };
+      if (S.spinKind === 'devil') return land();
+      const step = () => {
+        const left = end - api.now();
+        if (left <= 0) return land();
+        reel.replaceChildren(shapeIcon(pick(ROULETTE), color));
+        const k = Math.min(1, Math.max(0, 1 - left / SPIN_TIME));
+        reelTimer = setTimeout(step, 45 + 240 * k * k);
+      };
+      step();
+    }
+
     function renderTop() {
-      const bits = [h('span', {}, S.lap ? `${S.lap}바퀴` : '곧 시작'), h('span', {}, `높이 ${(S.top || 0).toFixed(1)}m`)];
-      if (S.phase === 'aim') bits.push(countdown(S.phaseEndsAt, aimTime(S.lap)));
-      if (S.phase === 'devil') bits.push(countdown(S.phaseEndsAt, DEVIL_TIME));
+      const bits = [h('span', {}, S.turnLap ? `${S.turnLap}바퀴` : '곧 시작'), h('span', {}, `높이 ${(S.top || 0).toFixed(1)}m`)];
+      if (S.phase === 'aim') bits.push(countdown(S.phaseEndsAt, aimTime(S.turnLap)));
+      if (S.phase === 'spin') bits.push(h('span', {}, '🎰 룰렛!'));
+      if (S.phase === 'decide') bits.push(countdown(S.phaseEndsAt, DECIDE_TIME));
       top.replaceChildren(...bits);
     }
 
-    // 룰렛: 블록 그림이 촤라락 바뀌다가 점점 느려지며 멈춘다
-    function runReel(reel, name) {
-      const pool = S.spinKind === 'devil' ? DEVILS : ROULETTE;
-      const end = S.spinEnd;
-      const final = S.piece;
-      const color = colorOf(S.nextTurn);
-      const step = () => {
-        const now = api.now();
-        if (now >= end) {
-          reel.replaceChildren(shapeIcon(final, color));
-          reel.classList.add('land');
-          name.textContent = `${label(final)}!`;
-          return;
-        }
-        reel.replaceChildren(shapeIcon(pick(pool), color));
-        const k = Math.min(1, Math.max(0, 1 - (end - now) / SPIN_TIME));
-        reelTimer = setTimeout(step, 45 + 260 * k * k);
-      };
-      step();
+    // 악마 카드 버튼들 (작게: 내 차례 중, 크게: 다 놓고 고민할 때)
+    function devilButtons(big) {
+      const next = who(S.next.id);
+      return (S.devilOptions || []).map((s, i) => h('button', {
+        class: big ? 'tw-option devil' : 'tw-devil-btn', tabindex: '-1',
+        onClick: () => api.send('devil', { i }),
+      }, h('kbd', { class: big ? 'num' : '' }, String(i + 1)), shapeIcon(s, next.color), h('b', {}, SHAPES[s].name)));
+    }
+
+    function devilStrip() {
+      if (!canUseCard(S, me)) return null;
+      return h('div', { class: 'tw-devil' },
+        h('b', {}, `😈 악마 카드: ${who(S.next.id).name}의 다음 블록(?)을 내가 정하기`),
+        devilButtons(false),
+        h('span', { class: 'muted small' }, '지금 안 써도 블록 놓은 뒤에 10초 더 고민할 수 있어요'));
     }
 
     function panelView() {
@@ -710,70 +780,69 @@ export default {
           h('div', { class: 'bt-act-title' }, '🧱 독박 타워'),
           h('ul', { class: 'rules big' },
             h('li', {}, '돌아가며 받침대 위에 블록을 하나씩 쌓아요. 블록은 🎰 룰렛으로 랜덤!'),
-            h('li', {}, `😈 악마 카드 ${DEVIL_CARDS}장: 내 차례가 끝나면 다음 사람에게 악마 블록을 줄 수 있어요 (그걸로 죽으면 내 킬)`),
+            h('li', {}, '다음 사람 블록은 ? — 그 사람 차례가 와야 룰렛으로 정해져요'),
+            h('li', {}, `😈 악마 카드 ${DEVIL_CARDS}장: 내 차례 동안 숫자키 1·2·3으로 다음 사람 블록을 내가 고른 악마 블록으로 정해 버리기 (그걸로 죽으면 내 킬)`),
             h('li', {}, '← → 이동 · ↑ ↓ 회전 · 스페이스 떨구기'),
-            h('li', {}, '블록이 하나라도 떨어지면 놓은 사람 탈락'),
-            h('li', {}, '순서는 바퀴마다 랜덤 · 바퀴마다 시간이 줄어요 · 탈락하면 👻 ← → 입김')),
+            h('li', {}, '블록이 하나라도 떨어지면 놓은 사람 탈락 · 순서는 바퀴마다 랜덤')),
           countdown(S.phaseEndsAt, INTRO_TIME));
       }
       if (S.phase === 'final') {
         const winner = who(S.placement?.[0]);
         return h('div', { class: 'bt-act' }, h('div', { class: 'bt-act-title' }, `👑 ${winner.name} 마지막 건축가!`), podium(S.roster, S.standings, me));
       }
-      if (S.phase === 'devil') {
-        const next = who(S.nextTurn);
-        if (S.picker === me) {
-          const btns = (S.options || []).map((s, i) => h('button', {
-            class: 'tw-option devil', tabindex: '-1',
-            onClick: () => { btns.forEach(b => { b.disabled = true; }); api.send('devil', { i }); },
-          }, shapeIcon(s, next.color), h('b', {}, SHAPES[s].name)));
-          nav = keyNav(btns, { space: false });
-          return h('div', { class: 'bt-act' },
-            h('div', { class: 'bt-act-title hot' }, `😈 ${next.name}한테 악마 카드 쓸래?`),
-            h('div', { class: 'tw-options' }, btns),
-            h('p', { class: 'muted' }, `숫자키 1·2·3 = 이걸로 저주 · 스페이스 = 안 씀 (룰렛) · 남은 카드 ${S.cards?.[me] || 0}장`));
-        }
-        return h('div', { class: 'bt-act' },
-          h('div', { class: 'bt-act-title' }, `😈 ${josa(who(S.picker).name, '이', '가')} 악마 카드 고민 중…`),
-          h('p', {}, S.nextTurn === me ? '😰 다음은 내 차례… 제발 쓰지 마' : `다음: ${next.name}`));
-      }
+      const from = S.chooser ? `${who(S.chooser).name}의 😈 ` : '🎰 ';
       if (S.phase === 'spin') {
         const reel = h('div', { class: `tw-reel${S.spinKind === 'devil' ? ' devil' : ''}` });
         const name = h('div', { class: 'tw-reel-name' });
-        const head = S.spinKind === 'devil' ? `😈 ${who(S.chooser).name}의 악마 카드!` : '🎰 룰렛!';
         queueMicrotask(() => runReel(reel, name));
+        const whose = S.turn === me ? '내' : `${who(S.turn).name}의`;
         return h('div', { class: 'bt-act' },
-          h('div', { class: `bt-act-title${S.spinKind === 'devil' ? ' hot' : ''}` }, head),
-          reel, name,
-          h('p', { class: 'muted' }, S.nextTurn === me ? '내가 놓을 블록!' : `${josa(who(S.nextTurn).name, '이', '가')} 놓을 블록`));
+          h('div', { class: `bt-act-title${S.spinKind === 'devil' ? ' hot' : ''}` },
+            S.spinKind === 'devil' ? `😈 ${josa(who(S.chooser).name, '이', '가')} 정한 ${whose} 블록!` : `🎰 ${whose} 블록은…`),
+          reel, name, S.turn === me ? devilStrip() : null);
       }
       if (S.phase === 'aim') {
-        const from = S.chooser ? `${who(S.chooser).name}의 악마 카드: ` : '🎰 ';
         if (S.turn === me) {
-          if (aim.dropped) return h('div', { class: 'bt-act' }, h('div', { class: 'bt-act-title' }, '떨궜다! 🙏'));
+          if (aim.dropped) return h('div', { class: 'bt-act' }, h('div', { class: 'bt-act-title' }, '떨궜다! 🙏'), devilStrip());
           return h('div', { class: 'bt-act' },
-            h('div', { class: 'bt-act-title hot' }, `내 차례! ${from}${label(S.piece)}`),
-            h('p', {}, '← → 이동 · ↑ ↓ 회전 · 스페이스 떨구기'));
+            h('div', { class: 'bt-act-title hot' }, `내 차례! ${from}${shapeOf(S.piece).name}`),
+            h('p', {}, '← → 이동 · ↑ ↓ 회전 · 스페이스 떨구기'),
+            devilStrip());
         }
         return h('div', { class: 'bt-act' },
           h('div', { class: 'bt-act-title' }, `${who(S.turn).name} 차례`),
-          h('p', {}, `${from}${label(S.piece)} 놓는 중…`));
+          h('p', {}, `${from}${shapeOf(S.piece).name} 놓는 중…`),
+          S.next?.id === me ? h('p', { class: 'muted' }, S.next.kind === 'devil' ? `😰 다음은 나… ${nextLabel()} 확정` : '😰 다음은 나! 내 블록은 ?') : null);
       }
       if (S.phase === 'fall') {
-        if (isGhost() && !S.gusted?.[me]) {
-          return h('div', { class: 'bt-act' }, h('div', { class: 'bt-act-title' }, '👻 지금이야!'), h('p', {}, '← 또는 → 로 입김 한 번 (떨어지는 블록을 밀어요)'));
+        return h('div', { class: 'bt-act' }, h('div', { class: 'bt-act-title' }, '떨어지는 중… 😬'), S.turn === me ? devilStrip() : null);
+      }
+      if (S.phase === 'decide') {
+        const next = who(S.next.id);
+        if (S.turn === me) {
+          return h('div', { class: 'bt-act' },
+            h('div', { class: 'bt-act-title hot' }, `😈 ${next.name}한테 악마 카드 쓸래?`),
+            h('p', {}, `안 쓰면 ${next.name}의 블록은 🎰 랜덤(?) · 남은 카드 ${S.cards?.[me] || 0}장`),
+            h('div', { class: 'tw-options' }, devilButtons(true)),
+            h('p', { class: 'muted' }, '숫자키 1·2·3 = 이걸로 바꿔치기 · 스페이스 = 안 씀'));
         }
-        return h('div', { class: 'bt-act' }, h('div', { class: 'bt-act-title' }, '떨어지는 중… 😬'));
+        return h('div', { class: 'bt-act' },
+          h('div', { class: 'bt-act-title' }, `😈 ${josa(who(S.turn).name, '이', '가')} 악마 카드 고민 중…`),
+          h('p', {}, S.next.id === me ? '😰 다음은 나… 제발 쓰지 마' : `다음: ${next.name}`));
+      }
+      if (S.phase === 'result') {
+        const r = S.lastResult;
+        return h('div', { class: 'bt-act' },
+          h('div', { class: 'bt-act-title' }, r && !r.ok ? `💥 ${who(r.id).name} 탈락!` : '✅ 버텼다!'),
+          h('p', {}, `다음: ${who(S.next.id).name} · ${nextLabel()}`));
       }
       return h('div');
     }
 
     function renderPanel() {
-      const key = [S.phase, S.turnsPlayed, S.turn, S.picker, S.spinEnd, aim.dropped, S.gusted?.[me] ? 'g' : ''].join('|');
+      const key = [S.phase, S.turnsPlayed, S.turn, S.spinEnd, aim.dropped, S.next?.kind, S.cards?.[me]].join('|');
       if (key === panelKey) return;
       panelKey = key;
-      nav?.destroy();
-      nav = null;
       clearTimeout(reelTimer);
       panel.replaceChildren(panelView());
     }
@@ -783,15 +852,13 @@ export default {
         const by = S.dead?.[id];
         return h('li', {}, h('b', {}, who(id).name), by && by !== '-' ? ` ← ${who(by).name}의 😈` : ' 🎰 룰렛');
       });
-      // 이번 바퀴 순서 (가방): 끝난 사람 / 지금 / 남은 사람 / 탈락. 😈 = 악마 카드 남음
-      const next = S.phase === 'devil' || S.phase === 'spin';
-      const current = next ? S.nextTurn : S.phase === 'aim' || S.phase === 'fall' ? S.turn : null;
+      // 순서 (가방): 끝난 사람 / 지금 / 다음 / 탈락. 😈 = 악마 카드 남음
       const bag = (S.bag || []).map((id, i) => {
         const dead = !S.alive.includes(id);
-        const cls = dead ? 'dead' : id === current ? 'now' : i < (S.bagPos ?? 0) ? 'done' : '';
+        const cls = dead ? 'dead' : id === S.turn ? 'now' : id === S.next?.id ? 'next' : i < (S.bagPos ?? 0) ? 'done' : '';
         return h('li', { class: cls }, avatar(who(id)), h('span', {}, who(id).name),
           (S.cards?.[id] || 0) > 0 ? h('i', { class: 'tw-card', title: '악마 카드 남음' }, '😈') : null,
-          cls === 'now' ? h('em', {}, next ? '다음' : '차례') : cls === 'done' ? h('em', {}, '✓') : null);
+          cls === 'now' ? h('em', {}, '차례') : cls === 'next' ? h('em', {}, '다음') : cls === 'done' ? h('em', {}, '✓') : null);
       });
       side.replaceChildren(...[
         h('h3', {}, S.lap ? `${S.lap}바퀴 순서 · 생존 ${S.alive.length}명` : `생존 ${S.alive.length}명`),
@@ -802,11 +869,11 @@ export default {
         deadList.length ? h('ul', { class: 'rules' }, deadList) : null,
         h('h3', {}, '조작'),
         h('ul', { class: 'rules' },
-          h('li', {}, '← → (A D) 이동'),
+          h('li', {}, '← → (A D) 이동 · 톡 치면 미세 조정'),
           h('li', {}, '↑ ↓ (W S) 15° 회전'),
           h('li', {}, '스페이스 떨구기'),
-          h('li', {}, '😈 악마 카드: 숫자키 1·2·3, 안 쓰면 스페이스'),
-          h('li', {}, '유령: 떨어질 때 ← → 입김')),
+          h('li', {}, '😈 악마 카드: 내 차례 동안 숫자키 1·2·3'),
+          h('li', {}, '다 놓고 고민할 땐 스페이스 = 안 씀')),
       ].filter(Boolean));
     }
 
@@ -824,13 +891,13 @@ export default {
         syncBodies();
         checkEvents();
         renderTop();
+        renderNext();
         renderPanel();
         renderSide();
       },
       unmount() {
         cancelAnimationFrame(raf);
         clearTimeout(reelTimer);
-        nav?.destroy();
         window.removeEventListener('keydown', onKey);
         window.removeEventListener('keyup', onKey);
       },
