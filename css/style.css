@@ -668,6 +668,55 @@ button, input { font: inherit; color: inherit; }
 .bc-list li.dead span { text-decoration: line-through; }
 .bc-list li.dead .avatar { filter: grayscale(1); }
 
+/* ── 독박빼기 ── (SVG 안 글자 크기 px = m) */
+.po { display: grid; grid-template-columns: 1fr 300px; gap: 18px; }
+.po-box {
+  position: relative; overflow: hidden; display: flex; flex-direction: column;
+  background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 4px 0 var(--line);
+  user-select: none; -webkit-user-select: none;
+}
+.po-box.shaking { animation: shake .1s linear 5; }
+.po-top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 12px 18px; font-weight: 800; color: var(--muted-2); border-bottom: 1px solid var(--line); }
+.po-top .countdown { margin-left: auto; width: 220px; }
+.po-hot { color: var(--red); }
+.po-stage { position: relative; background: linear-gradient(#fbf3e1, #efe0c2); }
+.po-svg { display: block; width: 100%; height: min(58vh, 540px); }
+.po-floor { fill: #8d6e63; }
+.po-table { fill: #6d4c41; stroke: #4e342e; stroke-width: .05; }
+.po-table-leg { fill: #5d4037; }
+.po-obj * { stroke: #2c3e50; stroke-width: .045; stroke-linejoin: round; }
+.po-obj.fallen { opacity: .45; }
+.po-obj.locked { opacity: .5; } /* 위가 빈 물건: 못 뺌 */
+.po-preview { opacity: .6; }
+.po-guide { stroke: #2c3e50; stroke-width: .05; stroke-dasharray: .25 .2; opacity: .5; }
+.po-outline * { fill: none; stroke: var(--yellow); stroke-width: .13; opacity: 0; }
+.po-outline.on * { opacity: 1; }
+.po-marker text { font-size: .55px; text-anchor: middle; fill: var(--yellow); stroke: var(--ink); stroke-width: .05px; paint-order: stroke fill; animation: po-bob .45s ease-in-out infinite alternate; }
+@keyframes po-bob { to { transform: translateY(-.15px); } }
+.po-popped { transform-box: fill-box; transform-origin: center; animation: po-pop .6s ease-out forwards; }
+@keyframes po-pop { to { transform: scale(1.7); opacity: 0; } }
+/* 손 떨림 게이지: 빨강·주황·노랑 바탕에 가운데 초록 칸, 바늘이 왔다 갔다 */
+.po-gauge { padding: 12px 18px 0; }
+.po-gauge[hidden] { display: none; }
+.po-track {
+  position: relative; height: 24px; border-radius: 999px;
+  background: linear-gradient(90deg, var(--red), #f39c12 28%, #f1c40f 42%, #f1c40f 58%, #f39c12 72%, var(--red));
+  box-shadow: inset 0 0 0 2px var(--ink);
+}
+.po-green { position: absolute; top: 0; bottom: 0; background: var(--green); box-shadow: inset 0 0 0 2px var(--green-ink); }
+.po-needle { position: absolute; top: -5px; bottom: -5px; width: 6px; margin-left: -3px; background: var(--ink); border-radius: 3px; box-shadow: 0 0 0 2px #fff; }
+/* 😈 손 떨림 저주: 게이지 테두리가 빨갛게 번쩍 */
+.po-gauge.cursed .po-track { animation: po-curse .5s ease-in-out infinite alternate; }
+@keyframes po-curse { from { box-shadow: inset 0 0 0 2px var(--ink), 0 0 0 2px var(--red); } to { box-shadow: inset 0 0 0 2px var(--ink), 0 0 12px 5px var(--red); } }
+.po-cursed-note { color: var(--red); font-weight: 800; }
+.po-fx { position: absolute; inset: 0; pointer-events: none; display: grid; justify-items: center; align-content: start; gap: 6px; padding-top: 14px; }
+.po-flash {
+  white-space: nowrap; background: var(--ink); color: #fff; padding: 8px 16px; border-radius: 999px; font-weight: 800; font-size: 18px;
+  animation: now-pop .3s cubic-bezier(.2, 1.6, .4, 1);
+}
+.po-flash.bad { background: var(--red); font-family: var(--display); font-size: 28px; padding: 10px 22px; }
+.po-panel { padding: 18px; min-height: 150px; display: grid; place-items: center; text-align: center; }
+
 /* ── 알림 ── */
 #toast {
   position: fixed; left: 50%; top: 18px; z-index: 50; max-width: calc(100% - 32px);
@@ -781,7 +830,7 @@ kbd.num { position: absolute; top: 10px; left: 10px; margin: 0; z-index: 1; back
   .layout { padding-bottom: 150px; }
   .layout { grid-template-columns: 1fr; }
   .sidebar { position: static; height: auto; }
-  .rx, .lr, .tc, .bt, .tw, .bc { grid-template-columns: 1fr; }
+  .rx, .lr, .tc, .bt, .tw, .bc, .po { grid-template-columns: 1fr; }
   .side { position: static; max-height: none; }
   .main { padding: 20px 16px 40px; }
   .shell-head { flex-wrap: wrap; }

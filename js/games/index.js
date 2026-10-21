@@ -5,8 +5,9 @@ import tower from './tower.js';
 import reaction from './reaction.js';
 import liar from './liar.js';
 import bumper from './bumper.js';
+import pullout from './pullout.js';
 
-export const GAMES = [timer, bomb, tower, bumper, reaction, liar];
+export const GAMES = [timer, bomb, tower, pullout, bumper, reaction, liar];
 
 export const COMING = [];
 
