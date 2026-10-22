@@ -8,18 +8,26 @@ const SCALE = 0.4;            // 스케치 1px = 0.4m
 const SAMPLE = 1.5;           // 가운데 선 점 간격 (m)
 const WINDOW = 24;            // 내 위치를 찾을 때 지금 자리 앞뒤로 볼 점 수 (8자 교차에서 다른 층을 잡지 않게)
 
-// 조작감: 처음부터 세게 밀고, 누르는 방향과 옆으로 미끄러지는 속도는 빨리 줄여서 코너를 돌 수 있게
+// 조작감: 처음부터 세게 민다. 차 몸통은 누른 방향으로 돌고, 타이어는 몸통 옆으로 미끄러지는 걸 줄인다.
+// 빠를수록 몸통이 천천히 돌고 타이어 힘에 한계가 있어서 바깥으로 밀린다(언더스티어).
+// 너무 급하게 꺾어서 옆으로 크게 미끄러지면 꼬리가 빠져서(드리프트) 몸통이 더 돌아간다(오버스티어)
 export const PHYS = {
   thrust: 34,     // 가속 (m/s²) — 범퍼카는 12에서 시작해 3초에 걸쳐 40
   max: 21,        // 최고 속도 (m/s) — 범퍼카 13
   drag: 0.35,     // 얼음 마찰: 손을 떼도 1초에 3할만 줄어든다 (브레이크는 반대 방향)
-  grip: 5,        // 누르는 방향으로 꺾이는 힘 (옆 미끄러짐이 초당 줄어드는 비율)
+  grip: 6,        // 몸통 옆으로 미끄러지는 속도가 초당 줄어드는 비율
+  gripMax: 50,    // 타이어가 옆으로 버티는 힘의 한계 (m/s²)
+  yaw: [11, 5],   // 몸통이 도는 최대 속도 (rad/s): 섰을 때 → 최고 속도일 때
+  slipOn: 9,      // 옆으로 이만큼(m/s) 미끄러지면 꼬리가 빠짐
+  slipOff: 2.5,   // 이만큼 줄면 다시 붙음
+  slide: 0.6,     // 꼬리가 빠진 동안 타이어 힘 배율
+  tail: 3.5,      // 꼬리가 빠진 동안 몸통이 더 돌아가는 힘
   boost: 29,      // 부스트 발판 속도
   jumpMin: 12,    // 이보다 느리면 점프대에서 못 건넘
   splash: 1200,   // 물에 빠지면 이만큼 뒤 다시 출발
   wind: 3,        // 좁은 다리 옆바람 (m/s²): 다리 오른쪽으로 민다
 };
-const SURF = {
+export const SURF = {
   ice: { max: 1, grip: 1, drag: 1 },
   snow: { max: 0.8, grip: 1.8, drag: 2 },  // 눈길: 안 미끄럽지만 느림
   oil: { max: 1, grip: 0.15, drag: 0.3 },  // 기름: 거의 안 꺾임
@@ -252,7 +260,7 @@ export function respawnPose(T, fall) {
 
 export function newCar(T) {
   const p = pointAt(T.main, T.start);
-  return { x: p.x, y: p.y, vx: 0, vy: 0, path: 'main', seg: p.i, s: T.start, ms: T.start, lat: 0, air: 0, sp: 0, oil: 0, hx: p.tx, hy: p.ty };
+  return { x: p.x, y: p.y, vx: 0, vy: 0, path: 'main', seg: p.i, s: T.start, ms: T.start, lat: 0, air: 0, sp: 0, oil: 0, dr: 0, hx: p.tx, hy: p.ty };
 }
 
 // 한 걸음 (dt 초, t 서버 시각 ms). input = { x, y } 방향 (-1~1). 일어난 일을 돌려준다
@@ -261,7 +269,7 @@ export function stepCar(T, car, input, dt, t) {
   if (car.sp) {
     if (t < car.sp) return ev;
     const r = respawnPose(T, car.fall || car);
-    Object.assign(car, { x: r.x, y: r.y, vx: 0, vy: 0, path: r.path, seg: r.seg, sp: 0, air: 0, hx: r.tx, hy: r.ty });
+    Object.assign(car, { x: r.x, y: r.y, vx: 0, vy: 0, path: r.path, seg: r.seg, sp: 0, air: 0, dr: 0, hx: r.tx, hy: r.ty });
     const at = locate(T, car, car.x, car.y);
     if (at) Object.assign(car, { s: at.s, ms: at.ms, lat: at.lat });
     ev.push('respawn');
@@ -281,29 +289,7 @@ export function stepCar(T, car, input, dt, t) {
     return ev;
   }
   const here = locate(T, car, car.x, car.y) || { p: T.main.pts[car.seg] || T.main.pts[0], lat: 0, s: car.s, ms: car.ms, path: car.path, seg: car.seg };
-  const surf = SURF[t < car.oil ? 'oil' : here.p.surface] || SURF.ice;
-  const max = PHYS.max * surf.max;
-  let ix = input?.x || 0;
-  let iy = input?.y || 0;
-  const il = Math.hypot(ix, iy);
-  if (il > 0) {
-    ix /= il;
-    iy /= il;
-    const speed = Math.hypot(car.vx, car.vy);
-    // 최고 속도를 넘으면 그쪽으로는 더 못 밀어 준다 (부스트로 빨라진 건 천천히 줄어듦)
-    const along = speed > 0 ? (car.vx * ix + car.vy * iy) / speed : 0;
-    const push = speed >= max && along > 0 ? 0 : PHYS.thrust;
-    car.vx += ix * push * dt;
-    car.vy += iy * push * dt;
-    // 누르는 방향과 옆으로 미끄러지는 속도를 줄인다 (= 꺾임)
-    const dot = car.vx * ix + car.vy * iy;
-    const k = Math.min(1, PHYS.grip * surf.grip * dt);
-    car.vx -= (car.vx - dot * ix) * k;
-    car.vy -= (car.vy - dot * iy) * k;
-  }
-  const drag = PHYS.drag * surf.drag * dt + (Math.hypot(car.vx, car.vy) > max ? 1.2 * dt : 0);
-  car.vx *= 1 - Math.min(1, drag);
-  car.vy *= 1 - Math.min(1, drag);
+  drive(car, input, SURF[t < car.oil ? 'oil' : here.p.surface] || SURF.ice, dt);
   // 좁은 다리 옆바람
   if (here.path === 'branch') {
     car.vx += -here.p.ty * PHYS.wind * dt;
@@ -312,11 +298,6 @@ export function stepCar(T, car, input, dt, t) {
   const prevMs = car.ms;
   car.x += car.vx * dt;
   car.y += car.vy * dt;
-  const sp = Math.hypot(car.vx, car.vy);
-  if (sp > 0.5) {
-    car.hx = car.vx / sp;
-    car.hy = car.vy / sp;
-  }
   const at = locate(T, car, car.x, car.y);
   if (!at) return splash(car, here, t, ev);
   Object.assign(car, { path: at.path, seg: at.seg, s: at.s, ms: at.ms, lat: at.lat });
@@ -365,6 +346,70 @@ export function stepCar(T, car, input, dt, t) {
   for (const o of T.oil) if ((car.x - o.x) ** 2 + (car.y - o.y) ** 2 < o.r * o.r) car.oil = t + 800;
   for (const g of T.gates) if (gateHit(g, car, t)) ev.push('gate');
   return ev;
+}
+
+// 조작·타이어·마찰 (길과 상관없는 부분). surf = 노면
+export function drive(car, input, surf, dt) {
+  const max = PHYS.max * surf.max;
+  let ix = input?.x || 0;
+  let iy = input?.y || 0;
+  const il = Math.hypot(ix, iy);
+  const speed = Math.hypot(car.vx, car.vy);
+  const yaw = PHYS.yaw[0] + (PHYS.yaw[1] - PHYS.yaw[0]) * Math.min(1, speed / PHYS.max);
+  if (il > 0) {
+    ix /= il;
+    iy /= il;
+    const along = speed > 0 ? (car.vx * ix + car.vy * iy) / speed : 1;
+    if (speed > 3 && along < -0.7) {
+      // 달리는 반대쪽을 누르면 브레이크 (몸통은 그대로)
+      car.vx += ix * PHYS.thrust * dt;
+      car.vy += iy * PHYS.thrust * dt;
+    } else {
+      turn(car, ix, iy, yaw, dt);
+      // 몸통 방향으로 민다. 최고 속도를 넘으면 더 못 밀어 준다 (부스트로 빨라진 건 천천히 줄어듦)
+      const push = speed >= max && car.vx * car.hx + car.vy * car.hy > 0 ? 0 : PHYS.thrust;
+      car.vx += car.hx * push * dt;
+      car.vy += car.hy * push * dt;
+    }
+    // 꼬리가 빠졌으면 몸통이 미끄러지는 반대쪽으로 더 돈다
+    if (car.dr && speed > 5) {
+      const fwd = (car.vx * car.hx + car.vy * car.hy) / speed;
+      const side = (car.vx * car.hy - car.vy * car.hx) / speed; // 몸통이 속도보다 오른쪽(+)으로 돌아가 있음
+      if (fwd > 0) rotate(car, Math.sign(side) * PHYS.tail * Math.min(1, (Math.abs(side) * speed) / 10) * dt);
+    }
+    // 타이어: 몸통 옆으로 미끄러지는 속도를 줄인다. 한 번에 줄일 수 있는 양엔 한계가 있다
+    const nx = -car.hy;
+    const ny = car.hx;
+    const lat = car.vx * nx + car.vy * ny;
+    const g = surf.grip * (car.dr ? PHYS.slide : 1);
+    const cut = Math.sign(lat) * Math.min(Math.abs(lat) * Math.min(1, PHYS.grip * g * dt), PHYS.gripMax * g * dt);
+    car.vx -= nx * cut;
+    car.vy -= ny * cut;
+    if (Math.abs(lat) > PHYS.slipOn && speed > 6) car.dr = 1;
+    else if (Math.abs(lat) < PHYS.slipOff) car.dr = 0;
+  } else {
+    // 손을 떼면 미끄러지는 대로 몸통이 따라 돈다
+    if (speed > 0.5) turn(car, car.vx / speed, car.vy / speed, yaw * 0.5, dt);
+    car.dr = 0;
+  }
+  const drag = PHYS.drag * surf.drag * dt + (Math.hypot(car.vx, car.vy) > max ? 1.2 * dt : 0);
+  car.vx *= 1 - Math.min(1, drag);
+  car.vy *= 1 - Math.min(1, drag);
+}
+
+// 몸통을 a 라디안 돌린다 (화면 기준 시계 방향 +)
+function rotate(car, a) {
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  const hx = car.hx * c - car.hy * s;
+  car.hy = car.hx * s + car.hy * c;
+  car.hx = hx;
+}
+
+// 몸통을 (tx, ty) 쪽으로 돌린다. 많이 틀어져 있을수록 빨리, 최대 yaw rad/s
+function turn(car, tx, ty, yaw, dt) {
+  const diff = Math.atan2(car.hx * ty - car.hy * tx, car.hx * tx + car.hy * ty);
+  rotate(car, Math.max(-yaw, Math.min(yaw, diff * 14)) * dt);
 }
 
 const crossed = (a, b, s) => a < s && b >= s && b - a < 20;

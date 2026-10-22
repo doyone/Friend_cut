@@ -4,7 +4,7 @@
 // 방장은 심판: 위치로 체크포인트·바퀴·완주 순서를 기록하고, 봇 차를 같은 물리로 움직인다.
 // 트랙·물리는 race-core.js (구간: 출발 직선 → 빙하 점프 → 펭귄 헤어핀 → 물결 S자 → 8자 고가 다리 → 갈림길 → 펭귄 회전문 → 마지막 직선)
 import { h, isTyping } from '../util.js';
-import { avatar, podium } from '../ui.js';
+import { avatar, nameTag } from '../ui.js';
 import { createBumperAudio } from './bumper-audio.js';
 import { buildTrack, newCar, stepCar, locate, botInput, gateAngle, pointAt, LAPS, CAR_R, SECTIONS } from './race-core.js';
 
@@ -87,7 +87,7 @@ function onCar(ctx, pid, data, now) {
     }
     if (e === 'land') c.jmp++;
   }
-  Object.assign(c, { x: r2(x), y: r2(y), vx: r2(Number(data.vx) || 0), vy: r2(Number(data.vy) || 0), path: at.path, seg: at.seg, air: data.air ? 1 : 0, sp: data.sp ? 1 : 0, t });
+  Object.assign(c, { x: r2(x), y: r2(y), vx: r2(Number(data.vx) || 0), vy: r2(Number(data.vy) || 0), h: r2(Number(data.h) || 0), dr: data.dr ? 1 : 0, path: at.path, seg: at.seg, air: data.air ? 1 : 0, sp: data.sp ? 1 : 0, t });
   advance(S, pid, at.ms, t);
   return true;
 }
@@ -139,7 +139,7 @@ function stepBots(ctx, now) {
       }
       if (c.fin) break;
     }
-    Object.assign(c, { x: r2(car.x), y: r2(car.y), vx: r2(car.vx), vy: r2(car.vy), path: car.path, seg: car.seg, air: car.air ? 1 : 0, sp: car.sp ? 1 : 0, t: now });
+    Object.assign(c, { x: r2(car.x), y: r2(car.y), vx: r2(car.vx), vy: r2(car.vy), h: r2(Math.atan2(car.hy, car.hx)), dr: car.dr ? 1 : 0, path: car.path, seg: car.seg, air: car.air ? 1 : 0, sp: car.sp ? 1 : 0, t: now });
   }
 }
 
@@ -202,6 +202,9 @@ const BOUNDS = (() => {
   const ys = T.main.pts.map(p => p.y);
   return { x0: Math.min(...xs) - 8, x1: Math.max(...xs) + 8, y0: Math.min(...ys) - 8, y1: Math.max(...ys) + 8 };
 })();
+const TAU = Math.PI * 2;
+// 몸통 방향 (라디안): 내 차는 hx·hy, 남의 차는 받은 h
+const heading = c => (c.hx !== undefined ? Math.atan2(c.hy, c.hx) : Number.isFinite(c.h) ? c.h : Math.atan2(c.vy || 0, c.vx || 1));
 const COLORS = { water: '#2f86d6', waterHi: '#5aa8eb', edge: '#14558f', ice: '#e8f4fd', snow: '#ffffff', wall: '#ffffff', bridge: '#b8bec7', rail: '#f8f9fa' };
 
 export default {
@@ -297,6 +300,9 @@ export default {
     const keys = { l: false, r: false, u: false, d: false };
     const ghosts = new Map();                   // id → [{ t, x, y, vx, vy }]
     const parts = [];                           // 효과 알갱이
+    const skids = [];                           // 미끄러진 자국 { x0, y0, x1, y1, layer, t } (뒷바퀴 둘)
+    const skidAt = new Map();                   // id → 지난 뒷바퀴 자리
+    let wasDrift = 0;
     const splashes = [];
     const who = id => S?.roster.find(p => p.id === id) || { id, name: '?' };
     const mine = () => S?.cars?.[me];
@@ -342,7 +348,7 @@ export default {
       if (now - sentAt < SEND_EVERY && !events.length) return;
       sentAt = now;
       api.send('car', {
-        x: r2(car.x), y: r2(car.y), vx: r2(car.vx), vy: r2(car.vy), path: car.path, seg: car.seg,
+        x: r2(car.x), y: r2(car.y), vx: r2(car.vx), vy: r2(car.vy), h: r2(Math.atan2(car.hy, car.hx)), dr: car.dr ? 1 : 0, path: car.path, seg: car.seg,
         air: car.air ? 1 : 0, sp: car.sp ? 1 : 0, rs: respawned ? 1 : 0, t: api.now(), ev: events,
       });
       events = [];
@@ -358,13 +364,10 @@ export default {
         const input = canDrive() && !mine()?.fin ? { x: (keys.r ? 1 : 0) - (keys.l ? 1 : 0), y: (keys.d ? 1 : 0) - (keys.u ? 1 : 0) } : null;
         const ev = stepCar(T, car, car.sp || car.air || !canDrive() ? null : input, STEP, t);
         for (const e of ev) onEvent(e);
-        // 얼음 가루: 옆으로 미끄러질 때
-        const sp = Math.hypot(car.vx, car.vy);
-        if (input && (input.x || input.y) && sp > 8 && !car.air && !car.sp) {
-          const il = Math.hypot(input.x, input.y);
-          const slip = Math.abs(car.vx * input.y / il - car.vy * input.x / il);
-          if (slip > 6 && Math.random() < 0.5) parts.push({ x: car.x, y: car.y, vx: -car.vx * 0.2 + (Math.random() - 0.5) * 4, vy: -car.vy * 0.2 + (Math.random() - 0.5) * 4, life: 0.5, c: '#ffffff' });
-        }
+        // 꼬리가 빠지면(드리프트): 끼익 + 얼음 가루
+        if (car.dr && !wasDrift) audio.skid();
+        wasDrift = car.dr;
+        if (car.dr && Math.random() < 0.6) parts.push({ x: car.x - car.hx * 0.6, y: car.y - car.hy * 0.6, vx: -car.vx * 0.2 + (Math.random() - 0.5) * 4, vy: -car.vy * 0.2 + (Math.random() - 0.5) * 4, life: 0.5, c: '#ffffff' });
       }
     }
 
@@ -402,7 +405,8 @@ export default {
         if (b.t >= t) {
           if (b === a || b.t === a.t) return b;
           const f = (t - a.t) / (b.t - a.t);
-          return { ...b, x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
+          const dh = ((((b.h || 0) - (a.h || 0)) % TAU) + TAU * 1.5) % TAU - Math.PI;
+          return { ...b, x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, h: (a.h || 0) + dh * f };
         }
         a = b;
       }
@@ -597,6 +601,41 @@ export default {
       }
     }
 
+    // 꼬리가 빠져 미끄러지는 동안 뒷바퀴 두 개가 얼음에 긁힌 자국을 남긴다 (3초 동안 옅어짐)
+    function addSkid(id, c, layer, now) {
+      if (!c.dr || c.air || c.sp) {
+        skidAt.delete(id);
+        return;
+      }
+      const a = heading(c);
+      const hx = Math.cos(a);
+      const hy = Math.sin(a);
+      const rx = c.x - hx * 0.55;
+      const ry = c.y - hy * 0.55;
+      const w = [[rx - hy * 0.45, ry + hx * 0.45], [rx + hy * 0.45, ry - hx * 0.45]];
+      const prev = skidAt.get(id);
+      if (prev && Math.hypot(w[0][0] - prev[0][0], w[0][1] - prev[0][1]) < 0.35) return;
+      if (prev && Math.hypot(w[0][0] - prev[0][0], w[0][1] - prev[0][1]) < 2) {
+        for (let k = 0; k < 2; k++) skids.push({ x0: prev[k][0], y0: prev[k][1], x1: w[k][0], y1: w[k][1], layer, t: now });
+        while (skids.length > 900) skids.shift();
+      }
+      skidAt.set(id, w);
+    }
+
+    function drawSkids(layer, now) {
+      while (skids.length && now - skids[0].t > 3000) skids.shift();
+      g.lineWidth = 0.22;
+      g.lineCap = 'round';
+      for (const k of skids) {
+        if (k.layer !== layer) continue;
+        g.strokeStyle = `rgba(116,143,173,${(0.5 * (1 - (now - k.t) / 3000)).toFixed(3)})`;
+        g.beginPath();
+        g.moveTo(k.x0, k.y0);
+        g.lineTo(k.x1, k.y1);
+        g.stroke();
+      }
+    }
+
     function drawCar(p, c, ghost, z) {
       if (c.sp) return;
       const air = c.air ? 1.3 : 1;
@@ -610,26 +649,25 @@ export default {
       g.globalAlpha = ghost ? 0.45 : 1;
       g.translate(c.x, c.y);
       g.scale(air, air);
-      const sp = Math.hypot(c.vx, c.vy);
-      const hx = sp > 0.5 ? c.vx / sp : c.hx ?? 1;
-      const hy = sp > 0.5 ? c.vy / sp : c.hy ?? 0;
+      g.rotate(heading(c));
+      // 몸통 (앞뒤로 살짝 긴 범퍼카) — 미끄러지면 가는 방향과 몸통이 어긋나 보인다
       g.fillStyle = '#343a40';
       g.beginPath();
-      g.arc(0, 0, CAR_R + 0.12, 0, Math.PI * 2);
+      g.ellipse(0, 0, CAR_R + 0.26, CAR_R + 0.08, 0, 0, Math.PI * 2);
       g.fill();
       g.fillStyle = p.color || '#adb5bd';
       g.beginPath();
-      g.arc(0, 0, CAR_R, 0, Math.PI * 2);
+      g.ellipse(0, 0, CAR_R + 0.12, CAR_R - 0.05, 0, 0, Math.PI * 2);
       g.fill();
       g.fillStyle = 'rgba(255,255,255,.55)';
       g.beginPath();
-      g.arc(-0.18, -0.2, 0.25, 0, Math.PI * 2);
+      g.arc(-0.15, -0.2, 0.25, 0, Math.PI * 2);
       g.fill();
       g.fillStyle = ghost ? '#ffffff' : '#ffd43b';
       g.beginPath();
-      g.moveTo(hx * 1.15, hy * 1.15);
-      g.lineTo(hx * 0.45 - hy * 0.42, hy * 0.45 + hx * 0.42);
-      g.lineTo(hx * 0.45 + hy * 0.42, hy * 0.45 - hx * 0.42);
+      g.moveTo(1.2, 0);
+      g.lineTo(0.5, -0.42);
+      g.lineTo(0.5, 0.42);
       g.closePath();
       g.fill();
       g.restore();
@@ -686,9 +724,6 @@ export default {
           g.fillRect(x + o + ((y / 5) % 2) * 3, y, 1.4, 0.18);
         }
       }
-      drawTrackLayer(0);
-      drawFeatures(now);
-      drawGates(t);
       // 차: 아래층 → 고가 다리 → 위층. 내 차는 맨 위
       const list = [];
       for (const p of S?.roster || []) {
@@ -697,9 +732,16 @@ export default {
         if (c) list.push([p, c, T.main.pts[c.seg]?.layer && c.path === 'main' ? 1 : 0]);
       }
       const myLayer = car.path === 'main' && T.main.pts[car.seg]?.layer ? 1 : 0;
+      for (const [p, c, layer] of list) addSkid(p.id, c, layer, now);
+      if (mine()) addSkid(me, car, myLayer, now);
+      drawTrackLayer(0);
+      drawFeatures(now);
+      drawSkids(0, now);
+      drawGates(t);
       for (const [p, c, layer] of list) if (!layer) drawCar(p, c, true, cam.z);
       if (!myLayer && mine()) drawCar(who(me), car, false, cam.z);
       drawTrackLayer(1);
+      drawSkids(1, now);
       for (const [p, c, layer] of list) if (layer) drawCar(p, c, true, cam.z);
       if (myLayer && mine()) drawCar(who(me), car, false, cam.z);
       // 속도선
@@ -863,7 +905,12 @@ export default {
         overlay.append(h('div', { class: 'tc-light rc-light' }, h('i', { class: 'lamp red' }), h('i', { class: 'lamp amber' }), h('i', { class: 'lamp green' })));
       }
       if (S.phase === 'final') {
-        overlay.append(h('div', { class: 'rc-card' }, h('h2', {}, `🏁 ${who(S.order?.[0]).name} 우승!`), podium(S.roster, S.standings, me)));
+        // 점수 대신 기록 (등수 계산용 standings는 큰 숫자라 보여 주지 않는다)
+        const rows = (S.order || []).map((id, i) => h('li', { class: `r${i + 1}${id === me ? ' me' : ''}` },
+          h('span', { class: 'medal' }, ['🥇', '🥈', '🥉'][i] || i + 1),
+          nameTag(who(id), me),
+          h('b', {}, S.cars[id].fin ? fmt(S.cars[id].fin) : '미완주')));
+        overlay.append(h('div', { class: 'rc-card' }, h('h2', {}, `🏁 ${who(S.order?.[0]).name} 우승!`), h('ol', { class: 'podium' }, rows)));
       }
     }
 
@@ -887,6 +934,7 @@ export default {
         h('ul', { class: 'rules' },
           h('li', {}, '←↑→↓ (WASD) = 그 방향으로 밀기, 같이 누르면 대각선'),
           h('li', {}, '반대 방향 = 브레이크. 얼음이라 코너 앞에서 미리!'),
+          h('li', {}, '빠를 때 확 꺾으면 바깥으로 밀리고 꼬리가 빠져요 (드리프트)'),
           h('li', {}, '오른쪽 위 미니맵 = 트랙 전체')),
         h('h3', {}, '트랙'),
         h('ul', { class: 'rules' }, SECTIONS.map((sec, i) => h('li', {}, `${i + 1}. ${sec.name}`))));
@@ -903,7 +951,7 @@ export default {
           if (!c) continue;
           const buf = ghosts.get(p.id) || [];
           const t = c.t || api.now();
-          if (!buf.length || buf[buf.length - 1].t !== t) buf.push({ t, x: c.x, y: c.y, vx: c.vx, vy: c.vy, seg: c.seg, path: c.path, air: c.air, sp: c.sp });
+          if (!buf.length || buf[buf.length - 1].t !== t) buf.push({ t, x: c.x, y: c.y, vx: c.vx, vy: c.vy, h: c.h, dr: c.dr, seg: c.seg, path: c.path, air: c.air, sp: c.sp });
           while (buf.length > 12) buf.shift();
           ghosts.set(p.id, buf);
         }

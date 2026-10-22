@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildTrack, newCar, stepCar, locate, pointAt, LAPS } from '../js/games/race-core.js';
+import { buildTrack, newCar, stepCar, locate, pointAt, drive, SURF, LAPS } from '../js/games/race-core.js';
 import game from '../js/games/race.js';
 
 const T = buildTrack();
@@ -53,6 +53,32 @@ test('물리: 점프대는 빠르면 건너고 느리면 빠짐', () => {
     }
     assert.ok(seen.includes(want), `${speed}m/s → ${seen.join(',')}`);
   }
+});
+
+test('조향: 빠를 때 확 꺾으면 바깥으로 밀리고 꼬리가 빠짐, 느리면 그냥 꺾임, 반대 방향은 몸통 그대로 브레이크', () => {
+  // 오른쪽(+x)으로 달리다가 아래(+y)를 1초 누름
+  const turn = speed => {
+    const car = { vx: speed, vy: 0, hx: 1, hy: 0, dr: 0 };
+    let x = 0;
+    let drift = false;
+    let over = 0;
+    for (let i = 0; i < 60; i++) {
+      drive(car, { x: 0, y: 1 }, SURF.ice, 1 / 60);
+      x += car.vx / 60;
+      drift ||= !!car.dr;
+      over = Math.max(over, Math.atan2(car.hy, car.hx) - Math.PI / 2);
+    }
+    return { x, drift, over };
+  };
+  const fast = turn(21);
+  const slow = turn(10);
+  assert.ok(fast.drift && fast.over > 0.1, `빠르면 몸통이 누른 방향보다 더 돈다 (${fast.over})`);
+  assert.ok(!slow.drift && slow.over < 0.02);
+  assert.ok(fast.x > slow.x * 1.5, `빠르면 원래 가던 쪽으로 더 밀림 ${fast.x} vs ${slow.x}`);
+  const car = { vx: 20, vy: 0, hx: 1, hy: 0, dr: 0 };
+  for (let i = 0; i < 20; i++) drive(car, { x: -1, y: 0 }, SURF.ice, 1 / 60);
+  assert.ok(car.vx > 0 && car.vx < 10, `브레이크 ${car.vx}`);
+  assert.equal(car.hx, 1);
 });
 
 function race(n, humans = 0) {
