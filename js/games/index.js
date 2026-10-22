@@ -8,8 +8,9 @@ import bumper from './bumper.js';
 import pullout from './pullout.js';
 import seesaw from './seesaw.js';
 import professor from './professor.js';
+import door from './door.js';
 
-export const GAMES = [timer, bomb, tower, pullout, seesaw, bumper, reaction, liar, professor];
+export const GAMES = [timer, bomb, tower, pullout, seesaw, bumper, reaction, liar, professor, door];
 
 export const COMING = [];
 
