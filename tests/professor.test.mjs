@@ -69,11 +69,11 @@ test('걸린 사람의 고자질: 0.7초 뒤 돌아보고, 그걸로 걸리면 �
   f.hold('p2', true);
   for (let i = 0; i < 20; i++) f.step(); // p2 걸림
   assert.ok(f.S().caught.p2);
-  for (let i = 0; i < 40; i++) f.step(); // 다시 칠판 보는 중
+  while (f.S().look === 'watch') f.step(); // 다시 칠판으로 돌아설 때까지 (보는 시간은 무작위)
   assert.equal(f.S().look, 'board');
   f.turnAt(f.now() + 5000);
   assert.equal(f.snitch('p2'), false, '돌아선 직후 1.6초는 고자질 못 함');
-  for (let i = 0; i < 34; i++) f.step();
+  while (f.now() - f.S().lookAt < 1600) f.step();
   f.hold('p0', true);
   assert.equal(f.snitch('p2'), true);
   assert.equal(f.snitch('p2'), false, '고자질은 한 번뿐');

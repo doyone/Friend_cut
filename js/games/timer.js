@@ -5,15 +5,16 @@ import { h, isTyping, pick } from '../util.js';
 import { avatar, countdown, keyNav, podium } from '../ui.js';
 
 const INTRO_TIME = 4500;
-// 신호등: 목표 시간 1초 보여 준 뒤 빨강 1초 → 주황 1초 → 초록(= 시작) 1초. 초록불 켜지는 순간부터 센다.
+// 신호등: 목표 시간 1초 보여 준 뒤 빨강 1초 → 주황 1초 → 초록(= 시작). 초록불 켜지는 순간부터 센다.
+// 초록불은 누를 때까지 켜 둔다: 시작 뒤에 화면이 또 바뀌면(불이 꺼지거나 글씨가 바뀌면) 그게 시작 신호처럼 보여서 헷갈린다.
 const LIGHT = 1000;
 const READY_TIME = LIGHT * 3; // 시작 전: 꺼짐 1초 + 빨강 1초 + 주황 1초
 
-// 시작(초록) 기준으로 지금 켜져 있어야 할 불: -2초~-1초 빨강, -1초~0 주황, 0~1초 초록
+// 시작(초록) 기준으로 지금 켜져 있어야 할 불: -2초~-1초 빨강, -1초~0 주황, 0초부터 계속 초록
 function lampAt(msFromStart) {
   if (msFromStart >= -2 * LIGHT && msFromStart < -LIGHT) return 'red';
   if (msFromStart >= -LIGHT && msFromStart < 0) return 'amber';
-  if (msFromStart >= 0 && msFromStart < LIGHT) return 'green';
+  if (msFromStart >= 0) return 'green';
   return '';
 }
 const MIN_T = 1;
@@ -308,7 +309,7 @@ export default {
           used < HAUNTS && btns.length ? h('div', { class: 'vote-grid' }, btns) : h('p', { class: 'muted' }, used >= HAUNTS ? '방해 다 씀. 구경하세요 ㅋ' : '다들 눌렀어요'));
       }
       refs.lamps = { red: h('i', { class: 'lamp red' }), amber: h('i', { class: 'lamp amber' }), green: h('i', { class: 'lamp green' }) };
-      for (const off of [-2 * LIGHT, -LIGHT, 0, LIGHT]) {
+      for (const off of [-2 * LIGHT, -LIGHT, 0]) {
         const wait = S.startAt + off - api.now();
         if (wait > 0) lampTimers.push(setTimeout(paint, wait + 1));
       }
@@ -437,8 +438,10 @@ export default {
           for (const [name, el] of Object.entries(refs.lamps)) {
             if (el.classList.contains('on') !== (lamp === name)) el.classList.toggle('on', lamp === name);
           }
-          const go = lamp === 'green';
-          refs.msg.textContent = since < 0 ? '초록불이 켜지면 시작!' : go ? '시작!' : alive() ? '속으로 세고 스페이스!' : '관전 중';
+          // 글씨는 초록불이 켜지는 순간 한 번만 바뀐다 (그 뒤로는 그대로)
+          const go = since >= 0;
+          const msg = !go ? '초록불이 켜지는 순간부터 세요!' : alive() ? '🟢 시작! 속으로 세다가 스페이스' : '관전 중';
+          if (refs.msg.textContent !== msg) refs.msg.textContent = msg;
           refs.msg.classList.toggle('go', go);
         }
       } else if (S.phase === 'reveal' && refs.rows) {

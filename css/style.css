@@ -861,6 +861,35 @@ button, input { font: inherit; color: inherit; }
 .dr-flash.bad { background: var(--red); font-family: var(--display); font-size: 24px; padding: 10px 22px; }
 .dr-panel { padding: 18px; min-height: 130px; display: grid; place-items: center; text-align: center; border-top: 1px solid var(--line); }
 .dr-warn { color: var(--red); font-weight: 800; }
+
+/* ── 범퍼카 그랑프리 ── 캔버스(카메라가 내 차를 따라감) + 오른쪽 위 미니맵 + 신호등·카드 오버레이 */
+.rc { display: grid; grid-template-columns: 1fr 280px; gap: 18px; }
+.rc-box {
+  position: relative; overflow: hidden; display: flex; flex-direction: column;
+  background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 4px 0 var(--line);
+  user-select: none; -webkit-user-select: none;
+}
+.rc-top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 10px 18px; font-weight: 800; color: var(--muted-2); border-bottom: 1px solid var(--line); min-height: 46px; }
+.rc-lap { font-family: var(--display); font-size: 20px; color: var(--ink); }
+.rc-time { font-variant-numeric: tabular-nums; color: var(--ink); font-size: 18px; }
+.rc-behind { color: var(--red); }
+.rc-ahead { color: var(--green-ink); }
+.rc-hot { margin-left: auto; color: var(--red); animation: bc-blink 1s steps(2) infinite; }
+.rc-stage { position: relative; background: #2f86d6; }
+.rc-canvas { display: block; width: 100%; height: min(66vh, 620px); }
+.rc-mini { position: absolute; right: 10px; top: 10px; width: 200px; height: 150px; background: rgba(20, 85, 143, .55); border-radius: 10px; border: 2px solid rgba(255, 255, 255, .7); pointer-events: none; }
+.rc-overlay { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+.rc-card { background: rgba(255, 255, 255, .95); border-radius: 16px; padding: 20px 26px; max-width: min(560px, 92%); box-shadow: 0 8px 30px rgba(0, 0, 0, .2); }
+.rc-card h2 { margin: 0 0 8px; font-family: var(--display); text-align: center; }
+.rc-light { margin: 0; transform: scale(.85); align-self: start; margin-top: 64px; } /* 출발선의 차를 가리지 않게 위쪽에 */
+.rc-fx { position: absolute; left: 0; right: 0; top: 18px; display: grid; justify-items: center; gap: 6px; pointer-events: none; }
+.rc-flash {
+  white-space: nowrap; background: var(--ink); color: #fff; padding: 8px 16px; border-radius: 999px; font-weight: 800; font-size: 18px;
+  animation: now-pop .3s cubic-bezier(.2, 1.6, .4, 1);
+}
+.rc-flash.bad { background: var(--red); font-family: var(--display); font-size: 26px; padding: 10px 22px; }
+.rc-sound { position: absolute; left: 10px; bottom: 10px; border: 0; border-radius: 999px; background: rgba(255, 255, 255, .85); font-size: 18px; padding: 4px 10px; cursor: pointer; }
+.rc-rank li em { font-size: 11px; }
 .dr-rank li em { font-size: 12px; }
 
 /* ── 알림 ── */
@@ -976,7 +1005,7 @@ kbd.num { position: absolute; top: 10px; left: 10px; margin: 0; z-index: 1; back
   .layout { padding-bottom: 150px; }
   .layout { grid-template-columns: 1fr; }
   .sidebar { position: static; height: auto; }
-  .rx, .lr, .tc, .bt, .tw, .bc, .po, .ss, .dr { grid-template-columns: 1fr; }
+  .rx, .lr, .tc, .bt, .tw, .bc, .po, .ss, .dr, .rc { grid-template-columns: 1fr; }
   .side { position: static; max-height: none; }
   .main { padding: 20px 16px 40px; }
   .shell-head { flex-wrap: wrap; }
