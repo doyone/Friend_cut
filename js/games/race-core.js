@@ -54,7 +54,11 @@ export const KART = {
   restitution: 0.3,
 };
 export const SURF = {
-  asphalt: { max: 1, grip: 2.2, drag: 1 },
+  asphalt: { max: 1, grip: 2.2, drag: 1, kart: true },
+  // 카트 맵 노면: 카트 조작 그대로, 최고 속도(max)·접지(kgrip) 배율만 다르다
+  sand: { kart: true, max: 0.72, kgrip: 0.8 },   // 모래: 느림
+  steel: { kart: true, max: 1, kgrip: 0.45 },    // 철판: 미끄러움
+  ledge: { kart: true, max: 0.9, kgrip: 0.35 },  // 빙벽 길: 아주 미끄러움
   ice: { max: 1, grip: 1, drag: 1 },
   snow: { max: 0.8, grip: 1.8, drag: 2 },  // 눈길: 안 미끄럽지만 느림
   oil: { max: 1, grip: 0.15, drag: 0.3 },  // 기름: 거의 안 꺾임
@@ -81,7 +85,7 @@ const bez = (p0, p1, p2, p3, t) => {
 };
 
 // 점들을 이어 길이·방향·오른쪽 방향을 붙인다
-function finish(pts, closed) {
+export function finish(pts, closed) {
   const n = pts.length;
   let s = 0;
   for (let i = 0; i < n; i++) {
@@ -184,6 +188,7 @@ export function buildTrack(sprint = false) {
     braw.push({ x, y, sec: split, half, surface: sprint ? 'asphalt' : 'ice', layer: 0, walls: sprint ? 'both' : null, outer: 1 });
   }
   const branch = finish(braw, false);
+  branch.id = 'branch';
   branch.from = bA;
   branch.to = bB;
   if (sprint) {
@@ -218,7 +223,7 @@ export function buildTrack(sprint = false) {
     return { x: p.x, y: p.y, len: SECTIONS[6].w / 2 - 0.35, w: i ? -2.4 : 2.0 };
   });
   return {
-    main, branch, secStart, cross, sprint,
+    main, branch, branches: [branch], secStart, cross, sprint,
     jump: sprint ? { ramp: -100, gap0: -99, gap1: -98 } : { ramp: jumpAt, gap0: jumpAt + 5, gap1: jumpAt + 12 },
     boosts: sprint ? [] : boosts.map(s => ({ s, len: 3.5 })),
     oil: sprint ? [] : [{ x: wave.x - wave.ty * 1.2, y: wave.y + wave.tx * 1.2, r: 1.8 }],
@@ -226,6 +231,12 @@ export function buildTrack(sprint = false) {
     start: main.len - 5, // 결승선 5m 앞에서 다 같이 출발
   };
 }
+
+// 갈림길: 예전 트랙은 T.branch 하나, 카트 맵은 T.branches 여러 개 (보이는 갈래길·숨은 지름길)
+export const branchesOf = T => T.branches || (T.branch ? [T.branch] : []);
+export const roadOf = (T, path) => (path === 'main' ? T.main : branchesOf(T).find(b => b.id === path));
+// 갈림길 위 거리를 본선 거리로 (순위·체크포인트용)
+export const msOnMain = (b, s) => b.from + ((b.to - b.from) * s) / b.len;
 
 // 렌더와 물리가 같은 이음새를 연다. side: 진행 방향 오른쪽 +1, 왼쪽 -1.
 export function roadWallOpen(T, path, p, side) {
@@ -236,14 +247,26 @@ export function roadWallOpen(T, path, p, side) {
   const x = p.x - p.ty * p.half * side;
   const y = p.y + p.tx * p.half * side;
   if (path === 'main') {
-    if (p.layer || p.s < T.branch.from - 18 || p.s > T.branch.to + 18) return false;
-    const q = nearest(T.branch, 0, T.branch.n - 1, x, y);
-    return !!q && !pastOpenPathEnd(T.branch, q.s, x, y) && Math.sqrt(q.d2) <= q.p.half + 0.2;
+    if (p.layer) return false;
+    return branchesOf(T).some(b => {
+      if (p.s < b.from - 18 || p.s > b.to + 18) return false;
+      const q = nearest(b, 0, b.n - 1, x, y);
+      return !!q && !pastOpenPathEnd(b, q.s, x, y) && Math.sqrt(q.d2) <= q.p.half + 0.2;
+    });
   }
-  const s = T.branch.from + (T.branch.to - T.branch.from) * p.s / T.branch.len;
-  const j = pointAt(T.main, s).i;
+  const b = roadOf(T, path);
+  const j = pointAt(T.main, msOnMain(b, p.s)).i;
   const q = nearest(T.main, j - 40, j + 40, x, y);
   return !!q && !q.p.layer && Math.sqrt(q.d2) <= q.p.half + 0.2;
+}
+
+// 본선·갈림길 점마다 열린 난간 쪽을 미리 구해 둔다 (물리가 매 걸음 다시 찾지 않게)
+export function cacheOpenWalls(T) {
+  for (const p of T.main.pts) p.openWalls = null;
+  for (const b of branchesOf(T)) for (const p of b.pts) p.openWalls = null;
+  const open = (path, p) => [-1, 1].filter(side => roadWallOpen(T, path, p, side));
+  for (const p of T.main.pts) p.openWalls = open('main', p);
+  for (const b of branchesOf(T)) for (const p of b.pts) p.openWalls = open(b.id, p);
 }
 
 // 거리 s의 가운데 선 점 (사이를 이어서)
@@ -266,7 +289,7 @@ export function pointAt(path, s) {
 }
 
 // 점 i0~i1 구간에서 (x, y)에 가장 가까운 곳
-function nearest(path, i0, i1, x, y) {
+export function nearest(path, i0, i1, x, y) {
   const { pts, n, closed } = path;
   let best = null;
   for (let k = i0; k <= i1; k++) {
@@ -295,7 +318,7 @@ function nearest(path, i0, i1, x, y) {
 }
 
 // 열린 길의 끝은 반원으로 늘리지 않고, 그림의 평평한 끝면과 같은 접선으로 자른다.
-function pastOpenPathEnd(path, s, x, y) {
+export function pastOpenPathEnd(path, s, x, y) {
   const first = path.pts[0], last = path.pts[path.n - 1];
   return s <= 0.1 && (x - first.x) * first.tx + (y - first.y) * first.ty < 0
     || s >= path.len - 0.1 && (x - last.x) * last.tx + (y - last.y) * last.ty > 0;
@@ -305,23 +328,25 @@ function pastOpenPathEnd(path, s, x, y) {
 export function locate(T, cur, x, y, wide = false) {
   const W = wide ? T.main.n : WINDOW;
   const cands = [];
-  if (cur.path === 'branch') {
-    const b = nearest(T.branch, cur.seg - W, cur.seg + W, x, y);
-    if (b) cands.push({ path: 'branch', ...b });
-    if (T.sprint || cur.seg > T.branch.n - W) {
-      const j = pointAt(T.main, T.sprint && b
-        ? T.branch.from + (T.branch.to - T.branch.from) * b.s / T.branch.len : T.branch.to).i;
+  const cb = cur.path && cur.path !== 'main' ? roadOf(T, cur.path) : null;
+  if (cb) {
+    const b = nearest(cb, cur.seg - W, cur.seg + W, x, y);
+    if (b) cands.push({ path: cb.id, ...b });
+    if (T.sprint || cur.seg > cb.n - W) {
+      const j = pointAt(T.main, T.sprint && b ? msOnMain(cb, b.s) : cb.to).i;
       const m = nearest(T.main, j - W, j + W, x, y);
       if (m) cands.push({ path: 'main', ...m });
     }
   } else {
     const m = nearest(T.main, cur.seg - W, cur.seg + W, x, y);
     if (m) cands.push({ path: 'main', ...m });
-    const j = pointAt(T.main, T.branch.from).i;
-    const dj = Math.abs(((cur.seg - j + T.main.n / 2) % T.main.n + T.main.n) % T.main.n - T.main.n / 2);
-    if (T.sprint ? m && !m.p.layer && m.s > T.branch.from - 18 && m.s < T.branch.to + 18 : dj < W) {
-      const b = nearest(T.branch, 0, T.sprint ? T.branch.n : W, x, y);
-      if (b) cands.push({ path: 'branch', ...b });
+    for (const br of branchesOf(T)) {
+      const j = pointAt(T.main, br.from).i;
+      const dj = Math.abs(((cur.seg - j + T.main.n / 2) % T.main.n + T.main.n) % T.main.n - T.main.n / 2);
+      if (T.sprint ? m && !m.p.layer && m.s > br.from - 18 && m.s < br.to + 18 : dj < W) {
+        const b = nearest(br, 0, T.sprint ? br.n : W, x, y);
+        if (b) cands.push({ path: br.id, ...b });
+      }
     }
   }
   // 길 안에 들어 있는 쪽 우선, 둘 다 안이면 가운데 선이 가까운 쪽(다리 선을 따라가면 일찍 다리 위가 됨), 아니면 가까운 쪽.
@@ -329,9 +354,9 @@ export function locate(T, cur, x, y, wide = false) {
   if (T.sprint) {
     for (let i = cands.length - 1; i >= 0; i--) {
       const c = cands[i];
-      if (c.path !== 'branch') continue;
+      if (c.path === 'main') continue;
       // 지름길 끝 너머에는 지름길의 가상 연장선 대신 합류 본선의 벽을 사용한다.
-      if (pastOpenPathEnd(T.branch, c.s, x, y)) cands.splice(i, 1);
+      if (pastOpenPathEnd(roadOf(T, c.path), c.s, x, y)) cands.splice(i, 1);
     }
   }
   const inside = c => Math.sqrt(c.d2) <= c.p.half;
@@ -339,18 +364,20 @@ export function locate(T, cur, x, y, wide = false) {
   const c = cands[0];
   if (!c) return null;
   // 갈림길 다리 위치를 큰 길 거리로 바꿔서 순위·바퀴 계산에 쓴다
-  const ms = c.path === 'branch' ? T.branch.from + ((T.branch.to - T.branch.from) * c.s) / T.branch.len : c.s;
+  const ms = c.path === 'main' ? c.s : msOnMain(roadOf(T, c.path), c.s);
   return { path: c.path, seg: c.i, s: c.s, ms, lat: c.lat, d: Math.sqrt(c.d2), p: c.p };
 }
 
 // 물에 빠지면 다시 설 자리: 조금 뒤 가운데 선 (점프대면 도움닫기할 만큼 더 뒤)
 export function respawnPose(T, fall) {
-  // 좁은 다리 초입에서 빠졌으면 큰길로 돌려보낸다 (다리 입구에 멈춰 서면 또 빠지기 쉽다)
-  if (fall.path === 'branch' && fall.s >= 15) {
-    const p = pointAt(T.branch, fall.s - 8);
-    return { x: p.x, y: p.y, path: 'branch', seg: p.i, tx: p.tx, ty: p.ty };
+  const fb = fall.path && fall.path !== 'main' ? roadOf(T, fall.path) : null;
+  // 좁은 다리 초입에서 빠졌으면 큰길로 돌려보낸다 (다리 입구에 멈춰 서면 또 빠지기 쉽다).
+  // 카트 맵의 숨은 지름길에서 떨어지면 언제나 입구 앞 본선으로 (실패 = 손해)
+  if (fb && !fb.backToMain && fall.s >= 15) {
+    const p = pointAt(fb, fall.s - 8);
+    return { x: p.x, y: p.y, path: fb.id, seg: p.i, tx: p.tx, ty: p.ty };
   }
-  let s = fall.path === 'branch' ? T.branch.from - 10 : fall.s - 10;
+  let s = fb ? fb.from - 10 : fall.s - 10;
   if (s > T.jump.ramp - 30 && s < T.jump.gap1 + 5) s = T.jump.ramp - 30;
   const p = pointAt(T.main, s);
   return { x: p.x, y: p.y, path: 'main', seg: p.i, tx: p.tx, ty: p.ty };
@@ -396,11 +423,26 @@ export function stepCar(T, car, input, dt, t) {
     car.vy += here.p.tx * PHYS.wind * dt;
   }
   const prevMs = car.ms;
+  const prevPath = car.path;
+  const prevS = car.s;
   car.x += car.vx * dt;
   car.y += car.vy * dt;
   const at = locate(T, car, car.x, car.y);
   if (!at) return splash(car, here, t, ev);
   Object.assign(car, { path: at.path, seg: at.seg, s: at.s, ms: at.ms, lat: at.lat });
+  // 카트 맵 점프(갈림길 위 틈): 빠르고 똑바르면 날아서 건너고, 아니면 틈으로 떨어진다
+  for (const j of T.jumps || []) {
+    if (at.path !== j.path || prevPath !== j.path || !crossed(prevS, at.s, j.gap0)) continue;
+    const fwd = car.vx * at.p.tx + car.vy * at.p.ty;
+    const straight = car.hx * at.p.tx + car.hy * at.p.ty >= Math.cos(j.angle ?? 0.4);
+    if (fwd < j.min || !straight) return splash(car, at, t, ev);
+    car.air = t + ((j.gap1 - j.gap0 + 2) / fwd) * 1000;
+    ev.push('jump');
+    return ev;
+  }
+  for (const j of T.jumps || []) if (at.path === j.path && at.s > j.gap0 && at.s < j.gap1) return splash(car, at, t, ev);
+  // 카트 맵 구멍(열린 맨홀): 차 가운데가 들어가면 빠진다
+  for (const h of T.holes || []) if (at.path === h.path && (car.x - h.x) ** 2 + (car.y - h.y) ** 2 < h.r * h.r) return splash(car, at, t, ev);
   // 점프대: 빠르면 날아서 건너고, 느리면 물웅덩이로
   if (at.path === 'main' && crossed(prevMs, at.ms, T.jump.gap0)) {
     const fwd = car.vx * at.p.tx + car.vy * at.p.ty;
@@ -416,8 +458,12 @@ export function stepCar(T, car, input, dt, t) {
   if (over > 0) {
     const side = Math.sign(at.lat);
     const wall = kartWallBlocked(T, at, side);
-    if (T.sprint && !wall) return ev;
-    if (!wall) return splash(car, at, t, ev);
+    if (!wall) {
+      if (!T.sprint) return splash(car, at, t, ev);
+      // 카트 맵의 낭떠러지 길(벽 없음): 차 가운데가 길 밖으로 나가고 다른 길 위도 아니면 떨어진다
+      if (at.p.fall && Math.abs(at.lat) > at.p.half + 0.3 && !roadWallOpen(T, at.path, at.p, side)) return splash(car, at, t, ev);
+      return ev;
+    }
     const nx = -at.p.ty * side;
     const ny = at.p.tx * side;
     car.x -= nx * (over + 0.05);
@@ -433,27 +479,85 @@ export function stepCar(T, car, input, dt, t) {
       if (vn > 3) ev.push('wall');
     }
   }
-  // 부스트 발판
-  if (at.path === 'main') {
-    for (const b of T.boosts) {
-      if (crossed(prevMs, at.ms, b.s) && Math.abs(at.lat) < 3) {
-        const fwd = car.vx * at.p.tx + car.vy * at.p.ty;
-        if (fwd < PHYS.boost) {
-          car.vx += at.p.tx * (PHYS.boost - fwd);
-          car.vy += at.p.ty * (PHYS.boost - fwd);
-        }
-        ev.push('boost');
+  // 부스트 발판 (본선은 큰 길 거리, 갈림길은 그 길 위 거리)
+  for (const b of T.boosts) {
+    const path = b.path || 'main';
+    if (at.path !== path) continue;
+    const [p0, p1] = path === 'main' ? [prevMs, at.ms] : prevPath === path ? [prevS, at.s] : [-1, -1];
+    if (!crossed(p0, p1, b.s) || Math.abs(at.lat) >= 3) continue;
+    if (T.sprint) car.boostLeft = Math.max(car.boostLeft || 0, 1);
+    else {
+      const fwd = car.vx * at.p.tx + car.vy * at.p.ty;
+      if (fwd < PHYS.boost) {
+        car.vx += at.p.tx * (PHYS.boost - fwd);
+        car.vy += at.p.ty * (PHYS.boost - fwd);
       }
     }
+    ev.push('boost');
   }
   for (const o of T.oil) if ((car.x - o.x) ** 2 + (car.y - o.y) ** 2 < o.r * o.r) car.oil = t + 800;
-  for (const g of T.gates) if (gateHit(g, car, t)) ev.push('gate');
+  for (const g of T.gates) {
+    if (!gateHit(g, car, t)) continue;
+    ev.push('gate');
+    if (T.sprint) Object.assign(car, { impactLeft: KART.impactTime * 2, boostLeft: 0, charge: 0 });
+  }
+  // 크레인 쇳덩이: 스치기만 해도 옆으로 크게 튕겨 나간다. 벽 없는 판자 길에선 그대로 떨어진다
+  for (const o of T.balls || []) {
+    const b = ballAt(o, t);
+    const dx = car.x - b.x;
+    const dy = car.y - b.y;
+    const d = Math.hypot(dx, dy);
+    const minD = o.r + KART.radius * 0.85;
+    if (d >= minD || d === 0) continue;
+    const nx = dx / d;
+    const ny = dy / d;
+    car.x += nx * (minD - d);
+    car.y += ny * (minD - d);
+    ev.push('gate');
+    if (at.p.fall) return splash(car, at, t, ev);
+    if (car.vx * nx + car.vy * ny < 6) {
+      car.vx = car.vx * 0.5 + nx * 9;
+      car.vy = car.vy * 0.5 + ny * 9;
+      Object.assign(car, { impactLeft: KART.impactTime * 3, boostLeft: 0, charge: 0 });
+    }
+  }
+  // 카트 맵 장애물(쓰레기통·라바콘): 부딪히면 튕기고 확 느려진다
+  for (const o of T.posts || []) {
+    const dx = car.x - o.x;
+    const dy = car.y - o.y;
+    const d = Math.hypot(dx, dy);
+    const minD = o.r + KART.radius * 0.85;
+    if (d >= minD || d === 0) continue;
+    const nx = dx / d;
+    const ny = dy / d;
+    car.x += nx * (minD - d);
+    car.y += ny * (minD - d);
+    const vn = car.vx * nx + car.vy * ny;
+    if (vn < 0) {
+      car.vx = (car.vx - nx * vn * 1.6) * 0.55;
+      car.vy = (car.vy - ny * vn * 1.6) * 0.55;
+      Object.assign(car, { impactLeft: KART.impactTime * 2, boostLeft: 0, charge: 0 });
+      ev.push('wall');
+    }
+  }
+  // 카트 맵 파도: 정해진 박자로 덮치는 구간. 덮칠 때 그 안에 있으면 빙글 돌고 반쯤 느려진다 (파도 하나에 한 번)
+  for (const w of T.waves || []) {
+    if (at.path !== w.path || at.s < w.s0 || at.s > w.s1) continue;
+    const k = Math.floor(t / w.period);
+    if (t - k * w.period >= w.dur || car.waveAt === k) continue;
+    car.waveAt = k;
+    car.vx *= 0.5;
+    car.vy *= 0.5;
+    car.yawRate = (car.yawRate || 0) + (Math.random() < 0.5 ? -7 : 7);
+    Object.assign(car, { impactLeft: KART.impactTime * 3, boostLeft: 0, charge: 0 });
+    ev.push('wave');
+  }
   return ev;
 }
 
 // 조작·타이어·마찰 (길과 상관없는 부분). surf = 노면
 export function drive(car, input, surf, dt) {
-  if (surf === SURF.asphalt) return driveKart(car, input, dt);
+  if (surf.kart) return driveKart(car, input, dt, surf);
   const max = PHYS.max * surf.max;
   let ix = input?.x || 0;
   let iy = input?.y || 0;
@@ -501,7 +605,8 @@ export function drive(car, input, surf, dt) {
   car.vy *= 1 - Math.min(1, drag);
 }
 
-function driveKart(car, input, dt) {
+function driveKart(car, input, dt, surf = SURF.asphalt) {
+  const fast = surf.max ?? 1;
   const throttle = Math.max(0, Math.min(1, input?.throttle || 0));
   const steering = Math.max(-1, Math.min(1, input?.steer || 0));
   const braking = !!input?.brake;
@@ -575,7 +680,7 @@ function driveKart(car, input, dt) {
     const desired = Math.atan2(car.hy * sign, car.hx * sign);
     const velocity = Math.atan2(car.vy, car.vx);
     const error = Math.atan2(Math.sin(desired - velocity), Math.cos(desired - velocity));
-    const baseGrip = drifting ? KART.driftGrip : KART.grip;
+    const baseGrip = (drifting ? KART.driftGrip : KART.grip) * (surf.kgrip ?? 1);
     const recover = 1 - car.impactLeft / KART.impactTime;
     const grip = car.impactLeft > 0 ? KART.impactGrip + (baseGrip - KART.impactGrip) * recover * recover : baseGrip;
     const angle = velocity + error * (1 - Math.exp(-grip * dt));
@@ -594,7 +699,7 @@ function driveKart(car, input, dt) {
   // 일정한 최고 속도. 부스트 종료·충돌 직후의 초과 속도는 부드럽게 줄인다.
   const backwards = car.vx * car.hx + car.vy * car.hy < -0.001;
   const limit = backwards ? Math.max(KART.reverseMax, before - 20 * dt)
-    : boosted ? KART.boost : Math.min(KART.boost, Math.max(KART.max, before - 20 * dt));
+    : boosted ? KART.boost * fast : Math.min(KART.boost * fast, Math.max(KART.max * fast, before - 20 * dt));
   const speed = Math.hypot(car.vx, car.vy);
   if (speed > limit) {
     car.vx *= limit / speed;
@@ -854,33 +959,45 @@ function gateHit(g, car, t) {
   return rel < -2;
 }
 
-// 앞으로 d m 간 곳의 가운데 선 점 (지름길로 가기로 했으면 다리 쪽으로)
-function ahead(T, car, d, short) {
+// 크레인 쇳덩이: 길을 가로질러 좌우로 흔들린다 (시각만으로 정해져서 모두에게 같다). 위치와 속도(m/s)
+export function ballAt(o, t) {
+  const w = (Math.PI * 2) / o.period;
+  const off = o.amp * Math.sin(w * t);
+  const v = o.amp * w * 1000 * Math.cos(w * t);
+  return { x: o.x + o.nx * off, y: o.y + o.ny * off, vx: o.nx * v, vy: o.ny * v, off };
+}
+
+// 앞으로 d m 간 곳의 가운데 선 점. routes = 이번에 탈 갈림길 id들 (지름길로 가기로 했으면 다리 쪽으로)
+function ahead(T, car, d, routes) {
+  // 이 근처에서 탈 갈림길
+  const route = (routes || []).map(id => roadOf(T, id)).find(b => b && car.ms > b.from - 40 && car.ms < b.to - 3);
   // 갈림길 노면이 겹치는 입구에서 locate가 branch를 잠깐 골라도 본선 선호 봇의 목표는 본선에 둔다.
-  if (T.sprint && !short) return pointAt(T.main, car.ms + d);
-  if (car.path === 'branch') {
+  if (T.sprint && !route) return pointAt(T.main, car.ms + d);
+  const cb = car.path !== 'main' ? roadOf(T, car.path) : null;
+  if (cb) {
     const s = car.s + d;
-    return s <= T.branch.len ? pointAt(T.branch, s) : pointAt(T.main, T.branch.to + (s - T.branch.len));
+    return s <= cb.len ? pointAt(cb, s) : pointAt(T.main, cb.to + (s - cb.len));
   }
   const ms = car.ms + d;
   // 지름길로 가기로 했으면: 입구 전부터 다리 끝까지 다리 선을 따라간다 (큰길 위에 있어도 다리 쪽 거리로 바꿔서)
-  const { from, to, len } = T.branch;
-  if (short && car.ms > from - 40 && car.ms < to - 3 && ms > from) {
+  if (route && ms > route.from) {
+    const { from, to, len } = route;
     const s = car.ms < from ? ms - from : ((car.ms - from) / (to - from)) * len + d;
-    return s <= len ? pointAt(T.branch, s) : pointAt(T.main, to + (s - len));
+    return s <= len ? pointAt(route, s) : pointAt(T.main, to + (s - len));
   }
   return pointAt(T.main, ms);
 }
+const routesOf = mem => mem.routes || (mem.short ? ['branch'] : []);
 
 // 봇: 앞쪽 가운데 선을 노려서 8방향으로 민다. 급커브 앞에선 브레이크. skill 0.85~1, mem.short = 이번엔 지름길
-export function botInput(T, car, mem, skill) {
-  if (T.sprint) return kartBotInput(T, car, mem, skill);
+export function botInput(T, car, mem, skill, t) {
+  if (T.sprint) return kartBotInput(T, car, mem, skill, t);
   // 다리 입구를 한참 지나 큰길에 있으면(물에서 다시 섰을 때 등) 이번 바퀴는 눈길로
   if (mem.short && car.path === 'main' && car.ms > T.branch.from + 8 && car.ms < T.branch.to) mem.short = false;
   const sp = Math.hypot(car.vx, car.vy);
   const look = 4 + sp * 0.45;
-  const tgt = ahead(T, car, look, mem.short);
-  const far = ahead(T, car, look + 14, mem.short);
+  const tgt = ahead(T, car, look, routesOf(mem));
+  const far = ahead(T, car, look + 14, routesOf(mem));
   let dx = tgt.x - car.x;
   let dy = tgt.y - car.y;
   // 좁은 다리에선 조금 천천히, 바람이 불어오는 쪽(왼쪽)으로 살짝 비켜 겨눈다
@@ -903,36 +1020,109 @@ export function botInput(T, car, mem, skill) {
   return { x: Math.round(Math.cos(ang)), y: Math.round(Math.sin(ang)), drift: T.sprint && bend > 0.16 && sp > 10 && (car.charge || 0) < 1.25 };
 }
 
-function kartBotInput(T, car, mem, skill) {
+function kartBotInput(T, car, mem, skill, t) {
   if (!mem.kartReady) {
     // 출발 줄·실력에서 재현 가능한 선호 라인을 만든다. 모든 봇이 한 줄로 달리지 않는다.
     const p = pointAt(T.main, T.start);
     const lateral = (car.x - p.x) * -p.ty + (car.y - p.y) * p.tx;
     const choice = Math.abs(Math.round(lateral * 10) + Math.round(skill * 1000));
-    if (!mem.short) mem.short = choice % 3 !== 0;
+    if (T.branches?.[0]?.id === 'branch' || !T.branches) {
+      if (!mem.short) mem.short = choice % 3 !== 0;
+    } else if (!mem.routes) {
+      // 카트 맵: 보이는 갈래길은 반반, 숨은 지름길은 가끔 (실력이 좋을수록 자주)
+      mem.routes = T.branches.filter((b, i) => (choice * 7 + i * 13) % 100 < (b.hidden ? 30 * skill : 50)).map(b => b.id);
+      // 숨은 길을 겁 없이 밟는 봇 (자주 떨어진다)
+      mem.bold ??= (choice * 3) % 5 < 2;
+    }
     if (!Number.isFinite(mem.lane)) mem.lane = (choice % 5 - 2) * 1.25;
     mem.kartReady = true;
   }
-  if (mem.short && car.path === 'main' && car.ms > T.branch.from + 20 && car.ms < T.branch.to - 12) mem.short = false;
+  // 갈림길에서 떨어졌으면 이번 경기엔 다시 안 간다
+  if (car.sp && car.fall?.path && car.fall.path !== 'main' && mem.routes) mem.routes = mem.routes.filter(id => id !== car.fall.path);
+  // 입구를 한참 지나 본선에 있으면(놓쳤거나 떨어져서 다시 섰으면) 그 갈림길은 포기.
+  // 이미 들어선 갈림길은 본선을 가로지르는 순간 잠깐 본선으로 잡혀도 계속 간다
+  if (car.path !== 'main') (mem.on ||= {})[car.path] = true;
+  // 정하지 않은 갈림길이라도 본선 노면을 벗어날 만큼 들어와 버렸으면 그 길로 끝까지 간다 (돌아 나올 수 없다)
+  const into = !car.sp && car.path !== 'main' && mem.routes && !mem.routes.includes(car.path) ? roadOf(T, car.path) : null;
+  if (into?.pts[car.seg]?.offMain) mem.routes.push(into.id);
+  for (const id of routesOf(mem)) {
+    const b = roadOf(T, id);
+    if (!b || car.path !== 'main' || mem.on?.[id] || car.ms <= b.from + 20 || car.ms >= b.to - 12) continue;
+    if (mem.routes) mem.routes = mem.routes.filter(x => x !== id);
+    else mem.short = false;
+  }
   const speed = Math.hypot(car.vx, car.vy);
-  const look = 5 + speed * 0.55;
-  const target = ahead(T, car, look, mem.short);
-  const far = ahead(T, car, look + 12, mem.short);
-  const split = car.path === 'branch' || mem.short && car.ms > T.branch.from - 22 && car.ms < T.branch.to;
-  const lane = Math.max(-target.half + 2.2, Math.min(target.half - 2.2, mem.lane * (split ? 0.55 : 1)));
+  // 벽·장애물에 막혀 1초 넘게 못 가면: 그 갈림길은 포기하고 0.8초 후진
+  if (!car.sp && !car.air && speed < 1.5 && !mem.wait) mem.slow = (mem.slow || 0) + 1;
+  else mem.slow = 0;
+  if (mem.slow > 60) {
+    mem.slow = 0;
+    mem.backing = 48;
+    mem.backSteer = -Math.sign(mem.lastSteer || 1);
+    if (mem.routes && car.path !== 'main') mem.routes = mem.routes.filter(id => id !== car.path);
+  }
+  if (mem.backing > 0) {
+    mem.backing--;
+    return { throttle: 0, steer: mem.backSteer, brake: true, drift: false };
+  }
+  // 좁은 숨은 길에선 가까이 보고 가운데로 세게 되돌린다 (벽 없는 빙판에서 바깥으로 흘러 떨어지지 않게)
+  const tight = car.path !== 'main' && roadOf(T, car.path)?.hidden;
+  const look = tight ? 3 + speed * 0.35 : 5 + speed * 0.55;
+  const routes = routesOf(mem);
+  const target = ahead(T, car, look, routes);
+  const far = ahead(T, car, look + 12, routes);
+  const split = car.path !== 'main' || routes.some(id => {
+    const b = roadOf(T, id);
+    return b && car.ms > b.from - 22 && car.ms < b.to;
+  });
+  let lane = Math.max(-target.half + 2.2, Math.min(target.half - 2.2, mem.lane * (split ? 0.55 : 1)));
+  // 좁은 길의 장애물(쓰레기통·바위·맨홀)은 반대쪽으로 비켜 간다
+  const post = car.path === 'main' ? null : [...(T.posts || []), ...(T.holes || [])]
+    .filter(o => o.path === car.path && o.s > car.s - 0.5 && o.s < car.s + look + 4)
+    .sort((a, b) => a.s - b.s)[0];
+  if (post) {
+    const room = target.half - KART.radius;
+    const clear = post.r + (T.holes?.includes(post) ? 0.15 : KART.radius * 0.85);
+    lane = post.lat > 0 ? (-room + post.lat - clear) / 2 : (room + post.lat + clear) / 2;
+  }
+  // 점프대 앞: 가운데로 곧게, 넘을 만큼 빠르게
+  const jump = car.path !== 'main' && (T.jumps || []).find(j => j.path === car.path && j.gap0 > car.s && j.gap0 < car.s + 35);
+  if (jump) lane = 0;
+  if (tight) lane -= (car.lat || 0) * 0.8;
   target.x -= target.ty * lane;
   target.y += target.tx * lane;
   const dx = target.x - car.x;
   const dy = target.y - car.y;
   const distance = Math.max(1, Math.hypot(dx, dy));
   const angle = Math.atan2(car.hx * dy - car.hy * dx, car.hx * dx + car.hy * dy);
-  const bend = Math.acos(Math.max(-1, Math.min(1, target.tx * far.tx + target.ty * far.ty)));
-  const limit = KART.max * skill * (bend > 1 ? 0.50 : bend > 0.6 ? 0.67 : bend > 0.3 ? 0.85 : 1);
-  const brake = speed > limit + 1 || Math.abs(angle) > 1.0 && speed > 12;
-  const drift = !brake && bend > 0.16 && Math.abs(angle) < 0.7 && speed > 12 && (car.charge || 0) < 1.25;
+  // 좁은 숨은 길에선 이미 코너 안에 들어와 있어도 알아채게: 지금 자리의 길 방향 → 목표까지 꺾이는 각도 본다
+  const turn = (a, b) => Math.acos(Math.max(-1, Math.min(1, a.tx * b.tx + a.ty * b.ty)));
+  const bend = Math.max(turn(target, far), tight ? turn(ahead(T, car, 0, routes), target) : 0);
+  // 미끄러운 노면·좁은 갈림길에선 조심해서 (카트 맵의 빙판·철판·숨은 길)
+  const here = car.path === 'main' ? null : roadOf(T, car.path);
+  const grip = SURF[here?.pts[0]?.surface]?.kgrip ?? 1;
+  // mem.bold = 숨은 길을 겁 없이 밟는 봇 (자주 떨어진다)
+  const careful = mem.bold && here?.hidden ? 1 : here?.hidden ? (0.55 + 0.45 * Math.min(1, grip)) * 0.8 : 0.85 + 0.15 * Math.min(1, grip);
+  let limit = KART.max * skill * careful * (bend > 1 ? 0.50 : bend > 0.6 ? 0.67 : bend > 0.3 ? 0.85 : 1);
+  if (jump) limit = Math.max(limit, jump.min + 3);
+  // 크레인 쇳덩이: 조심하는 봇은 지나갈 즈음 쇳덩이가 길 위에 올 것 같으면 앞에서 기다린다
+  const ball = t != null && !mem.bold && car.path !== 'main' && (T.balls || []).find(o => o.path === car.path && o.s > car.s && o.s < car.s + 14);
+  mem.wait = false;
+  if (ball) {
+    const reach = KART.radius * 0.85 + ball.r + 0.3;
+    const gap = ball.s - car.s;
+    const eta = (Math.sqrt(speed * speed + 40 * gap) - speed) / 20; // 밟으면 거기까지 걸리는 시간 (가속 약 20m/s²)
+    const pass = reach / Math.max(speed, 10);
+    for (let k = -pass; k <= pass && !mem.wait; k += 0.04) mem.wait = Math.abs(ballAt(ball, t + (eta + k) * 1000).off - (car.lat || 0)) < reach;
+    if (mem.wait) limit = Math.min(limit, ball.s - car.s > 7 ? 5 : 0);
+  }
+  // 부스트 중엔 곧은 길이면 브레이크로 깎아 먹지 않는다
+  const brake = (speed > limit + 1 && !(car.boostLeft > 0 && bend < 0.3)) || Math.abs(angle) > 1.0 && speed > 12;
+  const drift = !brake && !jump && bend > 0.16 && Math.abs(angle) < 0.7 && speed > 12 && (car.charge || 0) < 1.25;
   const yawLimit = (drift ? KART.driftTurnRate : KART.turnRate) * Math.min(1, speed / 8);
   const desiredYaw = 2 * Math.max(3, speed) * Math.sin(angle) / distance;
   const steer = Math.max(-1, Math.min(1, desiredYaw / Math.max(0.5, yawLimit)));
+  mem.lastSteer = steer;
   return { throttle: brake ? 0 : 1, steer, brake,
     drift };
 }

@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import game from '../js/games/race.js';
+import game, { useKartMaps } from '../js/games/race.js';
+// 이 파일은 예전 와이드 8자 트랙 좌표로 시험한다 (게임은 원래 경기마다 다른 맵)
+useKartMaps(['wide']);
 import { buildTrack, newCar, pointAt, locate } from '../js/games/race-core.js';
 import { prune } from '../js/net/prune.js';
 import { createRacePrediction } from '../js/games/race-prediction.js';

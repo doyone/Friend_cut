@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildTrack, newCar, stepCar, locate, pointAt, drive, SURF, LAPS } from '../js/games/race-core.js';
-import game from '../js/games/race.js';
+import game, { useKartMaps } from '../js/games/race.js';
+// 이 파일은 예전 와이드 8자 트랙 좌표로 시험한다 (게임은 원래 경기마다 다른 맵)
+useKartMaps(['wide']);
 
 const T = buildTrack();
 
