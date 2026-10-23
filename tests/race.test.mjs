@@ -133,10 +133,12 @@ test('체크포인트: 결승선만 왕복하면 완주할 수 없고 코스 전
 });
 
 
-test('차고 코스는 짧고 난간이 있으며 위험 장치가 없다', () => {
+test('카트 서킷은 확장된 본선과 아스팔트 지름길이 있고 위험 장치가 없다', () => {
   const track = buildTrack(true);
-  assert.ok(track.main.len > 400 && track.main.len < 480);
+  assert.ok(track.main.len > 500 && track.main.len < 650);
   assert.ok(track.main.pts.every(p => p.walls === 'both' && p.surface === 'asphalt'));
+  assert.ok(track.branch.pts.every(p => p.walls === 'both' && p.surface === 'asphalt'));
+  assert.ok(track.branch.len < track.branch.to - track.branch.from);
   assert.equal(track.gates.length + track.oil.length + track.boosts.length, 0);
 });
 

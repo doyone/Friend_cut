@@ -11,7 +11,7 @@
 | 🪑 독박빼기 | 2~8명 | 젠가처럼 쌓인 잡동사니 탑에서 하나를 쏙 빼고, 🎰 랜덤 물건을 맨 위에 올리기. 방향키로 고르고 손 떨림 게이지를 초록에서 멈춰요. 무너지면 독박 |
 | ⚖️ 독박 시소 | 2~8명 | 용암 위 스프링 시소에 돌아가며 짐 떨구기. 짐은 🎰 룰렛(무게도 보여요, 역기·오함마·마트 카트·오뚝이 등 27종, 가끔 ✨ 레어), 무거운 쪽으로 기울어요. 짐이 떨어지거나 판 끝이 용암에 닿으면 독박 |
 | 🚗 범퍼카 난투 | 2~8명 | 얼음 경기장에서 들이받아 떨구기. 스페이스 꾹 → 떼면 돌진, 모으는 동안은 버티기. 떨어지면 👻 유령이 되어 🍌 바나나 깔기 |
-| 🏎️ 카트 그랑프리 | 2~8명 | 차고 8자 코스를 한 바퀴씩 3경기. 카트끼리 들이받고 추월! Shift/Space 드리프트를 놓으면 부스트, 합산 점수로 승부 |
+| 🏎️ 카트 그랑프리 | 2~8명 | 넓은 8자 서킷을 한 바퀴씩 3경기. 부스트 추월과 안쪽 지름길로 역전! Shift/Space 드리프트, 합산 점수로 승부 |
 | ⚡ 반응속도 대결 | 2~8명 | 초록불이 뜨면 먼저 스페이스. 미리 누르면 감점, 2라운드부터 가짜 신호 등장 |
 | 🕵️ 라이어 게임 | 3~8명 | 한 명만 제시어를 몰라요. 한 줄 힌트를 글로 쓰고 투표 (말 안 해도 됨) |
 | 🧑‍🏫 교수님 몰래 게임하기 | 2~8명 | 교수님이 칠판 볼 때 스페이스 꾹 = 몰래 게임. 예고 없이 돌아볼 때 누르고 있으면 C+. 걸린 사람은 🙋 고자질 한 번 |
@@ -110,14 +110,14 @@ js/
     pullout.js     독박빼기 (+ pullout-art.js 잡동사니 모양·그림)
     seesaw.js      독박 시소 (잡동사니 그림은 pullout-art.js 재활용)
     bumper.js      범퍼카 난투 (+ bumper-audio.js 효과음)
-    race.js        범퍼카 그랑프리 (+ race-core.js 트랙·물리: 내 화면과 방장이 같이 씀)
+    race.js        카트 그랑프리 (+ race-core.js 트랙·물리: 내 화면과 방장이 같이 씀)
     reaction.js    반응속도 대결
     liar.js        라이어 게임
     professor.js   교수님 몰래 게임하기 (+ professor-view.js 화면)
     door.js        마지막 문
     sky.js         하늘끝까지 (+ sky-core.js 탑 물리: 내 화면과 방장(봇)이 같이 씀)
   vendor/          planck.js 물리 엔진 (독박 타워·독박빼기·독박 시소가 CDN 없이 씀)
-tests/             규칙 테스트: node --test tests/bumper.test.mjs tests/professor.test.mjs tests/seesaw.test.mjs tests/door.test.mjs tests/race.test.mjs tests/race-collision.test.mjs tests/race-network.test.mjs tests/race-prediction.test.mjs
+tests/             규칙 테스트: node --test tests/bumper.test.mjs tests/professor.test.mjs tests/seesaw.test.mjs tests/door.test.mjs tests/race.test.mjs tests/race-track.test.mjs tests/race-collision.test.mjs tests/race-network.test.mjs tests/race-prediction.test.mjs
 database.rules.json  Firebase 보안 규칙
 ```
 

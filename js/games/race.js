@@ -1,11 +1,11 @@
-// 카트 그랑프리: 난간 있는 차고 8자 한 바퀴씩, 3경기 합산 점수.
+// 카트 그랑프리: 넓은 8자 서킷과 안쪽 지름길, 3경기 합산 점수.
 // 방장이 모든 카트의 이동·충돌을 함께 계산한다. 내 화면은 입력을 즉시 예측하고 방장 상태로 보정한다.
 // SPACE 드리프트를 놓으면 충전에 비례한 부스트. 같은 층의 카트끼리 부딪혀 밀려난다.
 import { h, isTyping, AGAIN_INTRO } from '../util.js';
 import { avatar, nameTag } from '../ui.js';
 import { createRacePrediction } from './race-prediction.js';
 import { createBumperAudio } from './bumper-audio.js';
-import { buildTrack, newCar, stepCar, locate, botInput, gateAngle, pointAt, LAPS, CAR_R, SECTIONS, KART, resolveKartContacts } from './race-core.js';
+import { buildTrack, newCar, stepCar, locate, botInput, gateAngle, pointAt, roadWallOpen, LAPS, CAR_R, SECTIONS, KART, resolveKartContacts } from './race-core.js';
 
 const T = buildTrack(true);
 const L = T.main.len;
@@ -16,7 +16,7 @@ const READY = LIGHT * 3;          // 빨강 → 주황 → 초록(= 출발)
 const FINISH_WAIT = 8000;        // 첫 완주 뒤 이 안에 들어와야 완주
 const MAX_RACE = 45000;
 const POINTS = [10, 8, 6, 5, 4, 3, 2, 1];
-const TRACK_NAMES = ["출발 직선", "첫 번째 코너", "헤어핀", "S자 코너", "고가 직선", "롱 코너", "마지막 코너", "결승 직선"];
+const TRACK_NAMES = ["추월 직선", "첫 번째 코너", "와이드 헤어핀", "드리프트 S자", "고가 직선", "지름길 갈림길", "합류 코너", "결승 직선"];
 const FALSE_START = 1000;         // 부정출발 벌칙
 const SEND_EVERY = 100;
 const STEP = 1 / 60;
@@ -207,9 +207,41 @@ const RUNS = (() => {
   return runs;
 })();
 const BOUNDS = (() => {
-  const xs = T.main.pts.map(p => p.x);
-  const ys = T.main.pts.map(p => p.y);
-  return { x0: Math.min(...xs) - 8, x1: Math.max(...xs) + 8, y0: Math.min(...ys) - 8, y1: Math.max(...ys) + 8 };
+  const edges = [...T.main.pts, ...T.branch.pts].flatMap(p => [-1, 1].map(side => ({
+    x: p.x - p.ty * side * (p.half + 2), y: p.y + p.tx * side * (p.half + 2),
+  })));
+  return { x0: Math.min(...edges.map(p => p.x)), x1: Math.max(...edges.map(p => p.x)),
+    y0: Math.min(...edges.map(p => p.y)), y1: Math.max(...edges.map(p => p.y)) };
+})();
+// 실제 열린 이음새와 같은 판정으로 난간을 끊는다. 화면에만 막힌 입구를 만들지 않는다.
+const RAILS = (() => {
+  const rails = [];
+  for (const [path, road] of [['main', T.main], ['branch', T.branch]]) {
+    for (const side of [-1, 1]) {
+      let run = null;
+      const count = road.closed ? road.n : road.n - 1;
+      for (let i = 0; i < count; i++) {
+        const a = road.pts[i], b = road.pts[(i + 1) % road.n];
+        if (a.layer !== b.layer) { run = null; continue; }
+        const length = Math.hypot(b.x - a.x, b.y - a.y);
+        const steps = Math.max(1, Math.ceil(length / .35));
+        const at = t => {
+          const tx = a.tx + (b.tx - a.tx) * t, ty = a.ty + (b.ty - a.ty) * t;
+          const norm = Math.hypot(tx, ty) || 1;
+          return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t,
+            tx: tx / norm, ty: ty / norm, half: a.half + (b.half - a.half) * t,
+            s: a.s + length * t, layer: a.layer };
+        };
+        for (let j = 0; j < steps; j++) {
+          // 열린 경계를 잘게 잘라, 끝점 하나의 판정으로 바깥 난간까지 지우지 않는다.
+          if (roadWallOpen(T, path, at((j + .5) / steps), side)) { run = null; continue; }
+          if (!run) { run = { path, layer: a.layer, side, pts: [at(j / steps)] }; rails.push(run); }
+          run.pts.push(at((j + 1) / steps));
+        }
+      }
+    }
+  }
+  return rails;
 })();
 const TAU = Math.PI * 2;
 // 몸통 방향 (라디안): 내 차는 hx·hy, 남의 차는 받은 h
@@ -222,7 +254,7 @@ export default {
   emoji: '🏁',
   tag: '액션',
   color: '#1c7ed6',
-  desc: '짧게 3번 달리는 카트 레이스! Shift/Space로 드리프트, 놓으면 부스트. 3경기 합산 점수로 우승!',
+  desc: '넓은 직선에서 부스트 추월, 안쪽 지름길로 역전! Shift/Space 드리프트, 3경기 합산 승부.',
   minPlayers: 2,
   maxPlayers: 8,
   tickMs: 50,
@@ -491,10 +523,15 @@ export default {
         band(run.pts, layer ? 0.6 : 0.4);
         g.fill();
       }
+      if (!layer) { band(T.branch.pts, .4); g.fill(); }
       for (const run of runs) {
-        const sec = SECTIONS[run.sec];
         g.fillStyle = layer ? COLORS.bridge : COLORS.ice;
         band(run.pts, 0);
+        g.fill();
+      }
+      if (!layer) {
+        g.fillStyle = '#426b70';
+        band(T.branch.pts, 0);
         g.fill();
       }
       if (layer) {
@@ -511,30 +548,31 @@ export default {
         g.setLineDash([1.8, 2.6]); g.strokeStyle = 'rgba(255,255,255,.26)'; g.lineWidth = .13;
         for (const run of runs) { poly(run.pts); g.stroke(); }
         g.setLineDash([]);
+        // 직선의 보조 차선은 나란히 달릴 공간을 보여 준다.
+        g.setLineDash([2.8, 3.6]); g.strokeStyle = 'rgba(255,255,255,.15)';
+        for (const run of runs.filter(run => [0, 4, 7].includes(run.sec))) {
+          for (const side of [-1, 1]) {
+            poly(run.pts.map(p => ({ x: p.x - p.ty * side * p.half / 2, y: p.y + p.tx * side * p.half / 2 })));
+            g.stroke();
+          }
+        }
+        g.setLineDash([]);
       }
       // 벽: 타이어 색상의 보호 난간
-
-      for (const run of RUNS) {
-        if (run.layer !== layer) continue;
-        const sec = SECTIONS[run.sec];
-        const walls = 'both';
-        if (!walls) continue;
-        g.strokeStyle = layer ? COLORS.rail : COLORS.wall;
+      for (const run of RAILS.filter(run => run.layer === layer)) {
+        g.strokeStyle = run.path === 'branch' ? '#80e5d1' : layer ? COLORS.rail : COLORS.wall;
         g.lineWidth = layer ? 0.35 : 0.7;
-        for (const side of [1, -1]) {
-          const pts = run.pts.filter(p => walls === 'both' || p.outer === side);
-          if (pts.length < 2) continue;
-          poly(edgeLine(pts, side, layer ? 0.1 : 0.35));
-          g.stroke();
-          if (!layer) {
-            g.setLineDash([1.1, 1.1]); g.strokeStyle = '#e86656'; g.lineWidth = .48; g.stroke();
-            g.setLineDash([]); g.strokeStyle = COLORS.wall; g.lineWidth = .7;
-          }
+        poly(edgeLine(run.pts, run.side, layer ? 0.1 : 0.35));
+        g.stroke();
+        if (!layer) {
+          g.setLineDash([1.1, 1.1]); g.strokeStyle = run.path === 'branch' ? '#225b62' : '#e86656';
+          g.lineWidth = .48; g.stroke(); g.setLineDash([]);
         }
       }
     }
 
     function drawFeatures(now) {
+      drawShortcut();
       // 지름길: 좁은 나무 다리 (양옆 물, 옆바람). 양 끝은 깔때기처럼 넓다 (물리와 같은 폭)
       if (!T.sprint) {
       const b = T.branch.pts;
@@ -612,7 +650,7 @@ export default {
       }
       // 결승선 체크무늬 (트랙 방향으로 돌려서)
       const f = pointAt(T.main, 0);
-      const half = SECTIONS[0].w / 2;
+      const half = f.half;
       g.save();
       g.translate(f.x, f.y);
       g.rotate(Math.atan2(f.ty, f.tx));
@@ -623,6 +661,38 @@ export default {
           g.fillRect(-0.7 + r * 0.7, -half + k * (half * 2 / n), 0.7, half * 2 / n);
         }
       }
+      g.restore();
+    }
+
+    function drawShortcut() {
+      const branch = T.branch;
+      g.strokeStyle = '#91f5df';
+      g.lineWidth = .18;
+      g.setLineDash([1.2, 1.8]);
+      poly(branch.pts);
+      g.stroke();
+      g.setLineDash([]);
+      // 경로를 향한 화살표. 입구뿐 아니라 출구에서도 진행 방향이 읽히게 한다.
+      g.strokeStyle = '#adffeb';
+      g.lineWidth = .32;
+      for (let s = 7; s < branch.len - 4; s += 11) {
+        const p = pointAt(branch, s);
+        g.save(); g.translate(p.x, p.y); g.rotate(Math.atan2(p.ty, p.tx));
+        g.beginPath(); g.moveTo(-.9, -1.25); g.lineTo(.55, 0); g.lineTo(-.9, 1.25); g.stroke();
+        g.restore();
+      }
+      // 지름길 표시는 도로 옆에 두어 차량과 노면을 가리지 않는다.
+      const entry = pointAt(branch, Math.min(11, branch.len * .2));
+      const mainEntry = pointAt(T.main, branch.from);
+      const inside = Math.sign((entry.x - mainEntry.x) * -mainEntry.ty + (entry.y - mainEntry.y) * mainEntry.tx) || 1;
+      const sign = pointAt(T.main, branch.from - 9);
+      g.save();
+      g.translate(sign.x - sign.ty * inside * (sign.half + 3.3), sign.y + sign.tx * inside * (sign.half + 3.3));
+      g.fillStyle = '#163d43'; g.strokeStyle = '#80e5d1'; g.lineWidth = .18;
+      g.beginPath(); g.roundRect(-4, -2.05, 8, 4.1, .55); g.fill(); g.stroke();
+      g.fillStyle = '#b6ffeb'; g.font = 'bold 1.2px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillText('지름길', 0, -.65);
+      g.fillStyle = '#e6fcf5'; g.font = '.8px system-ui'; g.fillText('안쪽으로 진입', 0, .85);
       g.restore();
     }
 
@@ -764,10 +834,10 @@ export default {
         focus = (id && id !== me ? ghostAt(id, t) : null) || car;
       }
       const sp = Math.hypot(focus.vx || 0, focus.vy || 0);
-      const wantZ = Math.max(13, 21 - sp * 0.35) * Math.min(1, Math.max(0.6, Math.min(W, H) / 520));
+      const wantZ = Math.max(11.5, 21 - sp * 0.35) * Math.min(1, Math.max(0.6, Math.min(W, H) / 520));
       cam.z += (wantZ - cam.z) * 0.06;
-      cam.x += (focus.x + (focus.vx || 0) * 0.35 - cam.x) * 0.12;
-      cam.y += (focus.y + (focus.vy || 0) * 0.35 - cam.y) * 0.12;
+      cam.x += (focus.x + (focus.vx || 0) * 0.5 - cam.x) * 0.12;
+      cam.y += (focus.y + (focus.vy || 0) * 0.5 - cam.y) * 0.12;
       cam.shake *= 0.88;
       const sx = (Math.random() - 0.5) * cam.shake;
       const sy = (Math.random() - 0.5) * cam.shake;
@@ -876,15 +946,15 @@ export default {
       mg.setTransform(k, 0, 0, k, ox, oy);
       mg.lineJoin = 'round';
       mg.strokeStyle = 'rgba(232,244,253,.95)';
-      mg.lineWidth = 5;
+      mg.lineWidth = 10;
       mg.beginPath();
       T.main.pts.forEach((p, i) => (i ? mg.lineTo(p.x, p.y) : mg.moveTo(p.x, p.y)));
       mg.closePath();
       mg.stroke();
-      mg.strokeStyle = '#d9b382';
-      mg.lineWidth = 2;
+      mg.strokeStyle = '#63e6be';
+      mg.lineWidth = 5;
       mg.beginPath();
-      (T.sprint ? [] : T.branch.pts).forEach((p, i) => (i ? mg.lineTo(p.x, p.y) : mg.moveTo(p.x, p.y)));
+      T.branch.pts.forEach((p, i) => (i ? mg.lineTo(p.x, p.y) : mg.moveTo(p.x, p.y)));
       mg.stroke();
       const t = api.now();
       for (const p of S?.roster || []) {
@@ -898,6 +968,9 @@ export default {
         mg.fill();
         mg.stroke();
       }
+      mg.setTransform(1, 0, 0, 1, 0, 0);
+      mg.fillStyle = '#91f5df'; mg.font = 'bold 10px system-ui'; mg.textAlign = 'right';
+      mg.fillText('청록색 = 지름길', w - 5, hgt - 5);
     }
 
     // 물리·위치 보내기는 그리기와 따로 (브라우저가 그리기를 늦추거나 멈춰도 차는 정확하게)
@@ -952,6 +1025,7 @@ export default {
         c ? h('span', {}, `${pos}등 / ${S.roster.length}명`) : null,
         c?.split != null && !c.fin ? h('span', { class: c.split > 0 ? 'rc-behind' : 'rc-ahead' }, c.split > 0 ? `선두와 +${c.split}초` : '구간 선두!') : null,
         h('span', { class: 'muted' }, `합계 ${S.points?.[me] || 0}점 · ${car.vx * car.hx + car.vy * car.hy < -.5 ? 'R ' : ''}${Math.round(Math.hypot(car.vx, car.vy) * 3.6)} km/h`),
+        car.path === 'branch' && !c?.fin ? h('span', { class: 'rc-ahead' }, '↗ 지름길 주행 중') : null,
         h('span', { class: 'rc-hot' }, car.boostLeft > 0 ? '🔥 부스트!' : (car.charge || 0) >= 1.15 ? '🟠 놓으면 강력 부스트!' : (car.charge || 0) >= .45 ? '🔵 놓으면 부스트!' : `Shift / Space 드리프트 ${Math.round((car.charge || 0) / 1.5 * 100)}%`),
         S.finishBy && S.phase === 'race' ? h('span', { class: 'rc-hot' }, `⏱ ${Math.max(0, Math.ceil((S.finishBy - api.now()) / 1000))}초 안에 결승선!`) : null,
       ].filter(Boolean));
@@ -966,7 +1040,8 @@ export default {
         overlay.append(h('div', { class: 'rc-card' },
           h('h2', {}, '🏎️ 카트 그랑프리'),
           S.again ? null : h('ul', { class: 'rules big' },
-            h('li', {}, '차고 8자 코스 한 바퀴씩, 3경기 합산 점수로 승부!'),
+            h('li', {}, '넓은 8자 서킷 한 바퀴씩, 3경기 합산 점수로 승부!'),
+            h('li', {}, '넓은 직선에서 부스트 추월 · 청록색 안쪽 지름길로 역전!'),
             h('li', {}, 'W / ↑ = 가속 · S / ↓ = 제동 후 후진 · A D / ← → = 핸들'),
             h('li', {}, '좌우는 짧게 눌러 미세 조정 · 떼면 바로 직진으로 안정돼요'),
             h('li', {}, '코너에서 Shift / Space 꾹 = 드리프트 · 놓으면 부스트!'),
@@ -1018,7 +1093,12 @@ export default {
           h('li', {}, 'Shift / Space 꾹 = 드리프트, 놓으면 모은 만큼 부스트'),
           h('li', {}, '🔵 짧은 부스트 → 🟠 강력 부스트. 직선에서는 충전되지 않아요'),
           h('li', {}, '오른쪽 위 미니맵 = 트랙 전체')),
-        h('h3', {}, '차고 8자 · 카트끼리 밀고 추월!'),
+        h('h3', {}, '추월과 지름길'),
+        h('ul', { class: 'rules' },
+          h('li', {}, '넓은 직선에서는 옆 차선으로 빠져 부스트로 추월!'),
+          h('li', {}, '갈림길 안쪽 청록색 길은 짧지만 폭이 좁아요. 진입 전에 라인을 잡으세요'),
+          h('li', {}, '바깥 본선은 넓은 코너. 드리프트를 충전해 합류 뒤 추월할 수 있어요')),
+        h('h3', {}, '와이드 8자 서킷'),
         h('ul', { class: 'rules' }, TRACK_NAMES.map((name, i) => h('li', {}, `${i + 1}. ${name}`))));
     }
 
