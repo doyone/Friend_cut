@@ -199,3 +199,88 @@ test('a peer snapshot preserves a partly completed reverse dwell during reconcil
     'the remaining dwell is replayed instead of restarting the whole timer');
   close(S.cars.peer.reverseHold, .15);
 });
+
+test('normal steering retains speed and a short release quickly stops rotation', () => {
+  const world = createRacePrediction(T, 'me');
+  world.sync(state({ me: at(12, 22) }), BASE);
+  world.recordInput({ throttle: 1, steer: 1, brake: false, drift: false, seq: 1 }, BASE);
+  const original = { hx: world.car('me').hx, hy: world.car('me').hy };
+  world.step(.1, BASE + 100);
+  const car = world.car('me');
+  const angle = Math.atan2(original.hx * car.hy - original.hy * car.hx, original.hx * car.hx + original.hy * car.hy);
+  assert.ok(angle > .08, 'a 100ms keyboard tap has an immediate, visible effect');
+  assert.ok(speed(car) > 21, 'a normal corner keeps the speed gained before it');
+  world.recordInput({ throttle: 1, steer: 0, brake: false, drift: false, seq: 2 }, BASE + 100);
+  world.step(.1, BASE + 200);
+  assert.ok(Math.abs(car.yawRate) < .2, 'release does not leave the kart rotating for several hundred milliseconds');
+  assert.ok(speed(car) > 21);
+});
+
+const relativeHeading = car => {
+  const p = pointAt(T.main, 12);
+  return Math.atan2(p.tx * car.hy - p.ty * car.hx, p.tx * car.hx + p.ty * car.hy);
+};
+function tapWorld() {
+  const world = createRacePrediction(T, 'me');
+  world.sync(state({ me: at(12, 22) }), BASE);
+  world.recordInput({ throttle: 0, steer: 1, brake: false, drift: false, seq: 1 }, BASE);
+  world.step(.1, BASE + 100);
+  return world;
+}
+
+test('unacknowledged steering and a released 100ms tap do not lose their angular progress on snapshots', () => {
+  for (const release of [false, true]) {
+    const world = tapWorld();
+    const before = relativeHeading(world.car('me'));
+    if (release) world.recordInput({ throttle: 0, steer: 0, brake: false, drift: false, seq: 2 }, BASE + 100);
+    const snapshot = state({ me: at(13.1, 22, { seq: 0, t: BASE + 50 }) }, { worldAt: BASE + 50 });
+    world.sync(snapshot, BASE + 100);
+    close(relativeHeading(world.car('me')), before, .0001);
+    assert.ok(relativeHeading(world.car('me')) > .08);
+  }
+});
+
+test('angular protection is bounded to 200ms and never overrides collisions or elimination', () => {
+  const expired = tapWorld();
+  expired.recordInput({ throttle: 0, steer: 0, brake: false, drift: false, seq: 2 }, BASE + 100);
+  expired.step(.2, BASE + 300);
+  expired.sync(state({ me: at(17.5, 22, { seq: 0, t: BASE + 250 }) }, { worldAt: BASE + 250 }), BASE + 300);
+  assert.ok(Math.abs(relativeHeading(expired.car('me'))) < .001, 'a lost acknowledgement cannot protect the old local turn indefinitely');
+  for (const flag of [
+    { hitAt: BASE + 50, impactLeft: .2 },
+    { fin: 1234 }, { sp: BASE + 1000 }, { air: BASE + 1000 },
+  ]) {
+    const world = tapWorld();
+    const snapshot = state({ me: at(13.1, 22, { ...flag, seq: 0, t: BASE + 50 }) }, { worldAt: BASE + 50 });
+    const authority = createRacePrediction(T, 'me');
+    authority.sync(snapshot, BASE + 50);
+    authority.recordInput({ throttle: 0, steer: 1, brake: false, drift: false, seq: 1 }, BASE);
+    authority.step(.05, BASE + 100);
+    world.sync(snapshot, BASE + 100);
+    close(relativeHeading(world.car('me')), relativeHeading(authority.car('me')), .0001);
+  }
+});
+
+test('acknowledging a tap eases its small angular difference without moving the authoritative position', () => {
+  const world = tapWorld();
+  world.recordInput({ throttle: 0, steer: 0, brake: false, drift: false, seq: 2 }, BASE + 100);
+  world.step(.05, BASE + 150);
+  world.sync(state({ me: at(14.2, 22, { seq: 0, t: BASE + 100 }) }, { worldAt: BASE + 100 }), BASE + 150);
+  const before = relativeHeading(world.car('me'));
+  const heading = Math.atan2(pointAt(T.main, 12).ty, pointAt(T.main, 12).tx) + .03;
+  const acknowledged = state({ me: at(15.2, 22, {
+    hx: Math.cos(heading), hy: Math.sin(heading), seq: 2, inputAt: BASE + 140, t: BASE + 150,
+  }) }, { worldAt: BASE + 150 });
+  world.sync(acknowledged, BASE + 150);
+  close(relativeHeading(world.car('me')), before, .0001);
+  close(world.car('me').x, acknowledged.cars.me.x);
+  close(world.car('me').y, acknowledged.cars.me.y);
+  let previous = relativeHeading(world.car('me'));
+  for (let i = 1; i <= 9; i++) {
+    world.step(DT, BASE + 150 + i * DT * 1000);
+    const current = relativeHeading(world.car('me'));
+    assert.ok(previous - current < .035, 'one frame never rewinds the body by more than two degrees');
+    previous = current;
+  }
+  assert.ok(Math.abs(relativeHeading(world.car('me')) - .03) < .03, 'the small correction settles within about 150ms');
+});

@@ -222,7 +222,7 @@ export default {
   emoji: '🏁',
   tag: '액션',
   color: '#1c7ed6',
-  desc: '짧게 3번 달리는 카트 레이스! 스페이스로 드리프트, 놓으면 부스트. 3경기 합산 점수로 우승!',
+  desc: '짧게 3번 달리는 카트 레이스! Shift/Space로 드리프트, 놓으면 부스트. 3경기 합산 점수로 우승!',
   minPlayers: 2,
   maxPlayers: 8,
   tickMs: 50,
@@ -338,7 +338,7 @@ export default {
     const mine = () => S?.cars?.[me];
     const racing = () => S?.phase === 'race';
 
-    const KEY = { Space: 'drift', ArrowLeft: 'l', KeyA: 'l', ArrowRight: 'r', KeyD: 'r', ArrowUp: 'u', KeyW: 'u', ArrowDown: 'd', KeyS: 'd' };
+    const KEY = { Space: 'drift', ShiftLeft: 'drift', ShiftRight: 'drift', ArrowLeft: 'l', KeyA: 'l', ArrowRight: 'r', KeyD: 'r', ArrowUp: 'u', KeyW: 'u', ArrowDown: 'd', KeyS: 'd' };
     function onKey(e) {
       if (isTyping(e) && e.type !== 'keyup') return;
       const k = KEY[e.code];
@@ -952,7 +952,7 @@ export default {
         c ? h('span', {}, `${pos}등 / ${S.roster.length}명`) : null,
         c?.split != null && !c.fin ? h('span', { class: c.split > 0 ? 'rc-behind' : 'rc-ahead' }, c.split > 0 ? `선두와 +${c.split}초` : '구간 선두!') : null,
         h('span', { class: 'muted' }, `합계 ${S.points?.[me] || 0}점 · ${car.vx * car.hx + car.vy * car.hy < -.5 ? 'R ' : ''}${Math.round(Math.hypot(car.vx, car.vy) * 3.6)} km/h`),
-        h('span', { class: 'rc-hot' }, car.boostLeft > 0 ? '🔥 부스트!' : (car.charge || 0) >= 1.15 ? '🟠 놓으면 강력 부스트!' : (car.charge || 0) >= .45 ? '🔵 놓으면 부스트!' : `SPACE 드리프트 ${Math.round((car.charge || 0) / 1.5 * 100)}%`),
+        h('span', { class: 'rc-hot' }, car.boostLeft > 0 ? '🔥 부스트!' : (car.charge || 0) >= 1.15 ? '🟠 놓으면 강력 부스트!' : (car.charge || 0) >= .45 ? '🔵 놓으면 부스트!' : `Shift / Space 드리프트 ${Math.round((car.charge || 0) / 1.5 * 100)}%`),
         S.finishBy && S.phase === 'race' ? h('span', { class: 'rc-hot' }, `⏱ ${Math.max(0, Math.ceil((S.finishBy - api.now()) / 1000))}초 안에 결승선!`) : null,
       ].filter(Boolean));
     }
@@ -968,7 +968,8 @@ export default {
           S.again ? null : h('ul', { class: 'rules big' },
             h('li', {}, '차고 8자 코스 한 바퀴씩, 3경기 합산 점수로 승부!'),
             h('li', {}, 'W / ↑ = 가속 · S / ↓ = 제동 후 후진 · A D / ← → = 핸들'),
-            h('li', {}, '코너에서 SPACE 꾹 = 드리프트 · 놓으면 부스트!'),
+            h('li', {}, '좌우는 짧게 눌러 미세 조정 · 떼면 바로 직진으로 안정돼요'),
+            h('li', {}, '코너에서 Shift / Space 꾹 = 드리프트 · 놓으면 부스트!'),
             h('li', {}, '파란 불꽃은 짧게, 주황 불꽃은 길게 가속! 벽에 박으면 충전이 사라져요'),
             h('li', {}, '초록불 전 가속하면 부정출발! 핸들은 미리 돌릴 수 있어요'))));
       }
@@ -1012,9 +1013,9 @@ export default {
         h('h3', {}, '조작'),
         h('ul', { class: 'rules' },
           h('li', {}, 'W / ↑ = 앞으로 가속 · S / ↓ 꾹 = 멈춘 뒤 후진'),
-          h('li', {}, 'A D / ← → = 핸들. 떼면 중앙으로 돌아와요'),
-          h('li', {}, '고속에서는 핸들이 덜 꺾여요. 코너 전 감속!'),
-          h('li', {}, 'SPACE 꾹 = 드리프트, 놓으면 모은 만큼 부스트'),
+          h('li', {}, 'A D / ← → = 핸들. 짧게 눌러 미세 조정, 떼면 바로 안정'),
+          h('li', {}, '일반 커브는 속도 유지 · 드리프트는 크게 미끄러져요'),
+          h('li', {}, 'Shift / Space 꾹 = 드리프트, 놓으면 모은 만큼 부스트'),
           h('li', {}, '🔵 짧은 부스트 → 🟠 강력 부스트. 직선에서는 충전되지 않아요'),
           h('li', {}, '오른쪽 위 미니맵 = 트랙 전체')),
         h('h3', {}, '차고 8자 · 카트끼리 밀고 추월!'),

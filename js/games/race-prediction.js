@@ -7,7 +7,16 @@ const STEP_MS = STEP * 1000;
 const REPLAY_MS = 200;
 const INPUT_LEASE = 600;
 const HISTORY_MS = 2000;
+const ANGULAR_SETTLE_MS = 65;
 const neutral = () => ({ throttle: 0, steer: 0, brake: false, drift: false });
+const angularDifference = (a, b) => Math.atan2(a.hx * b.hy - a.hy * b.hx, a.hx * b.hx + a.hy * b.hy);
+const sameInput = (a, b) => a.throttle === b.throttle && a.steer === b.steer && a.brake === b.brake && a.drift === b.drift;
+function rotateHeading(car, angle) {
+  const c = Math.cos(angle), s = Math.sin(angle), hx = car.hx;
+  car.hx = hx * c - car.hy * s;
+  car.hy = hx * s + car.hy * c;
+  car.h = Math.atan2(car.hy, car.hx);
+}
 const copy = value => Array.isArray(value) ? value.map(copy)
   : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value).map(([k, v]) => [k, copy(v)])) : value;
 
@@ -22,6 +31,9 @@ export function createRacePrediction(T, me) {
   let physicsAt = -Infinity;
   let history = [];
   let lastSeq = 0;
+  let ownAuthority = null;
+  let heldAngularSeq = null;
+  let angularCorrection = null;
 
   function roundKey(state) {
     return `${state.run ?? ''}:${state.round ?? 0}`;
@@ -81,6 +93,69 @@ export function createRacePrediction(T, me) {
     return input;
   }
 
+  function pendingChange(source, at, now) {
+    // Receipt acknowledgement can precede the physics step that consumes it.
+    const ack = (source.seq || 0) - (source.inputAt > at ? 1 : 0);
+    let previous = neutral();
+    for (const entry of history) {
+      const changed = !sameInput(previous, entry);
+      previous = entry;
+      if (changed && Number.isSafeInteger(entry.seq) && entry.seq > ack && entry.t <= now) return entry;
+    }
+    return null;
+  }
+
+  function decayAngle(car, correction, dt) {
+    const wanted = correction.angle * (1 - Math.exp(-dt * 1000 / ANGULAR_SETTLE_MS));
+    const delta = Math.max(-.03, Math.min(.03, wanted));
+    rotateHeading(car, -delta);
+    correction.angle -= delta;
+  }
+
+  function projectOwn(car, from, until, correction) {
+    const projected = copy(car);
+    const easing = correction ? { ...correction } : null;
+    for (let at = from; at < until - .00001;) {
+      const dt = Math.min(STEP_MS, until - at) / 1000;
+      at += dt * 1000;
+      const input = controls(me, projected, at);
+      if (!input) { projected.charge = 0; projected.driftHeld = false; }
+      stepCar(T, projected, input, dt, at);
+      if (easing) decayAngle(projected, easing, dt);
+    }
+    return projected;
+  }
+
+  function preserveAngularProgress(source, old, oldAt, oldCorrection, now) {
+    const current = cars.get(me);
+    if (!source || !old || !current || phase !== 'race') return;
+    const pending = pendingChange(source, snapshotAt, now);
+    const safe = oldAt >= snapshotAt - .00001 && oldAt <= physicsAt + .00001 && physicsAt - oldAt <= REPLAY_MS
+      && !source.sp && !source.air && !source.fin && !old.sp && !old.air && !old.fin
+      && !(current.impactLeft > .001) && !(old.impactLeft > .001)
+      && (source.hitAt || 0) <= (ownAuthority?.hitAt || 0)
+      && (source.sp || 0) === (ownAuthority?.sp || 0) && (source.air || 0) === (ownAuthority?.air || 0)
+      && (source.impactLeft || 0) <= (ownAuthority?.impactLeft || 0) + .03
+      && Math.hypot(old.x - current.x, old.y - current.y) < 3;
+    if (!safe || pending && now - pending.t > REPLAY_MS) { heldAngularSeq = null; return; }
+    const projected = projectOwn(old, oldAt, physicsAt, oldCorrection);
+    const difference = angularDifference(current, projected);
+    if (projected.sp || projected.air || Math.abs(difference) > .5) { heldAngularSeq = null; return; }
+    if (pending) {
+      for (const field of ['hx', 'hy', 'yawRate', 'steer', 'steerInput', 'driftSide']) current[field] = projected[field] ?? 0;
+      heldAngularSeq = pending.seq;
+    } else if (heldAngularSeq !== null || oldCorrection) {
+      rotateHeading(current, difference);
+      angularCorrection = { angle: difference };
+      heldAngularSeq = null;
+    } else return;
+    current.h = Math.atan2(current.hy, current.hx);
+    // Rotation changes the capsule too; the displayed world must still obey
+    // contacts rather than protecting local input by drawing through a peer.
+    resolveKartContacts(T, roster.map(({ id }) => ({ id, car: cars.get(id) })), STEP);
+    if (current.impactLeft > .001) { heldAngularSeq = null; angularCorrection = null; }
+  }
+
   function simulate(at) {
     const entries = [];
     const events = [];
@@ -92,10 +167,18 @@ export function createRacePrediction(T, me) {
       // An expired control must not turn an old charged drift into a boost.
       if (!input) { car.charge = 0; car.driftHeld = false; }
       const ev = stepCar(T, car, input, STEP, at);
+      if (id === me && angularCorrection) {
+        if (car.sp || car.air || car.fin || car.impactLeft > .001) angularCorrection = null;
+        else {
+          decayAngle(car, angularCorrection, STEP);
+          if (Math.abs(angularCorrection.angle) < .0001) angularCorrection = null;
+        }
+      }
       if (id === me) events.push(...ev);
       entries.push({ id, car, prev });
     }
     const impacts = resolveKartContacts(T, entries, STEP);
+    if (impacts.some(hit => hit.a === me || hit.b === me)) { heldAngularSeq = null; angularCorrection = null; }
     for (const { car } of entries) {
       car.t = at;
       car.h = Math.atan2(car.hy, car.hx);
@@ -125,6 +208,7 @@ export function createRacePrediction(T, me) {
     key = phase = null; roster = [];
     startAt = 0; snapshotAt = physicsAt = -Infinity;
     history = []; lastSeq = 0;
+    ownAuthority = null; heldAngularSeq = null; angularCorrection = null;
   }
 
   function reset(state, now) {
@@ -137,6 +221,7 @@ export function createRacePrediction(T, me) {
     readIntents(state);
     readCars(state);
     advanceTo(now);
+    ownAuthority = copy(state.cars?.[me] || null);
   }
 
   function sync(state, now) {
@@ -148,12 +233,18 @@ export function createRacePrediction(T, me) {
     // intent without overwriting the already predicted positions.
     if (at >= snapshotAt) readIntents(state);
     if (at < snapshotAt || at === snapshotAt && !phaseChanged) return false;
+    const previousOwn = copy(cars.get(me));
+    const previousAt = physicsAt;
+    const previousCorrection = angularCorrection;
+    angularCorrection = null;
     phase = state.phase;
     startAt = state.startAt || 0;
     snapshotAt = physicsAt = at;
     lastSeq = Math.max(lastSeq, state.cars?.[me]?.seq || 0);
     readCars(state);
     advanceTo(now);
+    preserveAngularProgress(state.cars?.[me], previousOwn, previousAt, previousCorrection, now);
+    ownAuthority = copy(state.cars?.[me] || null);
     return true;
   }
 

@@ -38,17 +38,16 @@ export const KART = {
   reverseThrust: 16,
   reverseDelay: 0.2,
   drag: 0.3,
-  wheelbase: 2,
-  steerMax: 0.5,
-  steerSlew: 1.8,
-  steerInputSlew: 3.8,
-  steerOpposite: 5.5,
-  steerReturn: 5.2,
-  steerSpeed: 0.065,
-  yawAccel: 6,
-  grip: 13.2,
-  driftGrip: 4.1,
-  gripMax: 110,
+  turnRate: 2.4,
+  driftTurnRate: 3,
+  turnResponse: 0.045,
+  centerResponse: 0.025,
+  counterResponse: 0.035,
+  grip: 35,
+  driftGrip: 5.5,
+  driftDrag: 0.12,
+  impactGrip: 3,
+  impactTime: 0.2,
   radius: 1.05,
   capsuleBack: -0.20,
   capsuleFront: 0.35,
@@ -289,16 +288,16 @@ export function respawnPose(T, fall) {
 
 export function newCar(T) {
   const p = pointAt(T.main, T.start);
-  return { x: p.x, y: p.y, vx: 0, vy: 0, path: 'main', seg: p.i, s: T.start, ms: T.start, lat: 0, air: 0, sp: 0, oil: 0, dr: 0, hx: p.tx, hy: p.ty, steerInput: 0, steer: 0, yawRate: 0, reverseHold: 0 };
+  return { x: p.x, y: p.y, vx: 0, vy: 0, path: 'main', seg: p.i, s: T.start, ms: T.start, lat: 0, air: 0, sp: 0, oil: 0, dr: 0, hx: p.tx, hy: p.ty, steerInput: 0, steer: 0, yawRate: 0, reverseHold: 0, driftSide: 0, impactLeft: 0 };
 }
 
-// 한 걸음 (dt 초, t 서버 시각 ms). input = { x, y } 방향 (-1~1). 일어난 일을 돌려준다
+// 한 걸음 (dt 초, t 서버 시각 ms). 카트는 { throttle, steer, brake, drift }, 얼음 코스는 { x, y }.
 export function stepCar(T, car, input, dt, t) {
   const ev = [];
   if (car.sp) {
     if (t < car.sp) return ev;
     const r = respawnPose(T, car.fall || car);
-    Object.assign(car, { x: r.x, y: r.y, vx: 0, vy: 0, path: r.path, seg: r.seg, sp: 0, air: 0, dr: 0, hx: r.tx, hy: r.ty, steerInput: 0, steer: 0, yawRate: 0, reverseHold: 0 });
+    Object.assign(car, { x: r.x, y: r.y, vx: 0, vy: 0, path: r.path, seg: r.seg, sp: 0, air: 0, dr: 0, hx: r.tx, hy: r.ty, steerInput: 0, steer: 0, yawRate: 0, reverseHold: 0, driftSide: 0, impactLeft: 0 });
     const at = locate(T, car, car.x, car.y);
     if (at) Object.assign(car, { s: at.s, ms: at.ms, lat: at.lat });
     ev.push('respawn');
@@ -445,19 +444,23 @@ function driveKart(car, input, dt) {
   if (!held) car.charge = 0;
   const boosted = car.boostLeft > 0;
 
-  // 키보드 입력도 운전대를 돌리는 시간을 거친다. 반대 입력은 중앙을 지나간다.
-  const steerInput = car.steerInput || 0;
-  const steerRate = Math.abs(steering) < 1e-6 ? KART.steerReturn
-    : steering * steerInput < 0 ? KART.steerOpposite : KART.steerInputSlew;
-  car.steerInput = approach(steerInput, steering, steerRate * dt);
-  const wheelMax = KART.steerMax / (1 + before * KART.steerSpeed);
-  car.steer = approach(car.steer || 0, car.steerInput * wheelMax, KART.steerSlew * dt);
-  const yawMax = 2.8 - 0.6 * Math.min(1, before / KART.max);
+  // 아케이드 조작: 입력을 회전 속도로 바로 바꾸고 한 번만 짧게 보간한다.
+  // 드리프트는 살짝 꺾어 시작한 뒤 키를 놓아도 완만한 옆미끄럼을 유지한다.
+  if (!held || braking || before < 8) car.driftSide = 0;
+  else if (Math.abs(steering) > 0.08) car.driftSide = Math.sign(steering);
+  const drifting = held && !braking && before > 8 && !!car.driftSide;
+  const turnInput = Math.abs(steering) > 0.001 ? steering : drifting ? car.driftSide * 0.18 : 0;
+  car.steerInput = steering;
   const forwardSpeed = car.vx * car.hx + car.vy * car.hy;
-  const yaw = Math.max(-yawMax, Math.min(yawMax, forwardSpeed / KART.wheelbase * Math.tan(car.steer)));
-  car.yawRate = approach(car.yawRate || 0, yaw, KART.yawAccel * dt);
+  const turnLimit = forwardSpeed < 0 ? 1.8 : drifting ? KART.driftTurnRate : KART.turnRate;
+  const yaw = turnInput * turnLimit * Math.min(1, before / 8) * (forwardSpeed < 0 ? -1 : 1);
+  const response = Math.abs(turnInput) < 0.001 ? KART.centerResponse
+    : yaw * (car.yawRate || 0) < 0 ? KART.counterResponse : KART.turnResponse;
+  car.yawRate = (car.yawRate || 0) + (yaw - (car.yawRate || 0)) * (1 - Math.exp(-dt / response));
   if (before < 0.1) car.yawRate = 0;
   rotate(car, car.yawRate * dt);
+  // 바퀴 각도는 그림에만 사용한다. 물리 회전에 또 다른 지연을 겹치지 않는다.
+  car.steer = (car.steer || 0) + (turnInput * (drifting ? 0.5 : 0.35) - (car.steer || 0)) * (1 - Math.exp(-dt / 0.035));
 
   if (braking) {
     car.throttleTime = 0;
@@ -492,20 +495,29 @@ function driveKart(car, input, dt) {
     }
   } else { car.throttleTime = 0; car.reverseHold = 0; }
 
-  // 접지력은 가속 페달을 떼고 굴러가는 동안에도 작동한다.
-  const nx = -car.hy;
-  const ny = car.hx;
-  const lat = car.vx * nx + car.vy * ny;
-  const grip = held ? KART.driftGrip : KART.grip;
-  const cut = Math.sign(lat) * Math.min(Math.abs(lat) * Math.min(1, grip * dt), KART.gripMax * (held ? 0.38 : 1) * dt);
-  car.vx -= nx * cut;
-  car.vy -= ny * cut;
+  // 속도 크기를 잘라내지 않고 방향을 코 쪽으로 붙인다. 평범한 코너에서 속도를 잃지 않는다.
+  // 방금 부딪힌 차는 잠깐 접지 회복을 늦춰 충격으로 밀리는 움직임을 보존한다.
+  car.impactLeft = Math.max(0, (car.impactLeft || 0) - dt);
+  const moving = Math.hypot(car.vx, car.vy);
+  if (moving > 1e-6) {
+    const sign = car.vx * car.hx + car.vy * car.hy < 0 ? -1 : 1;
+    const desired = Math.atan2(car.hy * sign, car.hx * sign);
+    const velocity = Math.atan2(car.vy, car.vx);
+    const error = Math.atan2(Math.sin(desired - velocity), Math.cos(desired - velocity));
+    const baseGrip = drifting ? KART.driftGrip : KART.grip;
+    const recover = 1 - car.impactLeft / KART.impactTime;
+    const grip = car.impactLeft > 0 ? KART.impactGrip + (baseGrip - KART.impactGrip) * recover * recover : baseGrip;
+    const angle = velocity + error * (1 - Math.exp(-grip * dt));
+    car.vx = Math.cos(angle) * moving;
+    car.vy = Math.sin(angle) * moving;
+  }
+  const lat = car.vx * -car.hy + car.vy * car.hx;
   const forward = car.vx * car.hx + car.vy * car.hy;
-  car.dr = held && !braking && before > 8 && Math.abs(lat) > 1.5 ? 1 : 0;
-  if (car.dr && forward > before * 0.6 && Math.abs(car.steerInput) > 0.08) car.charge = Math.min(1.5, (car.charge || 0) + dt);
+  car.dr = drifting && Math.abs(lat) > 1.5 ? 1 : 0;
+  if (car.dr && forward > before * 0.6) car.charge = Math.min(1.5, (car.charge || 0) + dt);
   else car.charge = Math.max(0, (car.charge || 0) - dt * (braking ? 1 : 0.35));
 
-  const drag = Math.max(0, 1 - KART.drag * dt);
+  const drag = Math.max(0, 1 - (KART.drag + (drifting ? KART.driftDrag : 0)) * dt);
   car.vx *= drag;
   car.vy *= drag;
   // 일정한 최고 속도. 부스트 종료·충돌 직후의 초과 속도는 부드럽게 줄인다.
@@ -577,6 +589,7 @@ export function resolveKartContacts(T, entries, dt = 1 / 60) {
           a.vy -= ny * impulse;
           b.vx += nx * impulse;
           b.vy += ny * impulse;
+          if (-closing > 1.5) a.impactLeft = b.impactLeft = KART.impactTime;
           if (pass === 0 && -closing > 1.5) impacts.push({
             a: ea.id, b: eb.id, x: (hit.ax + hit.bx) * 0.5, y: (hit.ay + hit.by) * 0.5, strength: -closing,
           });
@@ -594,7 +607,6 @@ export function resolveKartContacts(T, entries, dt = 1 / 60) {
   return impacts;
 }
 
-const approach = (value, target, amount) => value + Math.max(-amount, Math.min(amount, target - value));
 const validPose = p => p && [p.x, p.y].every(Number.isFinite);
 
 function capsuleEnds(p) {
@@ -820,11 +832,13 @@ function kartBotInput(T, car, skill) {
   const dy = target.y - car.y;
   const distance = Math.max(1, Math.hypot(dx, dy));
   const angle = Math.atan2(car.hx * dy - car.hy * dx, car.hx * dx + car.hy * dy);
-  const wheelMax = KART.steerMax / (1 + speed * KART.steerSpeed);
-  const steer = Math.max(-1, Math.min(1, Math.atan(2 * KART.wheelbase * Math.sin(angle) / distance) / wheelMax));
   const bend = Math.acos(Math.max(-1, Math.min(1, target.tx * far.tx + target.ty * far.ty)));
   const limit = KART.max * skill * (bend > 1 ? 0.50 : bend > 0.6 ? 0.67 : bend > 0.3 ? 0.85 : 1);
   const brake = speed > limit + 1 || Math.abs(angle) > 1.0 && speed > 12;
+  const drift = !brake && bend > 0.16 && Math.abs(angle) < 0.7 && speed > 12 && (car.charge || 0) < 1.25;
+  const yawLimit = (drift ? KART.driftTurnRate : KART.turnRate) * Math.min(1, speed / 8);
+  const desiredYaw = 2 * Math.max(3, speed) * Math.sin(angle) / distance;
+  const steer = Math.max(-1, Math.min(1, desiredYaw / Math.max(0.5, yawLimit)));
   return { throttle: brake ? 0 : 1, steer, brake,
-    drift: !brake && bend > 0.16 && Math.abs(angle) < 0.7 && speed > 12 && (car.charge || 0) < 1.25 };
+    drift };
 }

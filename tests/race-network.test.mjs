@@ -290,3 +290,48 @@ test('host handoff and prediction retain the reverse dwell, backward steering an
   const c = uninterrupted.state.cars.p0;
   assert.ok(c.vx * c.hx + c.vy * c.hy > 3);
 });
+
+test('100ms steering taps, release and countersteering respond identically on host and client', () => {
+  const r = fixture();
+  spread(r);
+  const c = place(r, 'p0', 12, 22);
+  const prediction = createRacePrediction(T, 'p0');
+  prediction.sync(structuredClone(r.state), r.now());
+  for (const [i, steer] of [1, 0, -1, 0].entries()) {
+    const before = { hx: c.hx, hy: c.hy };
+    const input = { throttle: 1, steer, brake: false, drift: false, seq: c.seq + 1 };
+    prediction.recordInput(input, r.now());
+    r.drive('p0', input);
+    r.step(100);
+    prediction.step(.1, r.now());
+    const change = Math.atan2(before.hx * c.hy - before.hy * c.hx, before.hx * c.hx + before.hy * c.hy);
+    if (i === 0) assert.ok(change > .08, `a short tap makes a visible turn immediately: ${change}`);
+    if (i === 2) assert.ok(change < -.08, `countersteering changes direction within the next tap: ${change}`);
+    if (!steer) assert.ok(Math.abs(c.yawRate) < .2, 'releasing steering stops the turn instead of dragging it out');
+    assert.ok(speed(c) > 20, 'ordinary steering does not consume most of the speed');
+    for (const key of ['x', 'y', 'vx', 'vy', 'hx', 'hy', 'steer', 'steerInput', 'yawRate']) {
+      assert.ok(Math.abs((c[key] || 0) - (prediction.car('p0')[key] || 0)) < .00001, `${key} matches during the steering tap`);
+    }
+  }
+});
+
+test('releasing a charged drift produces the same boost and grip state on host and prediction', () => {
+  const r = fixture();
+  spread(r);
+  const c = place(r, 'p0', 12, 22);
+  Object.assign(c, { charge: 1.2, driftHeld: true, held: true, dr: 1 });
+  const prediction = createRacePrediction(T, 'p0');
+  prediction.sync(structuredClone(r.state), r.now());
+  const input = { throttle: 1, steer: 0, brake: false, drift: false, seq: c.seq + 1 };
+  prediction.recordInput(input, r.now());
+  r.drive('p0', input);
+  r.step(100);
+  const result = prediction.step(.1, r.now());
+  assert.ok(result.events.includes('boost'));
+  assert.ok(c.boostLeft > 1);
+  assert.equal(c.charge, 0);
+  assert.equal(c.driftHeld, false);
+  for (const key of ['x', 'y', 'vx', 'vy', 'hx', 'hy', 'steer', 'yawRate', 'charge', 'boostLeft']) {
+    assert.ok(Math.abs((c[key] || 0) - (prediction.car('p0')[key] || 0)) < .00001, `${key} agrees after drift release`);
+  }
+});

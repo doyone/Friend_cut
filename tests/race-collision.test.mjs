@@ -175,29 +175,20 @@ test('최고속도로 비스듬히 스치는 접촉도 이전 위치를 주면 �
   assert.ok([a.x, a.y, b.x, b.y].every(Number.isFinite));
 });
 
-test('좌우를 번갈아 눌러도 운전대는 중앙을 통과하고 회전 속도가 튀지 않는다', () => {
-  const car = { vx: KART.max, vy: 0, hx: 1, hy: 0, steerInput: 0, steer: 0, yawRate: 0 };
-  let previousInput = 0;
-  let previousSteer = 0;
-  let previousYaw = 0;
-  for (let i = 0; i < 180; i++) {
-    const steering = i < 60 ? 1 : i < 120 ? -1 : 0;
-    const hx = car.hx;
-    const hy = car.hy;
-    drive(car, { throttle: 1, steer: steering }, SURF.asphalt, dt);
+test('100ms 방향 입력에 바로 반응하고 키를 놓은 뒤 100ms 안에 회전이 멈춘다', () => {
+  const car = { vx: KART.max, vy: 0, hx: 1, hy: 0 };
+  for (let i = 0; i < 6; i++) {
+    const hx = car.hx; const hy = car.hy;
+    drive(car, { throttle: 1, steer: 1 }, SURF.asphalt, dt);
     const turn = Math.atan2(hx * car.hy - hy * car.hx, hx * car.hx + hy * car.hy);
-    const steerRate = steering === 0 ? KART.steerReturn : steering * previousInput < 0 ? KART.steerOpposite : KART.steerInputSlew;
-    assert.ok(Math.abs(car.steerInput - previousInput) <= steerRate * dt + 1e-8);
-    assert.ok(Math.abs(car.steer - previousSteer) <= KART.steerSlew * dt + 1e-8);
-    assert.ok(Math.abs(car.yawRate - previousYaw) <= KART.yawAccel * dt + 1e-8);
-    assert.ok(Math.abs(turn) < 0.04, '한 걸음에 차체 방향이 튀지 않는다');
-    if (i === 60) assert.ok(car.steerInput > 0.9 && car.yawRate > 0, '왼쪽 키를 눌러도 즉시 반대로 꺾이지 않는다');
-    if (i === 71) assert.ok(car.steerInput < 0, '반대 입력은 중앙을 지나 부드럽게 바뀐다');
-    previousInput = car.steerInput; previousSteer = car.steer; previousYaw = car.yawRate;
+    assert.ok(turn > 0 && turn < 0.045, '차체 각도는 연속으로 변한다');
   }
-  close(car.steerInput, 0);
-  close(car.steer, 0);
-  close(car.yawRate, 0);
+  assert.ok(car.yawRate > KART.turnRate * 0.85);
+  const heading = Math.atan2(car.hy, car.hx);
+  assert.ok(heading > 0.14 && heading < 0.2, `짧은 입력으로 ${heading}rad 회전`);
+  for (let i = 0; i < 6; i++) drive(car, { throttle: 1 }, SURF.asphalt, dt);
+  assert.ok(Math.abs(car.yawRate) < 0.05);
+  assert.ok(Math.atan2(car.hy, car.hx) - heading < 0.05, '키를 놓은 뒤 길게 돌아가지 않는다');
 });
 
 test('조향만으로는 가속하거나 제자리 회전하지 않고 가속은 차체 앞쪽으로만 작용한다', () => {
@@ -281,27 +272,62 @@ test('같은 운전대 입력의 차체 회전은 후진에서 반대로 작동�
   }
   assert.ok(forward.hy > 0.2);
   assert.ok(reverse.hy < -0.2);
-  close(forward.hx, reverse.hx);
-  close(forward.hy, -reverse.hy);
+  assert.ok(forward.yawRate > 0 && reverse.yawRate < 0);
 });
 
-test('운전대 반응은 더 빠르지만 매 걸음 연속이고 고속에서도 작은 입력을 조절할 수 있다', () => {
+test('반대 조향은 100ms 안에 반응하고 드리프트에서도 차체 각도가 튀지 않는다', () => {
+  for (const drift of [false, true]) {
+    const car = { vx: KART.max, vy: 0, hx: 1, hy: 0 };
+    for (let i = 0; i < 30; i++) drive(car, { throttle: 1, steer: 1, drift }, SURF.asphalt, dt);
+    assert.ok(car.yawRate > 2);
+    for (let i = 0; i < 6; i++) {
+      const hx = car.hx; const hy = car.hy;
+      drive(car, { throttle: 1, steer: -1, drift }, SURF.asphalt, dt);
+      const turn = Math.atan2(hx * car.hy - hy * car.hx, hx * car.hx + hy * car.hy);
+      assert.ok(Math.abs(turn) <= KART.driftTurnRate * dt + 1e-8);
+    }
+    assert.ok(car.yawRate < -1.5, `카운터 입력 응답 ${car.yawRate}`);
+  }
+});
+
+test('보통 코너에서는 속도를 잘라내지 않고 드리프트에서만 충분한 옆미끄럼이 생긴다', () => {
+  const make = () => ({ vx: KART.max, vy: 0, hx: 1, hy: 0 });
+  const straight = make(); const normal = make(); const drift = make();
+  for (let i = 0; i < 60; i++) {
+    drive(straight, null, SURF.asphalt, dt);
+    drive(normal, { steer: 0.7 }, SURF.asphalt, dt);
+    drive(drift, { steer: 0.7, drift: true }, SURF.asphalt, dt);
+  }
+  const speed = c => Math.hypot(c.vx, c.vy);
+  const slip = c => Math.abs(Math.atan2(c.hx * c.vy - c.hy * c.vx, c.hx * c.vx + c.hy * c.vy));
+  assert.ok(speed(normal) / speed(straight) > 0.99, '회전에 의한 추가 감속이 없다');
+  assert.ok(slip(normal) < 0.07);
+  assert.ok(slip(drift) > 0.25);
+  assert.ok(speed(drift) < speed(normal) && speed(drift) > speed(normal) * 0.85, '드리프트 감속은 작고 명확하다');
+});
+
+test('짧게 꺾어 시작한 드리프트는 유지·충전되고 놓으면 100ms 안에 접지력을 되찾는다', () => {
   const car = { vx: KART.max, vy: 0, hx: 1, hy: 0 };
-  let fullAt = null;
-  for (let i = 1; i <= 30; i++) {
-    drive(car, { throttle: 1, steer: 1 }, SURF.asphalt, dt);
-    if (car.steerInput >= 1 - 1e-9 && fullAt === null) fullAt = i * dt;
-  }
-  assert.ok(fullAt <= 0.28 && fullAt >= 0.25, `끝까지 돌리는 시간 ${fullAt}`);
-  let centeredAt = null;
-  let oppositeAt = null;
-  for (let i = 1; i <= 60; i++) {
-    drive(car, { throttle: 1, steer: -1 }, SURF.asphalt, dt);
-    if (car.steerInput <= 0 && centeredAt === null) centeredAt = i * dt;
-    if (car.steerInput <= -1 + 1e-9 && oppositeAt === null) oppositeAt = i * dt;
-  }
-  assert.ok(centeredAt < 0.2, `반대로 돌려 중앙 통과 ${centeredAt}`);
-  assert.ok(oppositeAt < 0.48, `반대 끝까지 ${oppositeAt}`);
-  const wheelAtMax = KART.steerMax / (1 + KART.max * KART.steerSpeed);
-  assert.ok(wheelAtMax > 0.17 && wheelAtMax < 0.18);
+  for (let i = 0; i < 6; i++) drive(car, { throttle: 1, steer: 1, drift: true }, SURF.asphalt, dt);
+  for (let i = 0; i < 66; i++) drive(car, { throttle: 1, drift: true }, SURF.asphalt, dt);
+  assert.ok(car.charge >= 1.15);
+  assert.ok(car.yawRate > 0.4 && car.yawRate < 0.7, '드리프트 각도는 완만하게 이어진다');
+  const slip = () => Math.abs(Math.atan2(car.hx * car.vy - car.hy * car.vx, car.hx * car.vx + car.hy * car.vy));
+  assert.ok(slip() > 0.06);
+  for (let i = 0; i < 6; i++) drive(car, { throttle: 1 }, SURF.asphalt, dt);
+  assert.ok(car.boostLeft > 1);
+  assert.ok(slip() < 0.015, '드리프트를 놓으면 진행 방향이 차체에 붙는다');
+});
+
+test('충돌 직후의 옆 충격은 보통 접지력으로 즉시 사라지지 않는다', () => {
+  const p = pointAt(T.main, 12);
+  const a = at(12, 0); const b = at(12, 2);
+  a.vx = -p.ty * 20; a.vy = p.tx * 20;
+  assert.ok(resolveKartContacts(T, [{ id: 'a', car: a }, { id: 'b', car: b }]).length);
+  assert.equal(b.impactLeft, KART.impactTime);
+  const lateral = c => c.vx * -p.ty + c.vy * p.tx;
+  const before = lateral(b);
+  drive(b, null, SURF.asphalt, dt);
+  assert.ok(lateral(b) > before * 0.9, '충격 받은 첫 걸음에서 옆 속도가 남는다');
+  assert.ok(b.impactLeft > 0);
 });
