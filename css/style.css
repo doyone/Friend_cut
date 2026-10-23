@@ -710,7 +710,8 @@ button, input { font: inherit; color: inherit; }
 .po-floor { fill: #8d6e63; }
 .po-table { fill: #6d4c41; stroke: #4e342e; stroke-width: .05; }
 .po-table-leg { fill: #5d4037; }
-.po-obj * { stroke: #2c3e50; stroke-width: .045; stroke-linejoin: round; }
+.po-obj * { stroke-width: .045; stroke-linejoin: round; }
+.po-obj :not([stroke]) { stroke: #2c3e50; } /* 그림에 stroke를 적은 건 그 색(none = 테두리 없음) */
 .po-obj.fallen { opacity: .45; }
 .po-obj.locked { opacity: .5; } /* 위가 빈 물건: 못 뺌 */
 .po-preview { opacity: .6; }
@@ -784,6 +785,15 @@ button, input { font: inherit; color: inherit; }
   animation: now-pop .3s cubic-bezier(.2, 1.6, .4, 1);
 }
 .ss-flash.bad { background: var(--red); font-family: var(--display); font-size: 28px; padding: 10px 22px; }
+.ss-flash.rare { background: #f59f00; font-family: var(--display); font-size: 28px; padding: 10px 22px; }
+.tw-reel.rare { border-color: #f59f00; background: #fffbeb; box-shadow: 0 5px 0 #e67700, inset 0 0 0 5px #fff3bf; }
+.ss .ss-devils { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+/* 보급 상자 낙하산 (처음 닿으면 접힘) */
+.ss-chute { transition: opacity .3s; }
+.ss-chute.folded { opacity: 0; }
+.ss-canopy { fill: #ff6b6b; stroke: #2c3e50; stroke-width: .045; stroke-linejoin: round; }
+.ss-canopy-seam { fill: none; stroke: #c92a2a; stroke-width: .04; }
+.ss-cord { stroke: #495057; stroke-width: .025; }
 .ss-panel { padding: 18px; min-height: 150px; display: grid; place-items: center; text-align: center; }
 
 /* ── 마지막 문 ── 위: 출구까지 칸 트랙(🔥 불길), 가운데: 방(위쪽 벽에 문, 아래 사람마다 한 줄), 아래: 안내 */

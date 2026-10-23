@@ -4,7 +4,8 @@
 // 짐이 용암에 떨어지거나 판 끝이 용암에 닿으면 지금 차례 독박(탈락). 판은 그대로 이어가고,
 // 떨어진 짐·방금 떨군 짐은 용암으로 퐁당 (그래도 판 끝이 닿아 있으면 낮은 쪽 끝 짐부터 치운다: 다음 사람이 죽은 판을 받지 않게).
 // 가운데 둥근 축 위에 떨군 짐은 한쪽으로 굴러가서 정가운데만 노릴 수 없다. 판 양끝엔 작은 턱.
-// 😈 악마 카드(1인 1장): 내 차례 동안 숫자키 1·2·3으로 다음 사람 짐을 금고(무거움)·볼링공(구름)·얼음(미끌) 중 하나로. 그걸로 독박 나면 내 킬.
+// 😈 악마 카드(1인 1장): 내 차례 동안 숫자키 1~4로 다음 사람 짐을 금고(무거움)·볼링공(구름)·얼음(미끌)·돌침대(길고 무거움) 중 하나로. 그걸로 독박 나면 내 킬.
+// 룰렛엔 가끔 레어(✨): 🪂 보급 상자(공중에서 낙하산) · 🎁 악마의 선물(놓고 살면 카드 +1).
 // 물리는 방장 컴퓨터만 계산한다(planck.js, js/vendor). 다른 사람은 위치만 받아서 그린다.
 import { h, isTyping, josa, pick, shuffle, digitOf } from '../util.js';
 import { avatar, countdown, podium } from '../ui.js';
@@ -15,8 +16,11 @@ const INTRO_TIME = 4000;
 const DECIDE_TIME = 5000;     // 내 짐이 멈춘 뒤 악마 카드 고민 시간 (고르면 바로 끝)
 const RESULT_TIME = 1000;
 const SPIN_TIME = 1300;       // 차례 시작할 때 룰렛 도는 시간
+const RARE_SPIN = 600;        // 레어가 걸리면 룰렛이 이만큼 더 천천히 멈춘다
+const CHUTE_DAMP = 4;         // 낙하산: 공중에서 이만큼 감속 (끝 속도 = 중력 ÷ 이것 = 초당 3m)
 const SETTLE_MAX = 5000;      // 떨군 뒤 이만큼 지나면 거의 멈춘 건 그 자리에 세우고 판정
 const SETTLE_HARD = 9000;     // 아직 날아다니는 게 있어도 이때는 무조건 판정
+const CALM_HOLD = 400;        // 이만큼 계속 멈춰 있어야 멈춘 것 (출렁이는 판이 끝까지 갔다 돌아서는 순간은 멈춘 게 아니다)
 const DEVIL_CARDS = 1;
 const GRAVITY = 12;
 const HALF = 4;               // 판 반 길이 (판 8m)
@@ -82,14 +86,165 @@ const EXTRA = {
       ['line', { x1: -0.33, y1: -0.02, x2: -0.23, y2: 0.02 }],
     ],
   },
+  // 원판 사이 봉 아래 틈(0.35)이 가운데 축 돌출(0.27)보다 높아서, 축을 원판 사이에 끼우면 가운데에 걸쳐진다
+  barbell: {
+    name: '역기', density: 7.4, friction: 0.7,
+    parts: [{ box: [0.95, 0.03] }, { box: [0.07, 0.38], at: [-0.85, 0] }, { box: [0.07, 0.38], at: [0.85, 0] }],
+    art: [
+      ['rect', { x: -0.95, y: -0.03, width: 1.9, height: 0.06, fill: '#ced4da' }],
+      ['rect', { x: -0.92, y: -0.38, width: 0.14, height: 0.76, rx: 0.03, fill: '#343a40' }],
+      ['rect', { x: 0.78, y: -0.38, width: 0.14, height: 0.76, rx: 0.03, fill: '#343a40' }],
+      ['rect', { x: -0.78, y: -0.08, width: 0.05, height: 0.16, fill: '#868e96' }],
+      ['rect', { x: 0.73, y: -0.08, width: 0.05, height: 0.16, fill: '#868e96' }],
+      ['line', { x1: -0.85, y1: -0.3, x2: -0.85, y2: 0.3, stroke: '#868e96' }],
+      ['line', { x1: 0.85, y1: -0.3, x2: 0.85, y2: 0.3, stroke: '#868e96' }],
+    ],
+  },
+  // 무게가 쇠머리에 쏠려 있다: ↑↓로 돌리면 무게 자리가 바뀐다
+  hammer: {
+    name: '오함마', density: 1.2, friction: 0.7,
+    parts: [{ box: [0.59, 0.04], at: [-0.11, 0] }, { box: [0.12, 0.2], at: [0.6, 0], density: 9 }],
+    art: [
+      ['rect', { x: -0.7, y: -0.04, width: 1.18, height: 0.08, rx: 0.03, fill: '#c8872f' }],
+      ['rect', { x: -0.7, y: -0.045, width: 0.26, height: 0.09, rx: 0.03, fill: '#343a40' }],
+      ['rect', { x: 0.48, y: -0.2, width: 0.24, height: 0.4, rx: 0.03, fill: '#495057' }],
+      ['line', { x1: 0.53, y1: 0.12, x2: 0.67, y2: 0.12, stroke: '#868e96' }],
+    ],
+  },
+  // 바닥에 무거운 추: 둥근데 안 굴러가고 스스로 선다
+  roly: {
+    name: '오뚝이', density: 0.4, friction: 0.8, rolling: 6,
+    parts: [{ circle: 0.34 }, { circle: 0.13, at: [0, -0.19], density: 14 }, { circle: 0.15, at: [0, 0.42] }],
+    art: [
+      ['circle', { r: 0.34, fill: '#e03131' }],
+      ['ellipse', { cx: 0, cy: -0.06, rx: 0.2, ry: 0.17, fill: '#fff5f5', stroke: 'none' }],
+      ['circle', { cy: 0.42, r: 0.15, fill: '#ffe8cc' }],
+      ['circle', { cx: -0.05, cy: 0.44, r: 0.022, fill: '#212529', stroke: 'none' }],
+      ['circle', { cx: 0.05, cy: 0.44, r: 0.022, fill: '#212529', stroke: 'none' }],
+      ['path', { d: 'M -0.04 0.37 Q 0 0.34 0.04 0.37', fill: 'none' }],
+    ],
+  },
+  // 바퀴만 마찰 0: 바퀴가 아래면 기운 쪽으로 쭉 굴러가고, 뒤집으면 선다
+  cart: {
+    name: '마트 카트', density: 4, friction: 0.7, linDamp: 0.25,
+    parts: [
+      { box: [0.5, 0.04], at: [0, 0.1] }, { box: [0.04, 0.28], at: [-0.46, 0.38] }, { box: [0.04, 0.28], at: [0.46, 0.38] },
+      { circle: 0.1, at: [-0.36, -0.04], density: 3, friction: 0 }, { circle: 0.1, at: [0.36, -0.04], density: 3, friction: 0 },
+    ],
+    art: [
+      ['line', { x1: -0.25, y1: 0.14, x2: -0.25, y2: 0.62, stroke: '#74c0fc' }],
+      ['line', { x1: 0, y1: 0.14, x2: 0, y2: 0.62, stroke: '#74c0fc' }],
+      ['line', { x1: 0.25, y1: 0.14, x2: 0.25, y2: 0.62, stroke: '#74c0fc' }],
+      ['line', { x1: -0.42, y1: 0.4, x2: 0.42, y2: 0.4, stroke: '#74c0fc' }],
+      ['rect', { x: -0.5, y: 0.06, width: 1, height: 0.08, rx: 0.02, fill: '#1c7ed6' }],
+      ['rect', { x: -0.5, y: 0.1, width: 0.08, height: 0.56, rx: 0.02, fill: '#1c7ed6' }],
+      ['rect', { x: 0.42, y: 0.1, width: 0.08, height: 0.56, rx: 0.02, fill: '#1c7ed6' }],
+      ['circle', { cx: -0.36, cy: -0.04, r: 0.1, fill: '#212529' }],
+      ['circle', { cx: 0.36, cy: -0.04, r: 0.1, fill: '#212529' }],
+      ['circle', { cx: -0.36, cy: -0.04, r: 0.035, fill: '#adb5bd', stroke: 'none' }],
+      ['circle', { cx: 0.36, cy: -0.04, r: 0.035, fill: '#adb5bd', stroke: 'none' }],
+    ],
+  },
+  // 매트리스처럼 생겼는데 58kg
+  stonebed: {
+    name: '돌침대', density: 3.25, friction: 0.7,
+    parts: [{ box: [1, 0.16] }, { box: [0.07, 0.28], at: [-0.93, 0.44] }],
+    art: [
+      ['rect', { x: -1, y: -0.16, width: 2, height: 0.32, rx: 0.05, fill: '#868e96' }],
+      ['rect', { x: -1, y: 0.16, width: 0.14, height: 0.56, rx: 0.04, fill: '#5c4033' }],
+      ['line', { x1: -0.86, y1: 0.08, x2: 0.94, y2: 0.08, stroke: '#adb5bd' }],
+      ...[-0.55, -0.15, 0.25, 0.65].map(cx => ['circle', { cx, cy: -0.04, r: 0.05, fill: '#63e6be' }]),
+    ],
+  },
+  toilet: {
+    name: '변기', density: 3.2, friction: 0.5,
+    parts: [{ poly: [[-0.28, -0.32], [0.08, -0.32], [0.36, 0], [0.36, 0.1], [-0.28, 0.1]] }, { box: [0.13, 0.28], at: [-0.29, 0.38] }],
+    art: [
+      ['polygon', { points: '-0.28,-0.32 0.08,-0.32 0.36,0 0.36,0.1 -0.28,0.1', fill: '#f8f9fa' }],
+      ['rect', { x: -0.42, y: 0.1, width: 0.26, height: 0.56, rx: 0.03, fill: '#f1f3f5' }],
+      ['rect', { x: -0.16, y: 0.06, width: 0.54, height: 0.06, rx: 0.03, fill: '#dee2e6' }],
+      ['rect', { x: -0.33, y: 0.54, width: 0.1, height: 0.04, rx: 0.02, fill: '#adb5bd' }],
+      ['path', { d: 'M -0.1 -0.2 Q 0.1 -0.2 0.22 -0.02', fill: 'none', stroke: '#ced4da' }],
+    ],
+  },
+  cement: {
+    name: '시멘트 포대', density: 5, friction: 1,
+    parts: [{ box: [0.5, 0.16] }],
+    art: [
+      ['rect', { x: -0.5, y: -0.16, width: 1, height: 0.32, rx: 0.08, fill: '#ced4da' }],
+      ['rect', { x: -0.22, y: -0.09, width: 0.44, height: 0.18, rx: 0.02, fill: '#f08c00' }],
+      ['line', { x1: -0.42, y1: -0.13, x2: -0.42, y2: 0.13, 'stroke-dasharray': '0.05 0.04' }],
+      ['line', { x1: 0.42, y1: -0.13, x2: 0.42, y2: 0.13, 'stroke-dasharray': '0.05 0.04' }],
+    ],
+  },
+  // 크지만 2.8kg, 살짝 통통 튄다
+  gymball: {
+    name: '짐볼', density: 0.25, friction: 0.9, rolling: 1.5, restitution: 0.3,
+    parts: [{ circle: 0.38 }],
+    art: [
+      ['circle', { r: 0.38, fill: '#74c0fc' }],
+      ['path', { d: 'M -0.36 0.1 Q 0 -0.12 0.36 0.1', fill: 'none', stroke: '#1c7ed6' }],
+      ['path', { d: 'M -0.3 -0.22 Q 0 -0.38 0.3 -0.22', fill: 'none', stroke: '#1c7ed6' }],
+      ['circle', { cx: -0.13, cy: 0.17, r: 0.07, fill: '#fff', opacity: 0.5, stroke: 'none' }],
+    ],
+  },
+  // 놓기는 쉬운데 꼭대기가 뾰족해서 그 위엔 아무것도 못 올린다
+  cone: {
+    name: '라바콘', density: 0.75, friction: 0.8,
+    parts: [{ box: [0.3, 0.03], at: [0, -0.37] }, { poly: [[-0.2, -0.34], [0.2, -0.34], [0.04, 0.38], [-0.04, 0.38]] }],
+    art: [
+      ['rect', { x: -0.3, y: -0.4, width: 0.6, height: 0.06, rx: 0.02, fill: '#343a40' }],
+      ['polygon', { points: '-0.2,-0.34 0.2,-0.34 0.04,0.38 -0.04,0.38', fill: '#ff922b' }],
+      ['polygon', { points: '-0.147,-0.1 0.147,-0.1 0.12,0.02 -0.12,0.02', fill: '#fff', stroke: 'none' }],
+      ['polygon', { points: '-0.089,0.16 0.089,0.16 0.067,0.26 -0.067,0.26', fill: '#fff', stroke: 'none' }],
+    ],
+  },
+  // 레어: 공중에서만 낙하산이 펴져서 사뿐히 내려온다 (처음 뭔가에 닿으면 접힘)
+  airdrop: {
+    name: '보급 상자', density: 3.8, friction: 0.8, chute: true,
+    parts: [{ box: [0.45, 0.35] }],
+    art: [
+      ['rect', { x: -0.45, y: -0.35, width: 0.9, height: 0.7, rx: 0.03, fill: '#5c940d' }],
+      ['rect', { x: -0.45, y: -0.06, width: 0.9, height: 0.12, fill: '#4c7a0b' }],
+      ['line', { x1: -0.45, y1: -0.35, x2: 0.45, y2: 0.35 }],
+      ['line', { x1: -0.45, y1: 0.35, x2: 0.45, y2: -0.35 }],
+      ['polygon', { points: '0,0.2 0.05,0.06 0.19,0.06 0.08,-0.03 0.12,-0.17 0,-0.08 -0.12,-0.17 -0.08,-0.03 -0.19,0.06 -0.05,0.06', fill: '#ffd43b', stroke: 'none' }],
+    ],
+  },
+  // 레어: 놓고 살아남으면 악마 카드 +1
+  gift: {
+    name: '악마의 선물', density: 0.3, friction: 0.8,
+    parts: [{ box: [0.3, 0.25] }],
+    art: [
+      ['rect', { x: -0.3, y: -0.25, width: 0.6, height: 0.5, rx: 0.03, fill: '#7048e8' }],
+      ['rect', { x: -0.05, y: -0.25, width: 0.1, height: 0.5, fill: '#e03131', stroke: 'none' }],
+      ['rect', { x: -0.3, y: -0.05, width: 0.6, height: 0.1, fill: '#e03131', stroke: 'none' }],
+      ['ellipse', { cx: -0.1, cy: 0.16, rx: 0.09, ry: 0.05, fill: '#e03131' }],
+      ['ellipse', { cx: 0.1, cy: 0.16, rx: 0.09, ry: 0.05, fill: '#e03131' }],
+      ['circle', { cy: 0.15, r: 0.05, fill: '#c92a2a' }],
+      ['polygon', { points: '-0.045,0.19 -0.03,0.245 -0.015,0.195', fill: '#c92a2a', stroke: 'none' }],
+      ['polygon', { points: '0.045,0.19 0.03,0.245 0.015,0.195', fill: '#c92a2a', stroke: 'none' }],
+    ],
+  },
 };
 export const KINDS = { ...JUNK, ...EXTRA };
-export const ROULETTE = [...Object.keys(JUNK), 'feather', 'melon'];
-// 악마 카드로만: 무거운 짐 / 구르는 짐 / 미끌 얼음
+// 룰렛: 가중치 뽑기. 거의 같은 짐인 긴 판 3종(매트리스·사다리·문짝)은 반씩, 레어는 드물게 (합쳐서 약 5%)
+export const ROULETTE = [
+  ...Object.keys(JUNK).map(k => ({ k, w: ['mattress', 'ladder', 'door'].includes(k) ? 0.5 : 1 })),
+  ...['feather', 'melon', 'barbell', 'hammer', 'roly', 'cart', 'stonebed', 'toilet', 'cement', 'gymball', 'cone'].map(k => ({ k, w: 1 })),
+  { k: 'airdrop', w: 0.6 },
+  { k: 'gift', w: 0.6 },
+];
+export const RARE = new Set(['airdrop', 'gift']);
+const TRICKY = new Set(['roly', 'cart', ...RARE]); // 첫 바퀴엔 안 나옴 (기본 감각부터)
+const RARE_GAP = 3;           // 레어가 나오면 이만큼 차례 동안은 레어 없음
+const MAX_CARDS = 2;          // 악마의 선물로 늘어나는 카드 상한
+// 악마 카드로: 무거운 짐 / 구르는 짐 / 미끌 얼음 / 길고 무거운 돌침대
 export const DEVILS = [
-  { k: 'safe', tag: '🏋️ 무거운' },
+  { k: 'safe', tag: '🔒 무거운' },
   { k: 'bowling', tag: '🎳 구르는' },
   { k: 'ice', tag: '🧊 미끌' },
+  { k: 'stonebed', tag: '🛏️ 길쭉한' },
 ];
 const kindOf = k => KINDS[k] || KINDS.box;
 
@@ -103,8 +258,61 @@ function areaOf(part) {
   });
   return Math.abs(s) / 2;
 }
-const MASS = Object.fromEntries(Object.entries(KINDS).map(([k, d]) => [k, d.parts.reduce((m, p) => m + areaOf(p) * d.density, 0)]));
+
+// 부품 무게 중심 (부품 기준점 at 포함)
+function centroidOf(part) {
+  const [ax, ay] = part.at || [0, 0];
+  if (!part.poly) return [ax, ay];
+  let a = 0;
+  let cx = 0;
+  let cy = 0;
+  part.poly.forEach(([x1, y1], i) => {
+    const [x2, y2] = part.poly[(i + 1) % part.poly.length];
+    const c = x1 * y2 - x2 * y1;
+    a += c;
+    cx += (x1 + x2) * c;
+    cy += (y1 + y2) * c;
+  });
+  return [ax + cx / (3 * a), ay + cy / (3 * a)];
+}
+
+// 짐마다 무게와 무게중심 (부품마다 밀도가 다를 수 있다: 오함마 쇠머리, 오뚝이 바닥 추)
+const MASS = {};
+const COM = {};
+for (const [k, d] of Object.entries(KINDS)) {
+  let m = 0;
+  let mx = 0;
+  let my = 0;
+  for (const p of d.parts) {
+    const pm = areaOf(p) * (p.density ?? d.density);
+    const [cx, cy] = centroidOf(p);
+    m += pm;
+    mx += pm * cx;
+    my += pm * cy;
+  }
+  MASS[k] = m;
+  COM[k] = [mx / m, my / m];
+}
 export const massOf = k => MASS[k] ?? MASS.box;
+// 돌린 짐의 무게중심 (몸 기준점에서)
+export function comOf(k, a = 0) {
+  const [x, y] = COM[k] || [0, 0];
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  return [x * c - y * s, x * s + y * c];
+}
+
+// 룰렛 한 번: 방금 짐은 다시 안 나오고, 첫 바퀴엔 특이한 짐 없음, 레어 뒤엔 잠시 레어 없음.
+// 악마의 선물은 결승(2명)이거나 카드가 이미 꽉 찼으면 안 나온다
+export function rollPiece(S, id, lap) {
+  const pool = ROULETTE.filter(({ k }) => k !== S.piece
+    && !(lap <= 1 && TRICKY.has(k))
+    && !(RARE.has(k) && (S.rareGap || 0) > 0)
+    && !(k === 'gift' && ((S.alive || []).length <= 2 || (S.cards?.[id] || 0) >= MAX_CARDS)));
+  let r = Math.random() * pool.reduce((s, p) => s + p.w, 0);
+  for (const p of pool) if ((r -= p.w) <= 0) return p.k;
+  return pool[pool.length - 1].k;
+}
 const kgText = k => {
   const v = massOf(k) * KG;
   return v < 10 ? `${v.toFixed(1)}kg` : `${Math.round(v)}kg`;
@@ -179,7 +387,7 @@ function makeSim(S) {
   plank.createFixture(new Circle(new Vec2(0, 0), HUB), { density: 1, friction: 0.3 });
   for (const s of [-1, 1]) plank.createFixture(new Box(0.06, LIP, new Vec2(s * (HALF - 0.06), THICK + LIP), 0), { density: 1, friction: 0.7 });
   world.createJoint(new RevoluteJoint({}, pivot, plank, new Vec2(0, PIVOT_H)));
-  const sim = { world, lava, plank, bodies: new Map(), meta: new Map() };
+  const sim = { world, lava, plank, bodies: new Map(), meta: new Map(), chutes: new Set() };
   for (const b of S.bodies || []) addBody(sim, b, false); // 이어받은 판은 잠든 채로
   return sim;
 }
@@ -188,14 +396,22 @@ function addBody(sim, b, awake) {
   const { Vec2, Box, Circle, Polygon } = planck;
   const def = kindOf(b.k);
   // 둥근 건 구름 저항(각 감쇠): 데굴데굴 가다가 멈춘다
-  const body = sim.world.createBody({ type: 'dynamic', position: new Vec2(b.x, b.y), angle: b.a || 0, awake, angularDamping: def.rolling || 0 });
+  // 카트처럼 굴러가는 건 이동 감쇠(linDamp), 낙하산이 펴져 있으면 공중에서 크게 감속
+  const body = sim.world.createBody({
+    type: 'dynamic', position: new Vec2(b.x, b.y), angle: b.a || 0, awake,
+    angularDamping: def.rolling || 0, linearDamping: b.v ? CHUTE_DAMP : def.linDamp || 0,
+  });
+  // 부품마다 밀도·마찰·반발이 다를 수 있다 (오함마 쇠머리, 카트 바퀴, 짐볼)
   for (const part of def.parts) {
     const [ax, ay] = part.at || [0, 0];
     const shape = part.box ? new Box(part.box[0], part.box[1], new Vec2(ax, ay), 0)
       : part.circle ? new Circle(new Vec2(ax, ay), part.circle)
         : new Polygon(part.poly.map(([x, y]) => new Vec2(x + ax, y + ay)));
-    body.createFixture(shape, { density: def.density, friction: def.friction, restitution: 0 });
+    body.createFixture(shape, {
+      density: part.density ?? def.density, friction: part.friction ?? def.friction, restitution: part.restitution ?? def.restitution ?? 0,
+    });
   }
+  if (b.v) sim.chutes.add(b.id);
   body.setUserData(b.id);
   sim.bodies.set(b.id, body);
   sim.meta.set(b.id, { k: b.k, by: b.by });
@@ -207,6 +423,17 @@ function removeBody(sim, id) {
   if (body) sim.world.destroyBody(body);
   sim.bodies.delete(id);
   sim.meta.delete(id);
+  sim.chutes.delete(id);
+}
+
+// 낙하산은 처음 뭔가(판·짐·용암)에 닿는 순간 접힌다
+function foldChutes(sim) {
+  for (const id of sim.chutes) {
+    const body = sim.bodies.get(id);
+    if (body && !touching(body)) continue;
+    if (body) body.setLinearDamping(kindOf(sim.meta.get(id)?.k).linDamp || 0);
+    sim.chutes.delete(id);
+  }
 }
 
 // 스프링: 기운 만큼 되돌리고, 출렁임은 눌러 준다 (잠든 판은 깨우지 않음)
@@ -234,6 +461,7 @@ function stepPhysics(ctx, now) {
   for (let i = 1; i <= steps; i++) {
     spring(sim.plank);
     sim.world.step(1 / 60, 8, 3);
+    if (sim.chutes.size) foldChutes(sim);
     if (!marks.has(i)) continue;
     for (const [id, body] of all) {
       if (!samples.has(id)) samples.set(id, []);
@@ -262,6 +490,7 @@ function snapshot(ctx, trail) {
     top = Math.max(top, y + extent(m.k, a).hi[1]);
     const b = { id, k: m.k, by: m.by, x, y, a };
     if (trail?.has(id)) b.p = trail.get(id);
+    if (sim.chutes.has(id)) b.v = 1;
     return b;
   });
   S.top = r3(top);
@@ -294,7 +523,16 @@ function touching(body) {
   for (let ce = body.getContactList(); ce; ce = ce.next) if (ce.contact.isTouching()) return true;
   return false;
 }
-const moving = body => body.isAwake() && (body.getLinearVelocity().length() > 0.05 || Math.abs(body.getAngularVelocity()) > 0.05);
+const speedOver = (body, v) => body.isAwake() && (body.getLinearVelocity().length() > v || Math.abs(body.getAngularVelocity()) > v);
+const moving = body => speedOver(body, 0.05);
+// 다 멈췄나: 모두 느려진 뒤 CALM_HOLD 동안 다시 움직인 게 없어야 한다 (방장 메모리).
+// 판은 조금만 돌아도 다시 움직인 것(출렁이다 끝에서 돌아서는 순간에 얼리지 않게), 짐은 접촉 떨림을 무시하고 확실히 움직일 때만
+function settled(ctx, now, items) {
+  const plank = ctx.sim.plank;
+  if (moving(plank) || items.some(b => speedOver(b, 0.12))) ctx.stillAt = 0;
+  else if (!ctx.stillAt && !items.some(moving)) ctx.stillAt = now;
+  return !!ctx.stillAt && now - ctx.stillAt >= CALM_HOLD;
+}
 const flying = body => body.isAwake() && (body.getLinearVelocity().length() > 0.3 || !touching(body));
 
 function freeze(sim) {
@@ -339,14 +577,19 @@ function rollNext(S, now, after) {
 function startTurn(ctx, now) {
   const S = ctx.state;
   const n = S.next;
+  const devil = n.kind === 'devil';
+  const piece = devil ? n.piece : rollPiece(S, n.id, n.lap);
+  const rare = !devil && RARE.has(piece);
+  S.rareGap = rare ? RARE_GAP : Math.max(0, (S.rareGap || 0) - 1);
   Object.assign(S, {
     phase: 'spin',
     turn: n.id,
-    spinKind: n.kind === 'devil' ? 'devil' : 'roulette',
-    piece: n.kind === 'devil' ? n.piece : pick(ROULETTE),
-    chooser: n.kind === 'devil' ? n.by : null,
+    spinKind: devil ? 'devil' : 'roulette',
+    piece,
+    rare,
+    chooser: devil ? n.by : null,
     turnLap: n.lap,
-    spinEnd: now + SPIN_TIME,
+    spinEnd: now + SPIN_TIME + (rare ? RARE_SPIN : 0),
     aim: { x: 0, a: 0 },
     fail: null,
     fallen: [],
@@ -379,11 +622,13 @@ function drop(ctx, now, aim) {
   const S = ctx.state;
   S.bodyNo = (S.bodyNo || 0) + 1;
   const id = `s${S.bodyNo}`;
-  const x = clampX(Number(aim?.x) || 0);
+  // 1cm 안쪽으로 살짝 흔든다: 평평한 판 정가운데(축 꼭대기)나 라바콘 끝 위에 딱 서 버리는 일이 없게
+  const x = clampX((Number(aim?.x) || 0) + (Math.random() - 0.5) * 0.02);
   const a = snapA(Number(aim?.a) || 0);
-  addBody(ctx.sim, { id, k: S.piece, by: S.turn, x, y: r3(spawnY(S, S.piece, x, a)), a }, true);
+  addBody(ctx.sim, { id, k: S.piece, by: S.turn, x, y: r3(spawnY(S, S.piece, x, a)), a, v: kindOf(S.piece).chute ? 1 : 0 }, true);
   Object.assign(S, { pieceId: id, phase: 'fall', dropAt: now, tiltBefore: Math.abs(S.tilt || 0), fail: null, fallen: [] });
   ctx.simAt = now;
+  ctx.stillAt = 0;
   snapshot(ctx);
   return true;
 }
@@ -411,7 +656,7 @@ function stepFall(ctx, now) {
   const age = now - S.dropAt;
   // 용암에 빠진 건 빼고: 다 멈췄으면 끝. 공중에 뜨거나 빠르게 움직이는 게 있으면 결판날 때까지 기다린다
   const live = [...ctx.sim.bodies].filter(([id]) => !S.fallen.includes(id)).map(([, b]) => b);
-  const calm = !live.some(moving) && !moving(ctx.sim.plank);
+  const calm = settled(ctx, now, live);
   if ((calm && age > 800) || (age > SETTLE_MAX && !live.some(flying)) || age > SETTLE_HARD) return settle(ctx, now);
   return true;
 }
@@ -447,6 +692,12 @@ function settle(ctx, now) {
   freeze(ctx.sim);
   snapshot(ctx);
   S.lastResult = { id: active, ok: true, at: now };
+  // 🎁 악마의 선물: 놓고 살아남으면 카드 +1 (바로 아래 afterTurn에서 고민 시간이 열린다)
+  if (S.piece === 'gift' && S.alive.includes(active) && (S.cards?.[active] || 0) < MAX_CARDS) {
+    S.cards = { ...S.cards, [active]: (S.cards?.[active] || 0) + 1 };
+    fx(S, now, { k: 'gift', id: active });
+    ctx.announce(`🎁 ${name(active)} 악마 카드 +1!`);
+  }
   if (S.tiltBefore >= MIRACLE_FROM && Math.abs(S.tilt) <= MIRACLE_TO) {
     S.miracles = { ...(S.miracles || {}), [active]: (S.miracles?.[active] || 0) + 1 };
     fx(S, now, { k: 'miracle' });
@@ -462,6 +713,7 @@ function startClean(ctx, now) {
   wake(ctx.sim);
   Object.assign(S, { phase: 'clean', cleanAt: now, fallen: [], cleaned: 0 });
   ctx.simAt = now;
+  ctx.stillAt = 0;
   snapshot(ctx);
   return true;
 }
@@ -474,7 +726,7 @@ function tickClean(ctx, now) {
   for (const id of lavaHits(sim)) if (id !== 'plank') removeBody(sim, id);
   snapshot(ctx, trail);
   const age = now - S.cleanAt;
-  const calm = ![...sim.bodies.values()].some(moving) && !moving(sim.plank);
+  const calm = settled(ctx, now, [...sim.bodies.values()]);
   if (age < 600 || (!calm && age < 4000)) return true;
   // 판이 아직 용암에 닿아 있거나 닿기 직전이면 낮은 쪽 끝 짐부터 치운다 (다음 사람이 이미 죽은 판을 받지 않게)
   if ((plankOnLava(sim) || Math.abs(sim.plank.getAngle()) > CLEAN_TO) && sim.bodies.size && S.cleaned < 12) {
@@ -485,6 +737,7 @@ function tickClean(ctx, now) {
     wake(sim);
     S.cleaned++;
     S.cleanAt = now;
+    ctx.stillAt = 0;
     snapshot(ctx);
     return true;
   }
@@ -542,6 +795,14 @@ function svg(tag, attrs = {}, ...kids) {
 
 function objGroup(k) {
   return svg('g', { class: `po-obj po-${k}` }, kindOf(k).art.map(([tag, attrs]) => svg(tag, attrs)));
+}
+
+// 보급 상자 낙하산: 상자 위에 (상자가 돌아도 낙하산은 똑바로)
+function chuteGroup() {
+  return svg('g', { class: 'ss-chute' },
+    svg('path', { class: 'ss-canopy', d: 'M -0.75 1.05 Q -0.75 1.6 0 1.6 Q 0.75 1.6 0.75 1.05 Q 0.38 1.18 0 1.05 Q -0.38 1.18 -0.75 1.05 Z' }),
+    svg('path', { class: 'ss-canopy-seam', d: 'M -0.3 1.1 Q -0.25 1.5 0 1.6 M 0.3 1.1 Q 0.25 1.5 0 1.6' }),
+    ...[[-0.75, -0.45], [0, 0], [0.75, 0.45]].map(([x1, x2]) => svg('line', { class: 'ss-cord', x1, y1: 1.05, x2, y2: 0.35 })));
 }
 
 function objIcon(k) {
@@ -672,12 +933,20 @@ export default {
     if (S.phase === 'aim' && S.turn === id) {
       const key = `${S.turnsPlayed}`;
       if (mem.key !== key) {
-        const torque = (S.bodies || []).reduce((t, b) => t + massOf(b.k) * b.x, 0);
-        let x = Math.max(-3.5, Math.min(3.5, -torque / massOf(S.piece))) + (Math.random() - 0.5);
-        if (Math.abs(x) < HUB + 0.35) x = (x < 0 ? -1 : 1) * (HUB + 0.35 + Math.random() * 0.5);
-        const height = a => extent(S.piece, a).hi[1] - extent(S.piece, a).lo[1];
+        const k = S.piece;
+        const torque = (S.bodies || []).reduce((t, b) => t + massOf(b.k) * (b.x + comOf(b.k, b.a)[0]), 0);
+        // 무게중심을 둘 자리 (사람처럼 ±0.5m 빗나감). 가벼운 건 끝까지 안 가져간다
+        const reach = massOf(k) * KG < 10 ? 2 : 3.5;
+        let x = Math.max(-reach, Math.min(reach, -torque / massOf(k))) + (Math.random() - 0.5);
+        const height = a => extent(k, a).hi[1] - extent(k, a).lo[1];
+        let a = height(Math.PI / 2) < height(0) - 0.05 ? r3(Math.PI / 2) : 0;
+        if (k === 'barbell') x = Math.max(-0.3, Math.min(0.3, x * 0.2)); // 원판 사이에 가운데 축을 끼운다
+        else if (Math.abs(x) < HUB + 0.35) x = (x < 0 ? -1 : 1) * (HUB + 0.35 + Math.random() * 0.5);
+        if (k === 'roly' || k === 'cone' || k === 'barbell') a = 0;  // 세워서
+        if (k === 'cart') a = r3(Math.PI);                            // 바퀴를 위로
+        if (k === 'hammer') a = x > 0 ? r3(Math.PI) : 0;              // 쇠머리를 안쪽으로
         Object.assign(mem, {
-          key, x: 0, tx: clampX(x), ta: height(Math.PI / 2) < height(0) - 0.05 ? r3(Math.PI / 2) : 0,
+          key, x: 0, tx: clampX(x - comOf(k, a)[0]), ta: a,
           dropAt: now + 1800 + Math.random() * 3000, sent: 0,
         });
       }
@@ -704,11 +973,13 @@ export default {
       svg('circle', { class: 'ss-hub', r: HUB }),
       ...[-1, 1].map(s => svg('rect', { class: 'ss-lip', x: s * (HALF - 0.06) - 0.06, y: THICK, width: 0.12, height: LIP * 2, rx: 0.02 })));
     const bodiesG = svg('g');
+    const chutesG = svg('g');
     const labelsG = svg('g');
     const guide = svg('line', { class: 'ss-guide', x1: 0, y1: 0, x2: 0, y2: 0 });
     const previewPiece = svg('g');
     const previewLabel = svg('text', { class: 'ss-kg', transform: 'scale(1,-1)' });
-    const previewG = svg('g', { class: 'ss-preview' }, guide, previewPiece, previewLabel);
+    const previewChute = chuteGroup();
+    const previewG = svg('g', { class: 'ss-preview' }, guide, previewChute, previewPiece, previewLabel);
     const popG = svg('g');
     let wave = 'M -22 0';
     for (let i = 0; i < 22; i++) wave += ' q 0.5 0.14 1 0 q 0.5 -0.14 1 0';
@@ -717,7 +988,7 @@ export default {
       svg('path', { class: 'ss-lava-top', d: `${wave} L 22 -0.25 L -22 -0.25 Z` }),
       ...springs,
       svg('polygon', { class: 'ss-pivot', points: `-0.55,0 0.55,0 0,${PIVOT_H - 0.12}` }),
-      plankG, bodiesG, labelsG, previewG, popG);
+      plankG, bodiesG, chutesG, labelsG, previewG, popG);
     const stage = svg('svg', { class: 'ss-svg', preserveAspectRatio: 'xMidYMax meet' }, world);
     const fxBox = h('div', { class: 'ss-fx' });
     const nextBox = h('div', { class: 'tw-next', hidden: true });
@@ -753,7 +1024,7 @@ export default {
       if (isTyping(e) || !S) return;
       const down = e.type === 'keydown';
       const c = e.code;
-      // 악마 카드: 내 차례 동안 숫자키 1·2·3, 다 놓은 뒤 고민 중엔 스페이스 = 안 씀
+      // 악마 카드: 내 차례 동안 숫자키 1~4, 다 놓은 뒤 고민 중엔 스페이스 = 안 씀
       if (down && !e.repeat && canUseCard(S, me)) {
         const d = digitOf(e);
         if (d >= 1 && d <= DEVILS.length) {
@@ -808,12 +1079,17 @@ export default {
       for (const b of S.bodies || []) {
         live.add(b.id);
         const it = shown.get(b.id);
+        // 낙하산은 처음 닿는 순간 접힌다
+        it?.chute?.classList.toggle('folded', !b.v);
         if (!it) {
           const el = svg('g', { class: 'ss-item' }, objGroup(b.k));
           const lb = svg('text', { class: 'ss-kg' }, kgText(b.k));
+          const chute = kindOf(b.k).chute ? chuteGroup() : null;
+          chute?.classList.toggle('folded', !b.v);
           bodiesG.append(el);
           labelsG.append(lb);
-          shown.set(b.id, { el, label: lb, keys: [b, b], t: now });
+          if (chute) chutesG.append(chute);
+          shown.set(b.id, { el, label: lb, chute, k: b.k, keys: [b, b], t: now });
           continue;
         }
         const last = it.keys[it.keys.length - 1];
@@ -826,6 +1102,7 @@ export default {
         if (live.has(id)) continue;
         it.el.remove();
         it.label.remove();
+        it.chute?.remove();
         shown.delete(id);
       }
       const fallen = new Set(S.fallen || []);
@@ -870,7 +1147,10 @@ export default {
       for (const it of shown.values()) {
         const p = current(it, now);
         it.el.setAttribute('transform', `translate(${p.x} ${p.y}) rotate(${deg(p.a)})`);
-        it.label.setAttribute('transform', `translate(${p.x} ${p.y}) scale(1,-1)`);
+        // 무게표는 무게중심에 (오함마는 쇠머리 쪽)
+        const [cx, cy] = comOf(it.k, p.a);
+        it.label.setAttribute('transform', `translate(${p.x + cx} ${p.y + cy}) scale(1,-1)`);
+        it.chute?.setAttribute('transform', `translate(${p.x} ${p.y})`);
       }
       // 조준 중인 짐 미리보기 (떨어질 높이 그대로, 점선은 똑바로 아래로)
       let previewTop = 0;
@@ -886,7 +1166,11 @@ export default {
         previewG.setAttribute('transform', `translate(${p.x} ${y})`);
         guide.setAttribute('y2', -y);
         previewPiece.setAttribute('transform', `rotate(${deg(p.a)})`);
-        previewTop = y + extent(S.piece, p.a).hi[1];
+        const [cx, cy] = comOf(S.piece, p.a);
+        previewLabel.setAttribute('transform', `translate(${cx} ${cy}) scale(1,-1)`);
+        const chute = !!kindOf(S.piece).chute;
+        previewChute.style.display = chute ? '' : 'none';
+        previewTop = y + (chute ? 1.6 : extent(S.piece, p.a).hi[1]);
       } else {
         previewG.style.display = 'none';
       }
@@ -942,6 +1226,8 @@ export default {
           flash('🪄 기적의 복구!');
         } else if (e.k === 'poof') {
           burst(e.x, e.y, '💨');
+        } else if (e.k === 'gift') {
+          flash(`🎁 ${who(e.id).name} 악마 카드 +1!`);
         }
       }
       for (const f of fails) {
@@ -982,17 +1268,21 @@ export default {
       clearTimeout(reelTimer);
       const final = S.piece;
       const end = S.spinEnd;
+      const rare = S.rare;
+      const total = SPIN_TIME + (rare ? RARE_SPIN : 0);
       const land = () => {
         reel.replaceChildren(objIcon(final));
         reel.classList.add('land');
-        name.textContent = `${label(final, S.spinKind === 'devil')} ${kgText(final)}!`;
+        reel.classList.toggle('rare', !!rare);
+        name.textContent = `${rare ? '✨ ' : ''}${label(final, S.spinKind === 'devil')} ${kgText(final)}!`;
+        if (rare && api.now() - end < 500) flash('✨ 레어!', 'rare');
       };
       if (S.spinKind === 'devil') return land();
       const step = () => {
         const left = end - api.now();
         if (left <= 0) return land();
-        reel.replaceChildren(objIcon(pick(ROULETTE)));
-        const k = Math.min(1, Math.max(0, 1 - left / SPIN_TIME));
+        reel.replaceChildren(objIcon(pick(ROULETTE).k));
+        const k = Math.min(1, Math.max(0, 1 - left / total));
         reelTimer = setTimeout(step, 45 + 240 * k * k);
       };
       step();
@@ -1037,7 +1327,8 @@ export default {
             h('li', {}, '무거운 쪽으로 기울어요. 반대쪽에 올려서 균형을 맞추세요'),
             h('li', {}, '짐이 용암에 떨어지거나 판 끝이 용암에 닿으면 독박!'),
             h('li', {}, '가운데 둥근 축 위에 놓으면 한쪽으로 굴러가요'),
-            h('li', {}, `😈 악마 카드 ${DEVIL_CARDS}장: 내 차례 동안 숫자키 1·2·3으로 다음 사람 짐을 금고·볼링공·얼음 중 하나로 (그걸로 죽으면 내 킬)`),
+            h('li', {}, `😈 악마 카드 ${DEVIL_CARDS}장: 내 차례 동안 숫자키 1~4로 다음 사람 짐을 금고·볼링공·얼음·돌침대 중 하나로 (그걸로 죽으면 내 킬)`),
+            h('li', {}, '✨ 가끔 레어 짐: 🪂 보급 상자(낙하산) · 🎁 악마의 선물(놓고 살면 카드 +1)'),
             h('li', {}, '← → 위치 · ↑ ↓ 돌리기 · 스페이스 떨구기')),
           countdown(S.phaseEndsAt, INTRO_TIME));
       }
@@ -1084,8 +1375,8 @@ export default {
           return h('div', { class: 'bt-act' },
             h('div', { class: 'bt-act-title hot' }, `😈 ${next.name}한테 악마 카드 쓸래?`),
             h('p', {}, `안 쓰면 ${next.name}의 짐은 🎰 랜덤(?) · 남은 카드 ${S.cards?.[me] || 0}장`),
-            h('div', { class: 'tw-options' }, devilButtons(true)),
-            h('p', { class: 'muted' }, '숫자키 1·2·3 = 이걸로 바꿔치기 · 스페이스 = 안 씀'));
+            h('div', { class: 'tw-options ss-devils' }, devilButtons(true)),
+            h('p', { class: 'muted' }, '숫자키 1~4 = 이걸로 바꿔치기 · 스페이스 = 안 씀'));
         }
         return h('div', { class: 'bt-act' },
           h('div', { class: 'bt-act-title' }, `😈 ${josa(who(S.turn).name, '이', '가')} 악마 카드 고민 중…`),
@@ -1136,7 +1427,7 @@ export default {
           h('li', {}, '← → (A D) 위치 · 톡 치면 미세 조정'),
           h('li', {}, '↑ ↓ (W S) 90° 돌리기'),
           h('li', {}, '스페이스 떨구기'),
-          h('li', {}, '😈 악마 카드: 내 차례 동안 숫자키 1·2·3'),
+          h('li', {}, '😈 악마 카드: 내 차례 동안 숫자키 1~4'),
           h('li', {}, '다 놓고 고민할 땐 스페이스 = 안 씀')),
       ].filter(Boolean));
     }
