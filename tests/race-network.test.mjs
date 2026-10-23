@@ -204,22 +204,32 @@ test('steering alone turns the wheel gradually without moving or rotating a stop
   assert.deepEqual({ x: c.x, y: c.y, hx: c.hx, hy: c.hy }, before);
 });
 
-test('brake stops forward motion without reversing and releasing it permits acceleration again', () => {
+test('holding S brakes first, then reverses; releasing S coasts and W returns to forward motion', () => {
   const r = fixture();
   spread(r);
   const c = place(r, 'p0', T.start + 12, 18);
+  let sawStop = false;
+  let sawReverse = false;
   for (let i = 0; i < 15; i++) {
     r.drive('p0', { brake: true });
     r.step(100);
-    assert.ok(c.vx * c.hx + c.vy * c.hy >= -.000001, 'braking never engages reverse');
+    const forward = c.vx * c.hx + c.vy * c.hy;
+    sawStop ||= speed(c) < .1;
+    sawReverse ||= forward < -1;
+    assert.ok(forward >= -9.00001, 'reverse speed is limited to 9m/s');
   }
-  assert.ok(speed(c) < .1);
+  assert.ok(sawStop, 'S must stop before applying reverse');
+  assert.ok(sawReverse, 'holding S after the neutral dwell engages reverse');
+  const beforeRelease = speed(c);
   r.drive('p0');
-  r.step(100);
-  assert.ok(speed(c) < .1, 'brake release does not apply throttle');
-  r.drive('p0', { throttle: 1 });
   r.step(200);
-  assert.ok(speed(c) > 3);
+  assert.ok(speed(c) < beforeRelease, 'releasing S removes reverse thrust');
+  assert.ok(c.vx * c.hx + c.vy * c.hy < 0, 'keyup coasts instead of instantly switching direction');
+  for (let i = 0; i < 8; i++) {
+    r.drive('p0', { throttle: 1 });
+    r.step(100);
+  }
+  assert.ok(c.vx * c.hx + c.vy * c.hy > 3, 'W brakes backward motion before driving forward');
 });
 
 test('host and prediction match for throttle, gradual steering, braking and release', () => {
@@ -244,4 +254,39 @@ test('host and prediction match for throttle, gradual steering, braking and rele
       }
     }
   }
+});
+
+test('host handoff and prediction retain the reverse dwell, backward steering and forward return', () => {
+  const uninterrupted = fixture();
+  const handedOff = fixture();
+  const prediction = createRacePrediction(T, 'p0');
+  for (const r of [uninterrupted, handedOff]) spread(r);
+  prediction.sync(structuredClone(uninterrupted.state), uninterrupted.now());
+  const inputs = [
+    ...Array.from({ length: 10 }, () => ({ throttle: 0, steer: 0, brake: true, drift: false })),
+    ...Array.from({ length: 3 }, () => ({ throttle: 0, steer: .45, brake: true, drift: false })),
+    ...Array.from({ length: 8 }, () => ({ throttle: 1, steer: 0, brake: false, drift: false })),
+  ];
+  let reversed = false;
+  for (let i = 0; i < inputs.length; i++) {
+    const input = inputs[i];
+    const seq = uninterrupted.state.cars.p0.seq + 1;
+    prediction.recordInput({ ...input, seq }, uninterrupted.now());
+    for (const r of [uninterrupted, handedOff]) {
+      r.drive('p0', { ...input, seq });
+      r.step(100);
+    }
+    prediction.step(.1, uninterrupted.now());
+    if (i === 0) handedOff.migrate(); // handoff during the neutral reverse dwell
+    const c = uninterrupted.state.cars.p0;
+    reversed ||= c.vx * c.hx + c.vy * c.hy < -1;
+    for (const other of [handedOff.state.cars.p0, prediction.car('p0')]) {
+      for (const key of ['x', 'y', 'vx', 'vy', 'hx', 'hy', 'steer', 'steerInput', 'yawRate', 'reverseHold']) {
+        assert.ok(Math.abs((c[key] || 0) - (other[key] || 0)) < .00001, `${key} survives backward driving and host handoff`);
+      }
+    }
+  }
+  assert.ok(reversed);
+  const c = uninterrupted.state.cars.p0;
+  assert.ok(c.vx * c.hx + c.vy * c.hy > 3);
 });

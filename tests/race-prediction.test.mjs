@@ -172,3 +172,30 @@ test('peer steering intent never overwrites the actual wheel and steering alone 
   close(world.car('peer').x, S.cars.peer.x);
   close(world.car('peer').y, S.cars.peer.y);
 });
+
+test('local S predicts reverse after the dwell and keyup removes reverse acceleration', () => {
+  const world = createRacePrediction(T, 'me');
+  world.sync(state({ me: at(12) }), BASE);
+  world.recordInput({ throttle: 0, steer: 0, brake: true, drift: false, seq: 1 }, BASE);
+  for (let i = 1; i <= 12; i++) world.step(.1, BASE + i * 100);
+  const car = world.car('me');
+  assert.ok(car.vx * car.hx + car.vy * car.hy < -5);
+  assert.ok(speed(car) <= 9.00001);
+  const reversedSpeed = speed(car);
+  world.recordInput({ throttle: 0, steer: 0, brake: false, drift: false, seq: 2 }, BASE + 1200);
+  world.step(.1, BASE + 1300);
+  assert.ok(speed(car) < reversedSpeed, 'S keyup ends the reverse thrust immediately');
+  assert.ok(car.vx * car.hx + car.vy * car.hy < 0);
+  world.recordInput({ throttle: 1, steer: 0, brake: false, drift: false, seq: 3 }, BASE + 1300);
+  for (let i = 14; i <= 22; i++) world.step(.1, BASE + i * 100);
+  assert.ok(car.vx * car.hx + car.vy * car.hy > 3, 'W transitions from braking backward motion to forward driving');
+});
+
+test('a peer snapshot preserves a partly completed reverse dwell during reconciliation', () => {
+  const S = state({ me: at(60), peer: at(12, 0, { braking: true, reverseHold: .15 }) });
+  const world = createRacePrediction(T, 'me');
+  world.sync(S, BASE + 100);
+  assert.ok(world.car('peer').vx * world.car('peer').hx + world.car('peer').vy * world.car('peer').hy < -.1,
+    'the remaining dwell is replayed instead of restarting the whole timer');
+  close(S.cars.peer.reverseHold, .15);
+});

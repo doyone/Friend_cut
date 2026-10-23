@@ -257,6 +257,8 @@ export const RARE = new Set(['airdrop', 'gift']);
 const TRICKY = new Set(['roly', 'cart', ...RARE]); // 첫 바퀴엔 안 나옴 (기본 감각부터)
 const RARE_GAP = 3;           // 레어가 나오면 이만큼 차례 동안은 레어 없음
 const MAX_CARDS = 2;          // 악마의 선물로 늘어나는 카드 상한
+const DEVIL_UNLOCK_LAP = 3;   // 두 바퀴를 마친 뒤, 세 번째 바퀴부터 선택
+const cardsUnlocked = S => (S.turnLap || 0) >= DEVIL_UNLOCK_LAP;
 // 악마 카드로: 무거운 짐 / 구르는 짐 / 미끌 얼음 / 길고 무거운 돌침대 / 한쪽이 무거운 닻 / 짐은 랜덤인데 꼭대기(2m)에서 떨구기
 export const DEVILS = [
   { k: 'safe', tag: '🔒 무거운' },
@@ -624,7 +626,7 @@ function startTurn(ctx, now) {
 
 // 지금 차례인 사람만, 내 차례 동안(룰렛·조준·낙하·청소·고민) 다음 사람에게 쓸 수 있다
 const canUseCard = (S, pid) => pid === S.turn && ['spin', 'aim', 'fall', 'clean', 'decide'].includes(S.phase)
-  && (S.cards?.[pid] || 0) > 0 && !!S.next && S.next.kind !== 'devil';
+  && cardsUnlocked(S) && (S.cards?.[pid] || 0) > 0 && !!S.next && S.next.kind !== 'devil';
 
 function useCard(ctx, pid, i, now) {
   const S = ctx.state;
@@ -922,6 +924,11 @@ export default {
       case 'clean':
         return tickClean(ctx, now);
       case 'decide':
+        if (!cardsUnlocked(S)) {
+          S.phase = 'result';
+          S.phaseEndsAt = now + RESULT_TIME;
+          return true;
+        }
         if (now < S.phaseEndsAt && ctx.isOnline(S.turn)) return false;
         return startTurn(ctx, now);
       case 'result':
@@ -1333,12 +1340,16 @@ export default {
     function devilButtons(big) {
       return DEVILS.map((d, i) => h('button', {
         class: big ? 'tw-option devil' : 'tw-devil-btn', tabindex: '-1',
+        disabled: !canUseCard(S, me),
         onClick: () => api.send('devil', { i }),
       }, h('kbd', { class: big ? 'num' : '' }, String(i + 1)), devilIcon(d), h('b', {}, d.high ? d.tag : `${d.tag} ${kindOf(d.k).name}`),
       big ? h('em', {}, d.high ? `짐은 랜덤 · ${DROP_MAX}m에서 쿵` : kgText(d.k)) : null));
     }
 
     function devilStrip() {
+      if (S.turn === me && (S.cards?.[me] || 0) > 0 && !cardsUnlocked(S)) {
+        return h('div', { class: 'tw-devil muted' }, '🔒 악마 카드: 두 바퀴 종료 후, 3바퀴째부터 선택 가능');
+      }
       if (!canUseCard(S, me)) return null;
       return h('div', { class: 'tw-devil' },
         h('b', {}, `😈 악마 카드: ${who(S.next.id).name}의 다음 짐(?)을 내가 정하기`),
@@ -1355,7 +1366,7 @@ export default {
             h('li', {}, '무거운 쪽으로 기울어요. 반대쪽에 올려서 균형을 맞추세요'),
             h('li', {}, '짐이 용암에 떨어지거나 판 끝이 용암에 닿으면 독박!'),
             h('li', {}, '가운데 둥근 축 위에 놓으면 한쪽으로 굴러가요'),
-            h('li', {}, `😈 악마 카드 ${DEVIL_CARDS}장: 내 차례 동안 숫자키 1~6으로 다음 사람 짐을 금고·볼링공·얼음·돌침대·닻 중 하나로, 또는 ⬆️ 꼭대기에서 떨구게 (그걸로 죽으면 내 킬)`),
+            h('li', {}, `😈 악마 카드 ${DEVIL_CARDS}장: 두 바퀴 종료 후, 3바퀴째 내 차례부터 숫자키 1~6으로 선택 (그걸로 죽으면 내 킬)`),
             h('li', {}, '✨ 가끔 레어 짐: 🪂 보급 상자(낙하산) · 🎁 악마의 선물(놓고 살면 카드 +1)'),
             h('li', {}, '← → 위치 · ↑ ↓ 돌리기 · 스페이스 떨구기')),
           countdown(S.phaseEndsAt, S.again ? AGAIN_INTRO : INTRO_TIME));
@@ -1399,6 +1410,7 @@ export default {
           S.turn === me ? devilStrip() : null);
       }
       if (S.phase === 'decide') {
+        if (!cardsUnlocked(S)) return devilStrip() || h('div', { class: 'bt-act' }, '🔒 악마 카드는 3바퀴째부터');
         const next = who(S.next.id);
         if (S.turn === me) {
           return h('div', { class: 'bt-act' },
@@ -1421,7 +1433,7 @@ export default {
     }
 
     function renderPanel() {
-      const key = [S.phase, S.turnsPlayed, S.turn, S.spinEnd, aim.dropped, S.next?.kind, S.cards?.[me], !!S.fail].join('|');
+      const key = [S.phase, S.turnLap, S.turnsPlayed, S.turn, S.spinEnd, aim.dropped, S.next?.kind, S.cards?.[me], !!S.fail].join('|');
       if (key === panelKey) return;
       panelKey = key;
       clearTimeout(reelTimer);
@@ -1430,7 +1442,7 @@ export default {
 
     function renderSide() {
       // 떨어지는 동안엔 상태가 초당 10번 오니, 순서·탈락·카드가 바뀔 때만 다시 그린다 (얼굴 그림이 무거움)
-      const key = JSON.stringify([S.lap, S.alive, S.turn, S.next?.id, S.bag, S.bagPos, S.cards, S.outOrder, S.dead]);
+      const key = JSON.stringify([S.turnLap, S.lap, S.alive, S.turn, S.next?.id, S.bag, S.bagPos, S.cards, S.outOrder, S.dead]);
       if (key === sideKey) return;
       sideKey = key;
       const deadList = (S.outOrder || []).map(id => {
@@ -1441,11 +1453,12 @@ export default {
         const dead = !S.alive.includes(id);
         const cls = dead ? 'dead' : id === S.turn ? 'now' : id === S.next?.id ? 'next' : i < (S.bagPos ?? 0) ? 'done' : '';
         return h('li', { class: cls }, avatar(who(id)), h('span', {}, who(id).name),
-          (S.cards?.[id] || 0) > 0 ? h('i', { class: 'tw-card', title: '악마 카드 남음' }, '😈') : null,
+          (S.cards?.[id] || 0) > 0 ? h('i', { class: 'tw-card', title: cardsUnlocked(S) ? '악마 카드 남음' : '3바퀴째부터 선택 가능' }, cardsUnlocked(S) ? '😈' : '🔒') : null,
           cls === 'now' ? h('em', {}, '차례') : cls === 'next' ? h('em', {}, '다음') : cls === 'done' ? h('em', {}, '✓') : null);
       });
       side.replaceChildren(...[
-        h('h3', {}, S.lap ? `${S.lap}바퀴 순서 · 생존 ${S.alive.length}명` : `생존 ${S.alive.length}명`),
+        h('h3', {}, S.turnLap ? `${S.turnLap}바퀴 · 생존 ${S.alive.length}명` : `생존 ${S.alive.length}명`),
+        S.turnLap && S.lap > S.turnLap ? h('p', { class: 'muted small' }, `다음 ${S.lap}바퀴 순서 미리보기`) : null,
         bag.length
           ? h('ol', { class: 'tw-bag' }, bag)
           : h('div', { class: 'tc-alive' }, S.alive.map(id => h('span', { class: 'tc-alive-chip' }, avatar(who(id)), who(id).name))),
@@ -1456,7 +1469,7 @@ export default {
           h('li', {}, '← → (A D) 위치 · 톡 치면 미세 조정'),
           h('li', {}, '↑ ↓ (W S) 90° 돌리기'),
           h('li', {}, '스페이스 떨구기'),
-          h('li', {}, '😈 악마 카드: 내 차례 동안 숫자키 1~6'),
+          h('li', {}, '😈 악마 카드: 3바퀴째부터 내 차례에 숫자키 1~6'),
           h('li', {}, '다 놓고 고민할 땐 스페이스 = 안 씀')),
       ].filter(Boolean));
     }

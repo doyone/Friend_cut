@@ -290,9 +290,10 @@ export default {
     const wheel = h('span', { class: 'rc-steering-wheel', 'aria-hidden': 'true' });
     wheel.innerHTML = '<svg viewBox="0 0 48 48" width="38" height="38"><circle cx="24" cy="24" r="19" fill="none" stroke="currentColor" stroke-width="6"/><path d="M8 20L24 27 40 20M24 27V42" fill="none" stroke="currentColor" stroke-width="5"/><circle cx="24" cy="25" r="5" fill="currentColor"/></svg>';
     const gasKey = h('span', { class: 'rc-pedal gas' }, h('kbd', {}, 'W / ↑'), '가속');
-    const brakeKey = h('span', { class: 'rc-pedal brake' }, h('kbd', {}, 'S / ↓'), '제동');
+    const brakeKey = h('span', { class: 'rc-pedal brake' }, h('kbd', {}, 'S / ↓'), '제동·후진');
+    const gear = h('span', { class: 'rc-gear', 'aria-label': '기어' }, 'N');
     const steerLabel = h('span', { class: 'rc-steering-label' }, h('kbd', {}, 'A ←'), wheel, h('kbd', {}, '→ D'));
-    const driveHud = h('div', { class: 'rc-drivehud', hidden: true }, gasKey, steerLabel, brakeKey);
+    const driveHud = h('div', { class: 'rc-drivehud', hidden: true }, gasKey, steerLabel, brakeKey, gear);
     const sound = h('button', { class: 'rc-sound', type: 'button', tabindex: '-1' });
     const soundLabel = () => { sound.textContent = audio.enabled ? '🔊' : '🔇'; };
     soundLabel();
@@ -858,6 +859,9 @@ export default {
       gasKey.classList.toggle('active', keys.u && !keys.d);
       brakeKey.classList.toggle('active', keys.d);
       wheel.style.transform = `rotate(${(car.steer || 0) * 180 / Math.PI * 8}deg)`;
+      const signedSpeed = car.vx * car.hx + car.vy * car.hy;
+      gear.textContent = signedSpeed < -.5 ? 'R' : signedSpeed > .5 || keys.u && !keys.d ? 'D' : 'N';
+      gear.classList.toggle('reverse', signedSpeed < -.5);
     }
 
     // 미니맵: 트랙 전체와 모두의 위치
@@ -947,7 +951,7 @@ export default {
         S.phase === 'final' && !c?.fin ? null : h('span', { class: 'rc-time' }, fmt(time)),
         c ? h('span', {}, `${pos}등 / ${S.roster.length}명`) : null,
         c?.split != null && !c.fin ? h('span', { class: c.split > 0 ? 'rc-behind' : 'rc-ahead' }, c.split > 0 ? `선두와 +${c.split}초` : '구간 선두!') : null,
-        h('span', { class: 'muted' }, `합계 ${S.points?.[me] || 0}점 · ${Math.round(Math.hypot(car.vx, car.vy) * 3.6)} km/h`),
+        h('span', { class: 'muted' }, `합계 ${S.points?.[me] || 0}점 · ${car.vx * car.hx + car.vy * car.hy < -.5 ? 'R ' : ''}${Math.round(Math.hypot(car.vx, car.vy) * 3.6)} km/h`),
         h('span', { class: 'rc-hot' }, car.boostLeft > 0 ? '🔥 부스트!' : (car.charge || 0) >= 1.15 ? '🟠 놓으면 강력 부스트!' : (car.charge || 0) >= .45 ? '🔵 놓으면 부스트!' : `SPACE 드리프트 ${Math.round((car.charge || 0) / 1.5 * 100)}%`),
         S.finishBy && S.phase === 'race' ? h('span', { class: 'rc-hot' }, `⏱ ${Math.max(0, Math.ceil((S.finishBy - api.now()) / 1000))}초 안에 결승선!`) : null,
       ].filter(Boolean));
@@ -963,7 +967,7 @@ export default {
           h('h2', {}, '🏎️ 카트 그랑프리'),
           S.again ? null : h('ul', { class: 'rules big' },
             h('li', {}, '차고 8자 코스 한 바퀴씩, 3경기 합산 점수로 승부!'),
-            h('li', {}, 'W / ↑ = 가속 · S / ↓ = 브레이크 · A D / ← → = 핸들'),
+            h('li', {}, 'W / ↑ = 가속 · S / ↓ = 제동 후 후진 · A D / ← → = 핸들'),
             h('li', {}, '코너에서 SPACE 꾹 = 드리프트 · 놓으면 부스트!'),
             h('li', {}, '파란 불꽃은 짧게, 주황 불꽃은 길게 가속! 벽에 박으면 충전이 사라져요'),
             h('li', {}, '초록불 전 가속하면 부정출발! 핸들은 미리 돌릴 수 있어요'))));
@@ -1007,7 +1011,7 @@ export default {
         })),
         h('h3', {}, '조작'),
         h('ul', { class: 'rules' },
-          h('li', {}, 'W / ↑ = 차가 향하는 앞으로 가속 · S / ↓ = 브레이크'),
+          h('li', {}, 'W / ↑ = 앞으로 가속 · S / ↓ 꾹 = 멈춘 뒤 후진'),
           h('li', {}, 'A D / ← → = 핸들. 떼면 중앙으로 돌아와요'),
           h('li', {}, '고속에서는 핸들이 덜 꺾여요. 코너 전 감속!'),
           h('li', {}, 'SPACE 꾹 = 드리프트, 놓으면 모은 만큼 부스트'),

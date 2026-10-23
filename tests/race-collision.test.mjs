@@ -32,7 +32,7 @@ test('카트 최고 속도는 28, 부스트는 38이며 직선 입력으로 속�
   close(car.vx, KART.max);
 });
 
-test('가속에는 점진적인 추진력이 있고 브레이크는 후진 없이 정지한다', () => {
+test('가속에는 점진적인 추진력이 있고 두 페달을 함께 누르면 제동만 한다', () => {
   const fresh = { vx: 10, vy: 0, hx: 1, hy: 0 };
   const warmed = { ...fresh, throttleTime: KART.thrustTime };
   drive(fresh, { throttle: 1 }, SURF.asphalt, dt);
@@ -42,7 +42,7 @@ test('가속에는 점진적인 추진력이 있고 브레이크는 후진 없�
   for (let i = 0; i < 24; i++) drive(car, { brake: true }, SURF.asphalt, dt);
   assert.ok(car.vx > 0 && car.vx < 8, `제동 후 ${car.vx}`);
   close(car.hx, 1);
-  for (let i = 0; i < 120; i++) drive(car, { brake: true }, SURF.asphalt, dt);
+  for (let i = 0; i < 120; i++) drive(car, { throttle: 1, brake: true }, SURF.asphalt, dt);
   close(car.vx, 0); close(car.vy, 0);
   close(PHYS.max, 21);
 });
@@ -186,12 +186,13 @@ test('좌우를 번갈아 눌러도 운전대는 중앙을 통과하고 회전 �
     const hy = car.hy;
     drive(car, { throttle: 1, steer: steering }, SURF.asphalt, dt);
     const turn = Math.atan2(hx * car.hy - hy * car.hx, hx * car.hx + hy * car.hy);
-    assert.ok(Math.abs(car.steerInput - previousInput) <= (steering ? KART.steerInputSlew : KART.steerReturn) * dt + 1e-8);
+    const steerRate = steering === 0 ? KART.steerReturn : steering * previousInput < 0 ? KART.steerOpposite : KART.steerInputSlew;
+    assert.ok(Math.abs(car.steerInput - previousInput) <= steerRate * dt + 1e-8);
     assert.ok(Math.abs(car.steer - previousSteer) <= KART.steerSlew * dt + 1e-8);
     assert.ok(Math.abs(car.yawRate - previousYaw) <= KART.yawAccel * dt + 1e-8);
     assert.ok(Math.abs(turn) < 0.04, '한 걸음에 차체 방향이 튀지 않는다');
     if (i === 60) assert.ok(car.steerInput > 0.9 && car.yawRate > 0, '왼쪽 키를 눌러도 즉시 반대로 꺾이지 않는다');
-    if (i === 89) close(car.steerInput, 0);
+    if (i === 71) assert.ok(car.steerInput < 0, '반대 입력은 중앙을 지나 부드럽게 바뀐다');
     previousInput = car.steerInput; previousSteer = car.steer; previousYaw = car.yawRate;
   }
   close(car.steerInput, 0);
@@ -229,4 +230,78 @@ test('가로로 선 카트의 앞 범퍼도 난간을 뚫지 않는다', () => {
   stepCar(T, car, null, dt, 1000);
   const loc = locate(T, car, car.x, car.y);
   assert.ok(loc.lat + KART.radius + KART.capsuleFront <= loc.p.half + 0.005);
+});
+
+test('S를 유지하면 완전히 멈춘 뒤 잠깐 기다렸다가 낮은 속도로 후진한다', () => {
+  const car = { vx: 20, vy: 0, hx: 1, hy: 0 };
+  let stopped = false;
+  let firstReverse = null;
+  let stoppedAt = null;
+  for (let i = 1; i <= 180; i++) {
+    drive(car, { brake: true }, SURF.asphalt, dt);
+    if (Math.abs(car.vx) < 1e-9 && !stopped) { stopped = true; stoppedAt = i * dt; }
+    if (car.vx < 0 && firstReverse === null) {
+      assert.ok(stopped, '후진 전에 정지한 걸음이 있다');
+      firstReverse = i * dt;
+    }
+  }
+  assert.ok(firstReverse - stoppedAt >= KART.reverseDelay - dt - 1e-8);
+  close(car.vx, -KART.reverseMax);
+  close(car.vy, 0);
+  assert.ok(car.reverseHold >= KART.reverseDelay);
+});
+
+test('후진 중 W를 누르면 제동해 정지한 다음 전진하며 페달을 떼면 후진 대기가 초기화된다', () => {
+  const car = { vx: -KART.reverseMax, vy: 0, hx: 1, hy: 0, reverseHold: KART.reverseDelay };
+  let stopped = false;
+  let forward = false;
+  for (let i = 0; i < 90; i++) {
+    const before = car.vx;
+    drive(car, { throttle: 1 }, SURF.asphalt, dt);
+    if (car.vx === 0) stopped = true;
+    if (car.vx > 0) { assert.ok(stopped); forward = true; }
+    if (before < 0) assert.ok(car.vx <= 0, '한 걸음에 후진에서 전진으로 튀지 않는다');
+  }
+  assert.ok(forward);
+  assert.ok(car.vx > 20);
+  close(car.reverseHold, 0);
+  const waiting = { vx: 0, vy: 0, hx: 1, hy: 0 };
+  for (let i = 0; i < 5; i++) drive(waiting, { brake: true }, SURF.asphalt, dt);
+  assert.ok(waiting.reverseHold > 0);
+  drive(waiting, null, SURF.asphalt, dt);
+  close(waiting.reverseHold, 0);
+});
+
+test('같은 운전대 입력의 차체 회전은 후진에서 반대로 작동한다', () => {
+  const forward = { vx: 6, vy: 0, hx: 1, hy: 0 };
+  const reverse = { vx: -6, vy: 0, hx: 1, hy: 0 };
+  for (let i = 0; i < 45; i++) {
+    drive(forward, { steer: 1 }, SURF.asphalt, dt);
+    drive(reverse, { steer: 1 }, SURF.asphalt, dt);
+  }
+  assert.ok(forward.hy > 0.2);
+  assert.ok(reverse.hy < -0.2);
+  close(forward.hx, reverse.hx);
+  close(forward.hy, -reverse.hy);
+});
+
+test('운전대 반응은 더 빠르지만 매 걸음 연속이고 고속에서도 작은 입력을 조절할 수 있다', () => {
+  const car = { vx: KART.max, vy: 0, hx: 1, hy: 0 };
+  let fullAt = null;
+  for (let i = 1; i <= 30; i++) {
+    drive(car, { throttle: 1, steer: 1 }, SURF.asphalt, dt);
+    if (car.steerInput >= 1 - 1e-9 && fullAt === null) fullAt = i * dt;
+  }
+  assert.ok(fullAt <= 0.28 && fullAt >= 0.25, `끝까지 돌리는 시간 ${fullAt}`);
+  let centeredAt = null;
+  let oppositeAt = null;
+  for (let i = 1; i <= 60; i++) {
+    drive(car, { throttle: 1, steer: -1 }, SURF.asphalt, dt);
+    if (car.steerInput <= 0 && centeredAt === null) centeredAt = i * dt;
+    if (car.steerInput <= -1 + 1e-9 && oppositeAt === null) oppositeAt = i * dt;
+  }
+  assert.ok(centeredAt < 0.2, `반대로 돌려 중앙 통과 ${centeredAt}`);
+  assert.ok(oppositeAt < 0.48, `반대 끝까지 ${oppositeAt}`);
+  const wheelAtMax = KART.steerMax / (1 + KART.max * KART.steerSpeed);
+  assert.ok(wheelAtMax > 0.17 && wheelAtMax < 0.18);
 });

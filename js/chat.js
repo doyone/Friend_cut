@@ -3,7 +3,7 @@
 import { digitOf, h, isTyping, toast } from './util.js';
 
 // 빠른 도발 (채팅창이 비어 있을 때 숫자키 1~6). 봇도 이걸로 도발한다.
-export const TAUNTS = ['아예?', '엄', '?', '💀💀💀', '😭 살려줘', '좆밥컷ㅋㅋㅋㅋㅋㅋㅋ'];
+export const TAUNTS = ['아예?', '엄', '줴줴이야', '💀💀💀', '😭 살려줘', '좆밥컷ㅋㅋㅋㅋㅋㅋㅋ'];
 const MAX_LEN = 60;
 const GAP_MS = 700;      // 도배 방지
 const FRESH_MS = 9000;   // 게임 중 왼쪽 아래 로그가 떠 있는 시간

@@ -947,6 +947,8 @@ button, input { font: inherit; color: inherit; }
 .rc-pedal.brake.active kbd { background: #ff7169; color: #3d1818; }
 .rc-steering-label { display: flex; align-items: center; gap: 9px; }
 .rc-steering-wheel { display: inline-flex; width: 38px; height: 38px; color: #ffdc83; }
+.rc-gear { font: 900 19px system-ui; width: 22px; text-align: center; color: #81e6b5; }
+.rc-gear.reverse { color: #ffbc82; }
 .rc-canvas { display: block; width: 100%; height: min(66vh, 620px); }
 .rc-mini { position: absolute; right: 10px; top: 10px; width: 200px; height: 150px; background: rgba(20, 85, 143, .55); border-radius: 10px; border: 2px solid rgba(255, 255, 255, .7); pointer-events: none; }
 .rc-overlay { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }

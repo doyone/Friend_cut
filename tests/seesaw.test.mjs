@@ -41,7 +41,7 @@ test('봇끼리 한 판: 끝까지 가고, 차례 시작부터 판 끝이 용암
 });
 
 // 빈 판에 짐 하나를 (x, a)로 떨궈서 멈출 때까지
-function dropOne(piece, x, a = 0, turnsPlayed = 0) {
+function dropOne(piece, x, a = 0, turnsPlayed = 0, turnLap = 1) {
   let clock = 1_000_000;
   const roster = [{ id: 'p0', name: 'A' }, { id: 'p1', name: 'B' }, { id: 'p2', name: 'C' }];
   const ctx = { roster, now: () => clock, secret: {}, isOnline: () => true, nameOf: id => id, announce() {}, kill() {} };
@@ -49,7 +49,7 @@ function dropOne(piece, x, a = 0, turnsPlayed = 0) {
   const S = ctx.state;
   S.phaseEndsAt = clock;
   while (S.phase !== 'aim') { clock += 100; game.tick(ctx); }
-  Object.assign(S, { piece, turn: 'p0', turnsPlayed });
+  Object.assign(S, { piece, turn: 'p0', turnsPlayed, turnLap });
   game.onInput(ctx, { pid: 'p0', type: 'drop', data: { x, a } });
   const id = S.pieceId;
   const seen = { chuteOpen: false, landSpeed: 0 };
@@ -117,7 +117,10 @@ test('악마의 선물: 놓고 살아남으면 악마 카드 +1', () => {
   const { S } = dropOne('gift', 1);
   assert.ok(S.lastResult.ok);
   assert.equal(S.cards.p0, 2);
-  assert.equal(S.phase, 'decide'); // 받자마자 다음 사람에게 쓸지 고민
+  assert.equal(S.phase, 'result'); // 두 바퀴 전에는 카드를 받아도 고민 단계가 열리지 않음
+  const later = dropOne('gift', 1, 0, 0, 3).S;
+  assert.equal(later.cards.p0, 2);
+  assert.equal(later.phase, 'decide');
 });
 
 test('악마 카드 ⬆️ 꼭대기에서: 다음 사람 짐은 룰렛 그대로, 떨구는 높이만 최대 / ⚓ 닻은 아래가 무겁다', () => {
@@ -130,6 +133,7 @@ test('악마 카드 ⬆️ 꼭대기에서: 다음 사람 짐은 룰렛 그대�
   while (S.phase !== 'aim') { clock += 100; game.tick(ctx); }
   // 차례 시작 조준점은 가운데에서 1m 옆
   assert.equal(Math.abs(S.aim.x), 1);
+  S.turnLap = 3;
   const high = DEVILS.findIndex(d => d.high);
   assert.ok(game.onInput(ctx, { pid: S.turn, type: 'devil', data: { i: high } }));
   assert.ok(S.next.high && !S.next.piece);
@@ -139,4 +143,36 @@ test('악마 카드 ⬆️ 꼭대기에서: 다음 사람 짐은 룰렛 그대�
   const gap = spawnY(S, 'box', 2, 0) - spawnY({ ...S, high: false, turnsPlayed: 0 }, 'box', 2, 0);
   assert.ok(Math.abs(gap - 1.2) < 1e-9, `높이 차이 ${gap}`); // 0.8m → 2m
   assert.ok(Math.abs(massOf('anchor') * 25 - 64) < 2 && comOf('anchor', 0)[1] < -0.3);
+});
+
+
+test('악마 카드는 3바퀴째부터: 다음 순서를 미리 뽑아 lap이 올라가도 조기 사용 불가', () => {
+  const roster = [{id:'a',name:'A'},{id:'b',name:'B'},{id:'c',name:'C'}];
+  const ctx = {roster, now:()=>1_000_000,secret:{},isOnline:()=>true,nameOf:id=>id,announce(){},kill(){}};
+  const initial = {...game.setup(ctx),roster,turn:'a',piece:'box',turnsPlayed:5,next:{id:'b',kind:'random',lap:3}};
+  for (const turnLap of [1,2]) for (const phase of ['spin','aim','fall','clean','decide']) {
+    ctx.state={...structuredClone(initial),turnLap,lap:3,phase,cards:{a:1}};
+    for (let i=0;i<DEVILS.length;i++) {
+      assert.equal(game.onInput(ctx,{pid:'a',type:'devil',data:{i}}),false,`${turnLap}바퀴 ${phase}`);
+      assert.equal(ctx.state.cards.a,1);
+      assert.equal(ctx.state.next.kind,'random');
+    }
+    if (phase !== 'aim') assert.notEqual(game.bot(ctx,'a',{} )?.type,'devil');
+  }
+  for (let i=0;i<DEVILS.length;i++) {
+    ctx.state={...structuredClone(initial),turnLap:3,lap:3,phase:'aim',cards:{a:1}};
+    assert.equal(game.onInput(ctx,{pid:'a',type:'devil',data:{i}}),true);
+    assert.equal(ctx.state.cards.a,0);
+    assert.equal(ctx.state.next.kind,'devil');
+    assert.equal(game.onInput(ctx,{pid:'a',type:'devil',data:{i}}),false);
+  }
+});
+
+test('기존 방이 1~2바퀴 카드 고민 중이어도 잠금을 적용하고 기다리지 않는다', () => {
+  const roster=[{id:'a',name:'A'},{id:'b',name:'B'}];
+  const ctx={roster,now:()=>1_000_000,secret:{},isOnline:()=>true,nameOf:id=>id,announce(){},kill(){}};
+  ctx.state={...game.setup(ctx),roster,phase:'decide',turnLap:2,lap:3,turn:'a',phaseEndsAt:1_005_000,next:{id:'b',kind:'random',lap:3}};
+  assert.equal(game.tick(ctx),true);
+  assert.equal(ctx.state.phase,'result');
+  assert.equal(ctx.state.cards.a,1);
 });

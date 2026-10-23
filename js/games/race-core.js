@@ -34,14 +34,18 @@ export const KART = {
   thrust: [28, 46],
   thrustTime: 1.5,
   brake: 52,
+  reverseMax: 9,
+  reverseThrust: 16,
+  reverseDelay: 0.2,
   drag: 0.3,
   wheelbase: 2,
   steerMax: 0.5,
   steerSlew: 1.8,
-  steerInputSlew: 2,
-  steerReturn: 3,
-  steerSpeed: 0.09,
-  yawAccel: 5,
+  steerInputSlew: 3.8,
+  steerOpposite: 5.5,
+  steerReturn: 5.2,
+  steerSpeed: 0.065,
+  yawAccel: 6,
   grip: 13.2,
   driftGrip: 4.1,
   gripMax: 110,
@@ -285,7 +289,7 @@ export function respawnPose(T, fall) {
 
 export function newCar(T) {
   const p = pointAt(T.main, T.start);
-  return { x: p.x, y: p.y, vx: 0, vy: 0, path: 'main', seg: p.i, s: T.start, ms: T.start, lat: 0, air: 0, sp: 0, oil: 0, dr: 0, hx: p.tx, hy: p.ty, steerInput: 0, steer: 0, yawRate: 0 };
+  return { x: p.x, y: p.y, vx: 0, vy: 0, path: 'main', seg: p.i, s: T.start, ms: T.start, lat: 0, air: 0, sp: 0, oil: 0, dr: 0, hx: p.tx, hy: p.ty, steerInput: 0, steer: 0, yawRate: 0, reverseHold: 0 };
 }
 
 // 한 걸음 (dt 초, t 서버 시각 ms). input = { x, y } 방향 (-1~1). 일어난 일을 돌려준다
@@ -294,7 +298,7 @@ export function stepCar(T, car, input, dt, t) {
   if (car.sp) {
     if (t < car.sp) return ev;
     const r = respawnPose(T, car.fall || car);
-    Object.assign(car, { x: r.x, y: r.y, vx: 0, vy: 0, path: r.path, seg: r.seg, sp: 0, air: 0, dr: 0, hx: r.tx, hy: r.ty, steerInput: 0, steer: 0, yawRate: 0 });
+    Object.assign(car, { x: r.x, y: r.y, vx: 0, vy: 0, path: r.path, seg: r.seg, sp: 0, air: 0, dr: 0, hx: r.tx, hy: r.ty, steerInput: 0, steer: 0, yawRate: 0, reverseHold: 0 });
     const at = locate(T, car, car.x, car.y);
     if (at) Object.assign(car, { s: at.s, ms: at.ms, lat: at.lat });
     ev.push('respawn');
@@ -442,12 +446,14 @@ function driveKart(car, input, dt) {
   const boosted = car.boostLeft > 0;
 
   // 키보드 입력도 운전대를 돌리는 시간을 거친다. 반대 입력은 중앙을 지나간다.
-  car.steerInput = approach(car.steerInput || 0, steering,
-    (Math.abs(steering) < 1e-6 ? KART.steerReturn : KART.steerInputSlew) * dt);
+  const steerInput = car.steerInput || 0;
+  const steerRate = Math.abs(steering) < 1e-6 ? KART.steerReturn
+    : steering * steerInput < 0 ? KART.steerOpposite : KART.steerInputSlew;
+  car.steerInput = approach(steerInput, steering, steerRate * dt);
   const wheelMax = KART.steerMax / (1 + before * KART.steerSpeed);
   car.steer = approach(car.steer || 0, car.steerInput * wheelMax, KART.steerSlew * dt);
-  const yawMax = 2.7 - 0.8 * Math.min(1, before / KART.max);
-  const forwardSpeed = Math.max(0, car.vx * car.hx + car.vy * car.hy);
+  const yawMax = 2.8 - 0.6 * Math.min(1, before / KART.max);
+  const forwardSpeed = car.vx * car.hx + car.vy * car.hy;
   const yaw = Math.max(-yawMax, Math.min(yawMax, forwardSpeed / KART.wheelbase * Math.tan(car.steer)));
   car.yawRate = approach(car.yawRate || 0, yaw, KART.yawAccel * dt);
   if (before < 0.1) car.yawRate = 0;
@@ -455,17 +461,36 @@ function driveKart(car, input, dt) {
 
   if (braking) {
     car.throttleTime = 0;
-    // 실제 속도 방향으로 제동한다. 정지 뒤 후진하지 않는다.
-    const factor = before > 0 ? Math.max(0, 1 - KART.brake * dt / before) : 0;
-    car.vx *= factor;
-    car.vy *= factor;
+    const wantsReverse = throttle === 0;
+    const reverseReady = wantsReverse && (car.reverseHold || 0) >= KART.reverseDelay && (forwardSpeed < 0 || before < 0.15);
+    if (!reverseReady) {
+      // S는 먼저 제동한다. 정지한 상태를 잠깐 유지한 뒤에만 후진 기어가 걸린다.
+      const factor = before > 0 ? Math.max(0, 1 - KART.brake * dt / before) : 0;
+      car.vx *= factor;
+      car.vy *= factor;
+      car.reverseHold = wantsReverse && Math.hypot(car.vx, car.vy) < 0.001
+        ? Math.min(KART.reverseDelay, (car.reverseHold || 0) + dt) : 0;
+    }
+    if (wantsReverse && (car.reverseHold || 0) >= KART.reverseDelay) {
+      car.vx -= car.hx * KART.reverseThrust * dt;
+      car.vy -= car.hy * KART.reverseThrust * dt;
+    }
   } else if (throttle > 0) {
-    car.throttleTime = Math.min(KART.thrustTime, (car.throttleTime || 0) + dt * throttle);
-    const u = car.throttleTime / KART.thrustTime;
-    const thrust = boosted ? 62 : KART.thrust[0] + (KART.thrust[1] - KART.thrust[0]) * u * u;
-    car.vx += car.hx * thrust * throttle * dt;
-    car.vy += car.hy * thrust * throttle * dt;
-  } else car.throttleTime = 0;
+    car.reverseHold = 0;
+    if (forwardSpeed < 0) {
+      // 후진 중 W를 누르면 완전히 멈추는 걸음을 거친 다음 전진한다.
+      car.throttleTime = 0;
+      const factor = before > 0 ? Math.max(0, 1 - KART.brake * dt / before) : 0;
+      car.vx *= factor;
+      car.vy *= factor;
+    } else {
+      car.throttleTime = Math.min(KART.thrustTime, (car.throttleTime || 0) + dt * throttle);
+      const u = car.throttleTime / KART.thrustTime;
+      const thrust = boosted ? 62 : KART.thrust[0] + (KART.thrust[1] - KART.thrust[0]) * u * u;
+      car.vx += car.hx * thrust * throttle * dt;
+      car.vy += car.hy * thrust * throttle * dt;
+    }
+  } else { car.throttleTime = 0; car.reverseHold = 0; }
 
   // 접지력은 가속 페달을 떼고 굴러가는 동안에도 작동한다.
   const nx = -car.hy;
@@ -484,7 +509,9 @@ function driveKart(car, input, dt) {
   car.vx *= drag;
   car.vy *= drag;
   // 일정한 최고 속도. 부스트 종료·충돌 직후의 초과 속도는 부드럽게 줄인다.
-  const limit = boosted ? KART.boost : Math.min(KART.boost, Math.max(KART.max, before - 20 * dt));
+  const backwards = car.vx * car.hx + car.vy * car.hy < -0.001;
+  const limit = backwards ? Math.max(KART.reverseMax, before - 20 * dt)
+    : boosted ? KART.boost : Math.min(KART.boost, Math.max(KART.max, before - 20 * dt));
   const speed = Math.hypot(car.vx, car.vy);
   if (speed > limit) {
     car.vx *= limit / speed;
