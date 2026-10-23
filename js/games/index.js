@@ -10,8 +10,9 @@ import seesaw from './seesaw.js';
 import professor from './professor.js';
 import door from './door.js';
 import race from './race.js';
+import sky from './sky.js';
 
-export const GAMES = [timer, bomb, tower, pullout, seesaw, bumper, race, reaction, liar, professor, door];
+export const GAMES = [timer, bomb, tower, pullout, seesaw, bumper, race, reaction, liar, professor, door, sky];
 
 export const COMING = [];
 

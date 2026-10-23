@@ -799,6 +799,55 @@ button, input { font: inherit; color: inherit; }
 .ss-cord { stroke: #495057; stroke-width: .025; }
 .ss-panel { padding: 18px; min-height: 150px; display: grid; place-items: center; text-align: center; }
 
+/* ── 하늘끝까지 ── 가운데: 내 탑(카메라가 꼭대기를 따라감), 아래: 모두의 탑, 오른쪽: 높이 순위·택배 */
+.sk { display: grid; grid-template-columns: 1fr 280px; gap: 18px; }
+.sk-box { background: #fff; border-radius: 18px; border: 2px solid var(--line); overflow: hidden; box-shadow: 0 4px 0 var(--line); }
+.sk-top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 10px 18px; font-weight: 800; color: var(--muted-2); border-bottom: 1px solid var(--line); min-height: 46px; }
+.sk-top .countdown { margin-left: auto; width: 180px; }
+.sk-h { font-family: var(--display); font-size: 22px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.sk-cut.hot { color: var(--red); animation: bc-blink .6s steps(2) infinite; }
+.sk-stage { position: relative; background: #a5d8ff; }
+.sk-svg { display: block; width: 100%; height: min(56vh, 520px); }
+.sk-tick { stroke: #fff; stroke-width: .05; opacity: .8; }
+.sk-tick-label { fill: #fff; font-weight: 800; dominant-baseline: central; paint-order: stroke fill; stroke: rgba(0, 0, 0, .35); stroke-width: .05px; }
+.sk-space-line { stroke: #e599f7; stroke-width: .05; stroke-dasharray: .3 .2; }
+.sk-space-label { fill: #e599f7; font-weight: 900; }
+.sk-goal-line { stroke: #fcc419; stroke-width: .09; stroke-dasharray: .45 .25; }
+.sk-goal-label { fill: #fcc419; font-weight: 900; paint-order: stroke fill; stroke: #1b2445; stroke-width: .08px; }
+.sk-cloud ellipse { fill: #fff; opacity: .85; }
+.sk-item.frozen { filter: saturate(.55) brightness(.88); }
+.sk-preview { opacity: .6; }
+.sk-preview.parcel .po-obj { filter: drop-shadow(0 0 .08px #e03131); }
+.sk-guide { stroke: #fff; stroke-width: .05; stroke-dasharray: .25 .2; opacity: .8; }
+.sk-next { position: absolute; top: 10px; right: 10px; display: grid; gap: 4px; justify-items: center; padding: 6px 8px; border-radius: 12px; background: rgba(255, 255, 255, .92); border: 2px solid var(--ink); box-shadow: 0 3px 0 var(--ink); }
+.sk-next-label { font-family: var(--display); font-size: 14px; color: var(--muted-2); }
+.sk-next-item { display: grid; justify-items: center; font-size: 12px; font-weight: 800; }
+.sk-next-item.parcel { color: var(--red); }
+.sk-next-item.parcel .sk-icon { background: #fff5f4; border-radius: 8px; outline: 2px solid #f5b7b1; }
+.sk-icon { width: 70px; height: 52px; }
+.sk-hold { position: absolute; left: 50%; top: 64px; transform: translateX(-50%); background: #fcc419; color: var(--ink); font-family: var(--display); font-size: 24px; padding: 8px 18px; border-radius: 999px; box-shadow: 0 4px 0 #e67700; animation: now-pop .3s cubic-bezier(.2, 1.6, .4, 1); }
+.sk-overlay { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+.sk-card { background: rgba(255, 255, 255, .96); border-radius: 16px; padding: 20px 26px; max-width: min(560px, 92%); box-shadow: 0 8px 30px rgba(0, 0, 0, .2); }
+.sk-card h2 { margin: 0 0 8px; font-family: var(--display); text-align: center; }
+.sk-final { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.sk-final li { display: flex; align-items: center; gap: 8px; font-weight: 800; }
+.sk-final li.me { color: var(--blue, #1c7ed6); }
+.sk-final li em { margin-left: auto; font-style: normal; color: var(--muted-2); }
+.sk-final .avatar { width: 24px; height: 24px; }
+.sk-fx { position: absolute; left: 0; right: 0; top: 14px; display: grid; justify-items: center; gap: 6px; pointer-events: none; }
+.sk-flash { white-space: nowrap; background: var(--ink); color: #fff; padding: 8px 16px; border-radius: 999px; font-weight: 800; font-size: 17px; animation: now-pop .3s cubic-bezier(.2, 1.6, .4, 1); }
+.sk-flash.bad { background: var(--red); font-family: var(--display); font-size: 24px; padding: 10px 22px; }
+.sk-strip { display: block; width: 100%; height: 170px; background: #e7f5ff; border-top: 1px solid var(--line); }
+.sk-lane-bg { fill: #d0ebff; }
+.sk-lane.me .sk-lane-bg { fill: #fff3bf; }
+.sk-lane.out { opacity: .45; }
+.sk-lane-name, .sk-lane-h { text-anchor: middle; font-weight: 900; fill: var(--ink); }
+.sk-lane-h { fill: #1c7ed6; }
+.sk-rank kbd { min-width: 20px; text-align: center; opacity: .35; }
+.sk-rank kbd.ready { opacity: 1; background: #fff5f4; border-color: var(--red); color: var(--red); }
+.sk-rank kbd.blank { visibility: hidden; }
+.sk-rank li.dead { opacity: .5; }
+
 /* ── 마지막 문 ── 위: 출구까지 칸 트랙(🔥 불길), 가운데: 방(위쪽 벽에 문, 아래 사람마다 한 줄), 아래: 안내 */
 .dr { display: grid; grid-template-columns: 1fr 300px; gap: 18px; }
 .dr-box {

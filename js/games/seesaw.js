@@ -334,13 +334,13 @@ export function rollPiece(S, id, lap) {
   for (const p of pool) if ((r -= p.w) <= 0) return p.k;
   return pool[pool.length - 1].k;
 }
-const kgText = k => {
+export const kgText = k => {
   const v = massOf(k) * KG;
   return v < 10 ? `${v.toFixed(1)}kg` : `${Math.round(v)}kg`;
 };
 
 // 짐 끝점 (모양·회전 반영)
-function extent(k, a) {
+export function extent(k, a) {
   const c = Math.cos(a);
   const s = Math.sin(a);
   let lo = [Infinity, Infinity];
@@ -816,19 +816,19 @@ function svg(tag, attrs = {}, ...kids) {
   return el;
 }
 
-function objGroup(k) {
+export function objGroup(k) {
   return svg('g', { class: `po-obj po-${k}` }, kindOf(k).art.map(([tag, attrs]) => svg(tag, attrs)));
 }
 
 // 보급 상자 낙하산: 상자 위에 (상자가 돌아도 낙하산은 똑바로)
-function chuteGroup() {
+export function chuteGroup() {
   return svg('g', { class: 'ss-chute' },
     svg('path', { class: 'ss-canopy', d: 'M -0.75 1.05 Q -0.75 1.6 0 1.6 Q 0.75 1.6 0.75 1.05 Q 0.38 1.18 0 1.05 Q -0.38 1.18 -0.75 1.05 Z' }),
     svg('path', { class: 'ss-canopy-seam', d: 'M -0.3 1.1 Q -0.25 1.5 0 1.6 M 0.3 1.1 Q 0.25 1.5 0 1.6' }),
     ...[[-0.75, -0.45], [0, 0], [0.75, 0.45]].map(([x1, x2]) => svg('line', { class: 'ss-cord', x1, y1: 1.05, x2, y2: 0.35 })));
 }
 
-function objIcon(k) {
+export function objIcon(k) {
   const e = extent(k, 0);
   const pad = 0.12;
   const w = e.hi[0] - e.lo[0] + pad * 2;

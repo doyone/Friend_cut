@@ -16,6 +16,7 @@
 | 🕵️ 라이어 게임 | 3~8명 | 한 명만 제시어를 몰라요. 한 줄 힌트를 글로 쓰고 투표 (말 안 해도 됨) |
 | 🧑‍🏫 교수님 몰래 게임하기 | 2~8명 | 교수님이 칠판 볼 때 스페이스 꾹 = 몰래 게임. 예고 없이 돌아볼 때 누르고 있으면 C+. 걸린 사람은 🙋 고자질 한 번 |
 | 🚪 마지막 문 | 2~8명 | 불길에 쫓기며 방마다 문 고르기. 지름길은 1명만, 몰린 문은 아무도 못 지나감. 마지막 1.5초는 🌑 정전이라 가는 척하다 바꾸기 |
+| ☁️ 하늘끝까지 | 2~8명 | 모두 동시에 각자 물건을 쌓아 하늘 끝(10m)에 먼저 닿아 3초 버티면 우승. 30초마다 제일 낮은 사람 컷, 😈 택배로 친구 다음 짐을 볼링공으로 |
 
 기획과 앞으로 만들 게임은 [기획서.md](기획서.md)에 있어요.
 
@@ -114,6 +115,7 @@ js/
     liar.js        라이어 게임
     professor.js   교수님 몰래 게임하기 (+ professor-view.js 화면)
     door.js        마지막 문
+    sky.js         하늘끝까지 (+ sky-core.js 탑 물리: 내 화면과 방장(봇)이 같이 씀)
   vendor/          planck.js 물리 엔진 (독박 타워·독박빼기·독박 시소가 CDN 없이 씀)
 tests/             규칙 테스트: node --test tests/bumper.test.mjs tests/professor.test.mjs tests/seesaw.test.mjs tests/door.test.mjs tests/race.test.mjs
 database.rules.json  Firebase 보안 규칙
