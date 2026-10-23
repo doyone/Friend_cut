@@ -184,7 +184,9 @@ export function mountProfessor(root, api) {
     if (key === overlayKey) return;
     overlayKey = key;
     overlay.replaceChildren();
-    if (S.phase === 'intro') {
+    if (S.phase === 'intro' && S.again) {
+      overlay.append(h('div', { class: 'pr-rule-card' }, h('h2', {}, '교수님 몰래\n게임하기'), h('span', { class: 'pr-intro-count' }, '🔁 한 판 더! 곧 수업 시작')));
+    } else if (S.phase === 'intro') {
       overlay.append(h('div', { class: 'pr-rule-card' },
         h('small', {}, '30초 동안 · 눈치 싸움'),
         h('h2', {}, '교수님 몰래\n게임하기'),

@@ -18,6 +18,9 @@ export function h(tag, props, ...children) {
 
 export const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
+// R(한 판 더)로 다시 시작하면(setup의 prev가 있으면) 규칙 안내 없이 이만큼만 '곧 시작'을 보여 준다
+export const AGAIN_INTRO = 2000;
+
 // 채팅창·힌트 칸처럼 글자를 치는 중이면 게임 단축키는 무시해야 한다.
 export const isTyping = e => !!e.target?.closest?.('input, textarea, select, [contenteditable="true"]');
 

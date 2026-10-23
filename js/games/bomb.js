@@ -2,7 +2,7 @@
 // 누구한테 던질지는 숫자키로 직접 고른다. 터지면 들고 있던 사람 탈락, 마지막으로 넘긴 사람이 킬.
 // 방금 나한테 준 사람한테는 바로 못 돌려준다 (판마다 반사 1번). 6명 이상이면 폭탄 2개.
 // 탈락자는 유령이 되어 폭탄 든 사람 콤보에 화살표를 2개 더 얹는다.
-import { h, isTyping, pick } from '../util.js';
+import { h, isTyping, pick, AGAIN_INTRO } from '../util.js';
 import { avatar, countdown, keyNav, podium } from '../ui.js';
 
 const INTRO_TIME = 6000;
@@ -89,10 +89,11 @@ export default {
   minPlayers: 3,
   maxPlayers: 8,
 
-  setup(ctx) {
+  setup(ctx, prev) {
     return {
       phase: 'intro',
-      phaseEndsAt: ctx.now() + INTRO_TIME,
+      phaseEndsAt: ctx.now() + (prev ? AGAIN_INTRO : INTRO_TIME),
+      again: !!prev,
       alive: ctx.roster.map(p => p.id),
     };
   },
@@ -400,13 +401,13 @@ export default {
       if (S.phase === 'intro') {
         return h('div', { class: 'bt-act' },
           h('div', { class: 'bt-act-title' }, '💣 폭탄 돌리기'),
-          h('ul', { class: 'rules big' },
+          S.again ? null : h('ul', { class: 'rules big' },
             h('li', {}, '폭탄을 받으면 화면의 방향키 콤보를 끝까지 쳐야 넘길 수 있어요'),
             h('li', {}, '넘길 사람은 숫자키로 직접 고르기. 방금 준 사람한테는 못 돌려줌 (반사 1번)'),
             h('li', {}, '터지는 시간은 아무도 몰라요. 오래 돌수록 콤보가 길어짐'),
             h('li', {}, `들고 있다 터지면 탈락, 넘긴 사람이 킬${S.alive.length >= 6 ? ' · 지금은 폭탄 2개!' : ''}`),
             h('li', {}, '탈락하면 👻 유령: 폭탄 든 사람 콤보에 화살표 추가')),
-          countdown(S.phaseEndsAt, INTRO_TIME));
+          countdown(S.phaseEndsAt, S.again ? AGAIN_INTRO : INTRO_TIME));
       }
       if (S.phase === 'final') {
         const winner = who(S.placement?.[0]);

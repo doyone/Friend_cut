@@ -1,7 +1,7 @@
 // 초세기 서바이벌: 1~12초 중 랜덤 목표 시간을 속으로 세다가 스페이스(NOW!).
 // 모두 누르거나 시간이 지나면 꼴찌부터 한 명씩 공개되고, 아래쪽은 한꺼번에 탈락.
 // 마지막 1명이 우승. 탈락자는 유령이 되어 숫자키로 생존자 화면을 방해한다.
-import { h, isTyping, pick } from '../util.js';
+import { h, isTyping, pick, AGAIN_INTRO } from '../util.js';
 import { avatar, countdown, keyNav, podium } from '../ui.js';
 
 const INTRO_TIME = 4500;
@@ -138,10 +138,11 @@ export default {
   minPlayers: 2,
   maxPlayers: 8,
 
-  setup(ctx) {
+  setup(ctx, prev) {
     return {
       phase: 'intro',
-      phaseEndsAt: ctx.now() + INTRO_TIME,
+      phaseEndsAt: ctx.now() + (prev ? AGAIN_INTRO : INTRO_TIME),
+      again: !!prev,
       round: 0,
       alive: ctx.roster.map(p => p.id),
     };
@@ -351,12 +352,12 @@ export default {
     function introStage() {
       return h('div', { class: 'tc-intro' },
         h('div', { class: 'tc-final-title' }, '⏱️ 초세기 서바이벌'),
-        h('ul', { class: 'rules big' },
+        S.again ? null : h('ul', { class: 'rules big' },
           h('li', {}, '1~12초 중 목표 시간이 나와요. 🔴→🟠→🟢 신호등이 초록불이 되는 순간부터 속으로 세다가 스페이스 = NOW!'),
           h('li', {}, '다 누르면 꼴찌부터 공개, 선 아래는 한 번에 탈락'),
           h('li', {}, `${S.alive.length}명 → 이번 판은 ${keepCount(S.alive.length)}명만 살아남아요`),
           h('li', {}, '탈락하면 👻 유령: 숫자키로 생존자 화면 방해')),
-        countdown(S.phaseEndsAt, INTRO_TIME));
+        countdown(S.phaseEndsAt, S.again ? AGAIN_INTRO : INTRO_TIME));
     }
 
     function renderTop() {

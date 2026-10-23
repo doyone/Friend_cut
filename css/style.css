@@ -787,7 +787,10 @@ button, input { font: inherit; color: inherit; }
 .ss-flash.bad { background: var(--red); font-family: var(--display); font-size: 28px; padding: 10px 22px; }
 .ss-flash.rare { background: #f59f00; font-family: var(--display); font-size: 28px; padding: 10px 22px; }
 .tw-reel.rare { border-color: #f59f00; background: #fffbeb; box-shadow: 0 5px 0 #e67700, inset 0 0 0 5px #fff3bf; }
-.ss .ss-devils { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.ss .ss-devils { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ss-high-icon { display: grid; place-items: center; width: 40px; height: 32px; font-family: var(--display); font-size: 18px; color: var(--red); }
+.tw-option .ss-high-icon { width: 92px; height: 74px; font-size: 40px; }
+.ss-flash.mine { background: #fff; color: var(--ink); border: 2px solid var(--ink); font-size: 15px; padding: 5px 14px; }
 /* 보급 상자 낙하산 (처음 닿으면 접힘) */
 .ss-chute { transition: opacity .3s; }
 .ss-chute.folded { opacity: 0; }

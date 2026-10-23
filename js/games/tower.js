@@ -4,7 +4,7 @@
 // 카드는 내 차례 내내 쓸 수 있고, 내 블록이 멈춘 뒤에도 최대 5초 고민할 수 있다.
 // 블록이 하나라도 떨어지면 놓은 사람 탈락. 순서는 바퀴마다 섞는다(테트리스 가방처럼). 마지막 1명 우승.
 // 물리는 방장 컴퓨터만 계산하고(planck.js), 다른 사람은 위치만 받아서 그린다.
-import { h, isTyping, josa, pick, shuffle, digitOf } from '../util.js';
+import { h, isTyping, josa, pick, shuffle, digitOf, AGAIN_INTRO } from '../util.js';
 import { avatar, countdown, podium } from '../ui.js';
 
 const PLANCK_URL = 'https://cdn.jsdelivr.net/npm/planck@1.4.2/+esm';
@@ -445,11 +445,12 @@ export default {
   minPlayers: 2,
   maxPlayers: 8,
 
-  setup(ctx) {
+  setup(ctx, prev) {
     ensurePlanck();
     return {
       phase: 'intro',
-      phaseEndsAt: ctx.now() + INTRO_TIME,
+      phaseEndsAt: ctx.now() + (prev ? AGAIN_INTRO : INTRO_TIME),
+      again: !!prev,
       alive: ctx.roster.map(p => p.id),
       cards: Object.fromEntries(ctx.roster.map(p => [p.id, DEVIL_CARDS])),
       top: 0,
@@ -831,13 +832,13 @@ export default {
       if (S.phase === 'intro') {
         return h('div', { class: 'bt-act' },
           h('div', { class: 'bt-act-title' }, '🧱 독박 타워'),
-          h('ul', { class: 'rules big' },
+          S.again ? null : h('ul', { class: 'rules big' },
             h('li', {}, '돌아가며 받침대 위에 블록을 하나씩 쌓아요. 블록은 🎰 룰렛으로 랜덤!'),
             h('li', {}, '다음 사람 블록은 ? — 그 사람 차례가 와야 룰렛으로 정해져요'),
             h('li', {}, `😈 악마 카드 ${DEVIL_CARDS}장: 내 차례 동안 숫자키 1·2·3으로 다음 사람 블록을 내가 고른 악마 블록으로 정해 버리기 (그걸로 죽으면 내 킬)`),
             h('li', {}, '← → 이동 · ↑ ↓ 회전 · 스페이스 떨구기'),
             h('li', {}, '블록이 하나라도 떨어지면 놓은 사람 탈락 · 순서는 바퀴마다 랜덤')),
-          countdown(S.phaseEndsAt, INTRO_TIME));
+          countdown(S.phaseEndsAt, S.again ? AGAIN_INTRO : INTRO_TIME));
       }
       if (S.phase === 'final') {
         const winner = who(S.placement?.[0]);

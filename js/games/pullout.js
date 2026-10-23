@@ -639,10 +639,11 @@ export default {
   minPlayers: 2,
   maxPlayers: 8,
 
-  setup(ctx) {
+  setup(ctx, prev) {
     ensurePlanck();
     return {
       phase: 'build',
+      again: !!prev,
       queue: planTower(),
       dropAt: ctx.now() + 700,
       lastDrop: ctx.now() + 700,
@@ -1076,7 +1077,7 @@ export default {
     }
 
     function panelView() {
-      if (S.phase === 'build' && !S.turnsPlayed) {
+      if (S.phase === 'build' && !S.turnsPlayed && !S.again) {
         return h('div', { class: 'bt-act' },
           h('div', { class: 'bt-act-title' }, '🪑 독박빼기'),
           h('ul', { class: 'rules big' },

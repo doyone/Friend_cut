@@ -4,7 +4,7 @@
 // 아이템: 🍄 거대화(크고 무거워짐) · 🌀 스프링(주변 차 튕겨냄) · 🛢️ 기름(나 빼고 다 미끌).
 // 탈락하면 👻 유령: 방향키로 떠다니다 스페이스로 🍌 바나나를 깐다. 밟은 차는 빙글 돌며 미끄러진다.
 // 물리는 방장 컴퓨터만 계산한다(원끼리 부딪히는 것뿐이라 직접 계산). 다른 사람은 위치만 받아서 그린다.
-import { h, isTyping, josa, shuffle } from '../util.js';
+import { h, isTyping, josa, shuffle, AGAIN_INTRO } from '../util.js';
 import { avatar, countdown, podium } from '../ui.js';
 import { createBumperAudio } from './bumper-audio.js';
 
@@ -492,8 +492,9 @@ export default {
   maxPlayers: 8,
   tickMs: TICK,
 
-  setup(ctx) {
+  setup(ctx, prev) {
     const now = ctx.now();
+    const intro = prev ? AGAIN_INTRO : INTRO_TIME;
     const ids = shuffle(ctx.roster.map(p => p.id));
     // 경기장 가운데를 보고 둥글게 선다
     const cars = ids.map((id, i) => {
@@ -502,9 +503,10 @@ export default {
     });
     return {
       phase: 'intro',
-      phaseEndsAt: now + INTRO_TIME,
-      startAt: now + INTRO_TIME,
-      itemAt: now + INTRO_TIME + 4000,
+      phaseEndsAt: now + intro,
+      startAt: now + intro,
+      itemAt: now + intro + 4000,
+      again: !!prev,
       cars,
     };
   },
@@ -974,7 +976,7 @@ export default {
       if (key === topKey) return;
       topKey = key;
       top.replaceChildren(...bits.map(([text, cls]) => h('span', { class: cls }, text)),
-        ...(S.phase === 'intro' ? [countdown(S.phaseEndsAt, INTRO_TIME)] : []));
+        ...(S.phase === 'intro' ? [countdown(S.phaseEndsAt, S.again ? AGAIN_INTRO : INTRO_TIME)] : []));
     }
 
     function panelView() {
@@ -982,7 +984,7 @@ export default {
       if (S.phase === 'intro') {
         return h('div', { class: 'bt-act' },
           h('div', { class: 'bt-act-title' }, '🚗 범퍼카 난투'),
-          h('ul', { class: 'rules big' },
+          S.again ? null : h('ul', { class: 'rules big' },
             h('li', {}, '방향키·WASD로 밀기 · 스페이스를 꾹 눌렀다 떼면 돌진 (오래 모을수록 셈)'),
             h('li', {}, '경기장 밖으로 떨어지면 탈락. 3초 안에 마지막으로 박은 사람이 킬, 아니면 자폭'),
             h('li', {}, '🍄 거대화 · 🌀 스프링 · 🛢️ 기름. 30초부터 축소, 마지막 두 명은 3초 예고 후 결투!'),

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as planck from '../js/vendor/planck.mjs';
-import game, { usePlanck, LIMIT, spawnY, dropGap, massOf, comOf, rollPiece } from '../js/games/seesaw.js';
+import game, { usePlanck, LIMIT, spawnY, dropGap, massOf, comOf, rollPiece, DEVILS } from '../js/games/seesaw.js';
 
 usePlanck(planck);
 
@@ -118,4 +118,25 @@ test('악마의 선물: 놓고 살아남으면 악마 카드 +1', () => {
   assert.ok(S.lastResult.ok);
   assert.equal(S.cards.p0, 2);
   assert.equal(S.phase, 'decide'); // 받자마자 다음 사람에게 쓸지 고민
+});
+
+test('악마 카드 ⬆️ 꼭대기에서: 다음 사람 짐은 룰렛 그대로, 떨구는 높이만 최대 / ⚓ 닻은 아래가 무겁다', () => {
+  let clock = 1_000_000;
+  const roster = [{ id: 'p0', name: 'A' }, { id: 'p1', name: 'B' }, { id: 'p2', name: 'C' }];
+  const ctx = { roster, now: () => clock, secret: {}, isOnline: () => true, nameOf: id => id, announce() {}, kill() {} };
+  ctx.state = { ...game.setup(ctx), roster };
+  const S = ctx.state;
+  S.phaseEndsAt = clock;
+  while (S.phase !== 'aim') { clock += 100; game.tick(ctx); }
+  // 차례 시작 조준점은 가운데에서 1m 옆
+  assert.equal(Math.abs(S.aim.x), 1);
+  const high = DEVILS.findIndex(d => d.high);
+  assert.ok(game.onInput(ctx, { pid: S.turn, type: 'devil', data: { i: high } }));
+  assert.ok(S.next.high && !S.next.piece);
+  game.onInput(ctx, { pid: S.turn, type: 'drop', data: { x: 1, a: 0 } });
+  while (S.phase !== 'spin' || !S.high) { clock += 100; game.tick(ctx); }
+  assert.equal(S.spinKind, 'roulette');
+  const gap = spawnY(S, 'box', 2, 0) - spawnY({ ...S, high: false, turnsPlayed: 0 }, 'box', 2, 0);
+  assert.ok(Math.abs(gap - 1.2) < 1e-9, `높이 차이 ${gap}`); // 0.8m → 2m
+  assert.ok(Math.abs(massOf('anchor') * 25 - 64) < 2 && comOf('anchor', 0)[1] < -0.3);
 });

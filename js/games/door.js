@@ -4,7 +4,7 @@
 // 방마다 6초: 처음 4.5초는 모두의 위치가 보이고(가는 척), 마지막 1.5초는 🌑 정전 — 남은 안 보이고 나는 계속 움직일 수 있다.
 // 걷는 속도가 정해져 있어서 정전 직전 자리에서 닿는 문으로만 바꿀 수 있다. 정전 동안 진짜 위치는 방장만 안다(ctx.secret).
 // 출구(12칸)에 먼저 닿은 사람 승리. 갇혀서 불길에 잡히면 그 문에 마지막으로 끼어든 사람의 킬.
-import { h, isTyping, shuffle, digitOf } from '../util.js';
+import { h, isTyping, shuffle, digitOf, AGAIN_INTRO } from '../util.js';
 import { avatar, countdown, podium } from '../ui.js';
 
 const INTRO = 4500;
@@ -208,12 +208,13 @@ export default {
   minPlayers: 2,
   maxPlayers: 8,
 
-  setup(ctx) {
+  setup(ctx, prev) {
     const now = ctx.now();
     const ids = ctx.roster.map(p => p.id);
     return {
       phase: 'intro',
-      phaseEndsAt: now + INTRO,
+      phaseEndsAt: now + (prev ? AGAIN_INTRO : INTRO),
+      again: !!prev,
       alive: ids,
       prog: Object.fromEntries(ids.map(id => [id, 0])),
       fire: FIRE_START,
@@ -521,13 +522,13 @@ export default {
       if (S.phase === 'intro') {
         return h('div', { class: 'bt-act' },
           h('div', { class: 'bt-act-title' }, '🚪 마지막 문'),
-          h('ul', { class: 'rules big' },
+          S.again ? null : h('ul', { class: 'rules big' },
             h('li', {}, '방마다 문 하나를 골라 지나가요. 🏃 지름길(1명 +3칸) · 🚪 보통 문(2명 +2칸) · 🐢 먼 길(무제한 +1칸)'),
             h('li', {}, '정원을 넘긴 문은 💥 쾅! 그 문에 간 사람 전부 갇혀요 (그 방은 0칸)'),
             h('li', {}, '뒤에서 🔥 불길이 점점 빨라지며 쫓아와요. 따라잡히면 탈락, 출구(12칸)에 먼저 닿으면 승리'),
             h('li', {}, '← → 꾹 = 걷기 · 숫자키 = 그 문으로 걷기. 서 있는 문이 내 선택'),
             h('li', {}, '마지막 1.5초는 🌑 정전: 남들은 안 보이고 나는 아직 움직일 수 있어요 — 가는 척하다 바꾸기!')),
-          countdown(S.phaseEndsAt, INTRO));
+          countdown(S.phaseEndsAt, S.again ? AGAIN_INTRO : INTRO));
       }
       if (S.phase === 'final') {
         const win = S.placement?.[0];

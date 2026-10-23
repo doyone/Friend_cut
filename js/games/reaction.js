@@ -1,4 +1,4 @@
-import { h, pick } from '../util.js';
+import { h, pick, AGAIN_INTRO } from '../util.js';
 import { nameTag, podium, scoreboard } from '../ui.js';
 
 const ROUNDS = 5;
@@ -67,10 +67,10 @@ export default {
   minPlayers: 2,
   maxPlayers: 8,
 
-  setup(ctx) {
+  setup(ctx, prev) {
     const scores = {};
     for (const p of ctx.roster) scores[p.id] = 0;
-    return { round: 0, totalRounds: ROUNDS, phase: 'intro', phaseEndsAt: ctx.now() + 4000, scores };
+    return { round: 0, totalRounds: ROUNDS, phase: 'intro', phaseEndsAt: ctx.now() + (prev ? AGAIN_INTRO : 4000), again: !!prev, scores };
   },
 
   onInput(ctx, { pid, type, data }) {
@@ -187,7 +187,7 @@ export default {
       let b = '';
       if (S.phase === 'intro') {
         a = String(Math.max(1, Math.ceil((S.phaseEndsAt - now) / 1000)));
-        b = isPlayer ? '초록색이 되면 스페이스!' : '관전 중';
+        b = !isPlayer ? '관전 중' : S.again ? '🔁 한 판 더!' : '초록색이 되면 스페이스!';
       } else if (S.phase === 'wait') {
         // 내 판정은 방장 결과를 우선, 아직 안 왔으면 내가 보낸 값으로 먼저 보여준다
         const mine = S.taps?.[api.me] || (sent?.round === S.round ? sent.data : null);

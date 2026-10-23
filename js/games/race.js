@@ -3,7 +3,7 @@
 // 부딪힘이 없으니 내 차는 내 화면이 바로 계산하고(와이파이 지연 없음) 0.1초마다 위치를 보낸다.
 // 방장은 심판: 위치로 체크포인트·바퀴·완주 순서를 기록하고, 봇 차를 같은 물리로 움직인다.
 // 트랙·물리는 race-core.js (구간: 출발 직선 → 빙하 점프 → 펭귄 헤어핀 → 물결 S자 → 8자 고가 다리 → 갈림길 → 펭귄 회전문 → 마지막 직선)
-import { h, isTyping } from '../util.js';
+import { h, isTyping, AGAIN_INTRO } from '../util.js';
 import { avatar, nameTag } from '../ui.js';
 import { createBumperAudio } from './bumper-audio.js';
 import { buildTrack, newCar, stepCar, locate, botInput, gateAngle, pointAt, LAPS, CAR_R, SECTIONS } from './race-core.js';
@@ -217,12 +217,13 @@ export default {
   minPlayers: 2,
   maxPlayers: 8,
 
-  setup(ctx) {
+  setup(ctx, prev) {
     const now = ctx.now();
     const car = newCar(T);
     return {
       phase: 'intro',
-      introUntil: now + INTRO,
+      introUntil: now + (prev ? AGAIN_INTRO : INTRO),
+      again: !!prev,
       cars: Object.fromEntries(ctx.roster.map(p => [p.id, carEntry(car)])),
     };
   },
@@ -894,7 +895,7 @@ export default {
       if (S.phase === 'intro') {
         overlay.append(h('div', { class: 'rc-card' },
           h('h2', {}, '🏁 범퍼카 그랑프리'),
-          h('ul', { class: 'rules big' },
+          S.again ? null : h('ul', { class: 'rules big' },
             h('li', {}, `8자 얼음 트랙 ${LAPS}바퀴 먼저 돌면 우승! 남의 차는 반투명 유령이라 안 부딪혀요`),
             h('li', {}, '방향키(WASD) = 그 방향으로 밀기 · 반대 방향 = 브레이크'),
             h('li', {}, '길 밖은 물 🌊 (빠지면 1.2초 뒤 조금 뒤에서 다시). 하얀 눈벽·난간·회전문은 튕기기만 해요'),
