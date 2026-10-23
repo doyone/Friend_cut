@@ -135,6 +135,30 @@ test('체크포인트: 결승선만 왕복하면 완주할 수 없고 코스 전
 });
 
 
+test('체크포인트 바로 앞(0.01m 반올림 안)에서 멈춘 걸음 뒤에도 통과를 놓치지 않는다', () => {
+  const track = buildTrack(true);
+  const r2 = v => Math.round(v * 100) / 100;
+  // 저장값(0.01m 반올림)이 체크포인트를 넘어서는데 실제로는 아직 못 지난 자리가 있는 체크포인트
+  const i = track.secStart.findIndex((s, k) => k > 0 && r2(s - 0.001) >= s);
+  assert.ok(i > 0, 'the legacy track has such a checkpoint');
+  const r = race(2, 2);
+  while (r.ctx.state.phase !== 'race') r.step(50);
+  const S = r.ctx.state;
+  const c = S.cars.p0;
+  const away = pointAt(track.main, 100 + track.secStart[i]);
+  Object.assign(S.cars.p1, { x: away.x, y: away.y, seg: away.i, s: away.s, ms: away.s });
+  const place = (s, v) => {
+    const p = pointAt(track.main, s);
+    Object.assign(c, { x: p.x, y: p.y, seg: p.i, s: p.s, vx: p.tx * v, vy: p.ty * v, hx: p.tx, hy: p.ty });
+  };
+  Object.assign(c, { cp: i - 1, ms: r2(track.secStart[i] - 2) });
+  place(track.secStart[i] - 0.001, 0);
+  r.step(50);
+  place(track.secStart[i] + 0.5, 0);
+  r.step(50);
+  assert.equal(c.cp, i);
+});
+
 test('카트 서킷은 확장된 본선과 아스팔트 지름길이 있고 위험 장치가 없다', () => {
   const track = buildTrack(true);
   assert.ok(track.main.len > 500 && track.main.len < 650);

@@ -48,12 +48,12 @@ const sectionNames = () => T.sections || LEGACY_NAMES;
 useTrack('wide');
 const INTRO = 4500;
 const LIGHT = 1000;               // 신호등 한 칸
-const READY = LIGHT * 3;          // 빨강 → 주황 → 초록(= 출발)
-const FINISH_WAIT = 8000;        // 첫 완주 뒤 이 안에 들어와야 완주
+const READY = LIGHT * 2;          // 빨강 → 주황 → 초록이 켜지는 순간 출발
+const FINISH_WAIT = 10000;       // 첫 완주 뒤 이 안에 들어와야 완주
 const MAX_RACE = 45000;
 const maxRace = () => T.maxRace || MAX_RACE;
+const laps = () => T.laps || LAPS;   // 카트 맵은 두 바퀴 (예전 와이드 트랙은 한 바퀴)
 const POINTS = [10, 8, 6, 5, 4, 3, 2, 1];
-const FALSE_START = 1000;         // 부정출발 벌칙
 const SEND_EVERY = 100;
 const STEP = 1 / 60;
 const INPUT_LEASE = 600;
@@ -87,8 +87,10 @@ function advance(S, id, ms, t) {
   if (!c.fin) c.dist = r2(c.dist + d);
   if (!c.fin && d > 0 && d < 40) {
     if (c.cp < CPS) {
-      const s = T.secStart[c.cp + 1];
-      if (c.ms < s && ms >= s) {
+      // c.ms는 0.01m로 반올림해 저장한다. 비교도 같은 반올림으로 해야 체크포인트 바로 앞(0.005m 안)에 멈춘 걸음에서
+      // 저장값이 체크포인트를 넘어 버려 통과를 놓치는 일이 없다
+      const s = r2(T.secStart[c.cp + 1]);
+      if (c.ms < s && r2(ms) >= s) {
         c.cp++;
         split(S, c, t);
       }
@@ -99,7 +101,7 @@ function advance(S, id, ms, t) {
       c.cp = 0;
       c.lapAt = t;
       split(S, c, t);
-      if (c.lap >= LAPS) {
+      if (c.lap >= laps()) {
         c.fin = Math.max(1, t - S.startAt);
         Object.assign(c, { vx: 0, vy: 0, charge: 0, boostLeft: 0, dr: 0 });
         S.finishBy ??= t + FINISH_WAIT;
@@ -129,7 +131,6 @@ function onDrive(ctx, pid, data, now) {
   if (S.phase === 'race') stepWorld(ctx, now);
   if (c.fin) return true;
   Object.assign(c, { throttle: data.throttle, steerIntent: data.steer, braking: data.brake, held: data.drift, seq: data.seq, inputAt: now });
-  if (S.phase === 'ready' && now < S.startAt && data.throttle > 0 && !data.brake) c.lockUntil = S.startAt + FALSE_START;
   return true;
 }
 
@@ -157,7 +158,7 @@ function stepWorld(ctx, now) {
         // bold = 숨은 길을 겁 없이 밟는 봇 (자주 떨어져서 위험하다는 걸 보여 준다)
         if (!driver) ctx.drivers.set(p.id, driver = { mem: { short: false, bold: Math.random() < 0.45 }, skill: .88 + Math.random() * .1 });
         input = botInput(T, c, driver.mem, driver.skill, at);
-      } else if (ctx.isOnline(p.id) && at - c.inputAt <= INPUT_LEASE && at >= (c.lockUntil || 0)) {
+      } else if (ctx.isOnline(p.id) && at - c.inputAt <= INPUT_LEASE) {
         input = { throttle: c.throttle || 0, steer: c.steerIntent || 0, brake: !!c.braking, drift: !!c.held };
       }
       if (p.bot) Object.assign(c, { throttle: input?.throttle || 0, steerIntent: input?.steer || 0, braking: !!input?.brake, held: !!input?.drift, inputAt: at });
@@ -377,7 +378,7 @@ export default {
     }
     if (S.phase === 'intro') {
       if (now < S.introUntil) return false;
-      Object.assign(S, { phase: 'ready', startAt: now + READY });
+      Object.assign(S, { phase: 'ready', startAt: now + READY, worldAt: now + READY });
       return true;
     }
     if (S.phase === 'ready') {
@@ -438,14 +439,13 @@ export default {
     let predTrack = T;
     let seenFx = 0;
     let impactFlashAt = 0;
-    let falseStart = false;
-    let lockUntil = 0;
-    let started = false;
     let cam = { x: 0, y: 0, z: 18, shake: 0 };
     let topKey = '';
     let sideKey = '';
     let overlayKey = '';
     let seenFin = false;
+    let seenLap = 0;
+    let rumbleAt = 0;
     let lastRound = null;
     let litLamp = -1;
     let car = newCar(T);                        // 내 차와 상대 차를 같은 시각으로 예측
@@ -458,7 +458,8 @@ export default {
     const splashes = [];
     const who = id => S?.roster.find(p => p.id === id) || { id, name: '?' };
     const mine = () => S?.cars?.[me];
-    const racing = () => S?.phase === 'race';
+    // 방장이 'race'로 바꾸는 걸 기다리지 않고, 초록불 시각이 되면 바로 달린다
+    const racing = () => S?.phase === 'race' || (S?.phase === 'ready' && api.now() >= S.startAt);
 
     const KEY = { Space: 'drift', ShiftLeft: 'drift', ShiftRight: 'drift', ArrowLeft: 'l', KeyA: 'l', ArrowRight: 'r', KeyD: 'r', ArrowUp: 'u', KeyW: 'u', ArrowDown: 'd', KeyS: 'd' };
     function onKey(e) {
@@ -471,11 +472,6 @@ export default {
       if (keys[k] === next) return;
       keys[k] = next;
       if (e.type === 'keydown') void audio.unlock();
-      // 초록불 전에 누르면 부정출발
-      if (S?.phase === 'ready' && keys.u && !keys.d && !falseStart) {
-        falseStart = true;
-        flash('🚫 부정출발! 1초 늦게 출발', 'bad');
-      }
       sendDrive(performance.now(), true);
     }
     window.addEventListener('keydown', onKey);
@@ -1500,16 +1496,15 @@ export default {
       const dt = Math.min(100, now - last);
       last = now;
       if (!S) return;
-      // 출발 신호와 함께 시작 (부정출발이면 1초 늦게)
-      if (racing() && !started) {
-        started = true;
-        if (falseStart) lockUntil = S.startAt + FALSE_START;
-      }
       if (racing() && mine()) {
         drive(dt);
         sendDrive(now);
+      } else if (S.phase === 'ready' && mine()) {
+        // 신호 기다리는 동안에도 누르고 있는 키를 방장에게 계속 알려서, 초록불 순간 방장 쪽 차도 바로 출발
+        sendDrive(now);
       }
       lights();
+      edgeRumble(now);
       renderTop();
       // 화면이 보이는데 그리기가 멈춰 있으면(가려진 창 등) 여기서라도 그린다
       if (!document.hidden && now - drawnAt > 200) draw(now);
@@ -1521,15 +1516,32 @@ export default {
     }
     raf = requestAnimationFrame(loop);
 
-    // 신호등: 빨강 → 주황 → 초록, 하나씩 1초
+    // 벽 없는 길 가장자리에 다가가면 드르륵 (화면이 살짝 떨리고 낮은 소리): 떨어지기 전에 알아채게
+    function edgeRumble(now) {
+      if (!racing() || !mine() || mine().fin || car.sp || car.air) return;
+      const road = car.path === 'main' ? T.main : roadOf(T, car.path);
+      const p = road?.pts[car.seg];
+      if (!p?.fall || roadWallOpen(T, car.path, p, Math.sign(car.lat || 0))) return;
+      const room = p.half + 0.3 - Math.abs(car.lat || 0);   // 떨어지기까지 남은 거리
+      const warn = Math.min(1.2, (p.half + 0.3) * 0.4);
+      if (room > warn || Math.hypot(car.vx, car.vy) < 3) return;
+      cam.shake = Math.max(cam.shake, 0.12 + (warn - room) * 0.15);
+      if (now - rumbleAt > 130) {
+        rumbleAt = now;
+        audio.rumble();
+      }
+    }
+
+    // 신호등: 빨강 1초 → 주황 1초 → 초록 = 출발 (초록은 출발 뒤 잠깐 더 켜 둠)
+    const lampsOn = () => S.phase === 'ready' || (S.phase === 'race' && api.now() - S.startAt < 900);
     function lights() {
       const t = api.now();
-      const n = S.phase === 'ready' ? Math.floor((t - (S.startAt - READY)) / LIGHT) : S.phase === 'race' && t - S.startAt < 800 ? 2 : -1;
+      const n = lampsOn() ? Math.min(2, Math.floor((t - (S.startAt - READY)) / LIGHT)) : -1;
       overlay.querySelectorAll('.lamp').forEach((el, i) => el.classList.toggle('on', i === n));
       if (n === litLamp) return;
       litLamp = n;
       if (n >= 0) audio.ready();
-      if (n === 2) flash(lockUntil > t ? '🚫 부정출발 벌칙…' : '출발!');
+      if (n === 2) flash('출발!');
     }
 
     function renderTop() {
@@ -1541,7 +1553,7 @@ export default {
       topKey = key;
       const time = c?.fin ?? (S.phase === 'race' ? Math.max(0, api.now() - S.startAt) : 0);
       top.replaceChildren(...[
-        h('span', { class: 'rc-lap' }, c?.fin ? '🏁 완주!' : S.phase === 'final' ? '미완주' : `ROUND ${S.round}/3`),
+        h('span', { class: 'rc-lap' }, c?.fin ? '🏁 완주!' : S.phase === 'final' ? '미완주' : `ROUND ${S.round}/3 · ${Math.min(laps(), (c?.lap || 0) + 1)}/${laps()}바퀴`),
         S.phase === 'final' && !c?.fin ? null : h('span', { class: 'rc-time' }, fmt(time)),
         c ? h('span', {}, `${pos}등 / ${S.roster.length}명`) : null,
         c?.split != null && !c.fin ? h('span', { class: c.split > 0 ? 'rc-behind' : 'rc-ahead' }, c.split > 0 ? `선두와 +${c.split}초` : '구간 선두!') : null,
@@ -1553,7 +1565,7 @@ export default {
     }
 
     function renderOverlay() {
-      const key = `${S.round}:${S.phase}:${!!mine()?.fin}:${trackSpec}`;
+      const key = `${S.round}:${S.phase}:${!!mine()?.fin}:${trackSpec}:${lampsOn()}`;
       if (key === overlayKey) return;
       overlayKey = key;
       overlay.replaceChildren();
@@ -1562,16 +1574,16 @@ export default {
           h('h2', {}, `🏎️ 카트 그랑프리 · ${mapName(specOf(S))}`),
           h('p', {}, `이번 판 맵: ${(S.maps || []).map(mapName).join(' → ')}`),
           S.again ? null : h('ul', { class: 'rules big' },
-            h('li', {}, '맵 3개를 한 바퀴씩, 3경기 합산 점수로 승부! 맵은 판마다 바뀌어요'),
+            h('li', {}, '맵 3개를 두 바퀴씩, 3경기 합산 점수로 승부! 맵은 판마다 바뀌어요'),
             h('li', {}, '갈래길은 장단점이 있는 선택지 · 미니맵에 없는 숨은 지름길도 있어요 🤫 (좁고 위험!)'),
             h('li', {}, 'W / ↑ = 가속 · S / ↓ = 제동 후 후진 · A D / ← → = 핸들'),
             h('li', {}, '좌우는 짧게 눌러 미세 조정 · 떼면 바로 직진으로 안정돼요'),
             h('li', {}, '코너에서 Shift / Space 꾹 = 드리프트 · 놓으면 부스트!'),
             h('li', {}, '파란 불꽃은 짧게, 주황 불꽃은 길게 가속!'),
             h('li', {}, '길에 벽이 없어요! 밖으로 나가면 추락 → 조금 뒤에서 다시 출발'),
-            h('li', {}, '초록불 전 가속하면 부정출발! 핸들은 미리 돌릴 수 있어요'))));
+            h('li', {}, '초록불이 켜지는 순간 출발! 가속 키를 미리 눌러 둬도 돼요'))));
       }
-      if (S.phase === 'ready') {
+      if (lampsOn()) {
         overlay.append(h('div', { class: 'tc-light rc-light' }, h('i', { class: 'lamp red' }), h('i', { class: 'lamp amber' }), h('i', { class: 'lamp green' })));
       }
       if (S.phase === 'intermission') {
@@ -1640,7 +1652,7 @@ export default {
           lastRound = S.round;
           Object.assign(car, newCar(T), { charge: 0, boostLeft: 0, driftHeld: false });
           resetControls(false); prediction.clear(); parts.length = 0; skids.length = 0; skidAt.clear();
-          started = false; falseStart = false; seenFin = false; lockUntil = 0;
+          seenFin = false; seenLap = 0;
           inputSeq = mine()?.seq || 0; seenFx = 0;
           acc = 0; sentAt = 0; wasDrift = 0; litLamp = -1;
           topKey = sideKey = overlayKey = '';
@@ -1663,6 +1675,11 @@ export default {
               impactFlashAt = api.now(); flash('💥 카트 충돌!');
             }
           }
+        }
+        // 첫 바퀴를 돌면 마지막 바퀴 알림
+        if (c && !c.fin && (c.lap || 0) > seenLap) {
+          seenLap = c.lap;
+          if (c.lap === laps() - 1) flash('🏁 마지막 바퀴!');
         }
         if (c?.fin && !seenFin) {
           seenFin = true;

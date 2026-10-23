@@ -39,6 +39,8 @@ export const KART = {
   reverseDelay: 0.2,
   drag: 0.3,
   turnRate: 2.4,
+  turnFade: 0.32,       // 빠를수록 덜 꺾인다: 12m/s부터 줄어 최고 속도에선 turnRate의 68%
+  turnFadeFrom: 12,
   driftTurnRate: 3,
   turnResponse: 0.045,
   centerResponse: 0.025,
@@ -53,6 +55,14 @@ export const KART = {
   capsuleFront: 0.35,
   restitution: 0.3,
 };
+// 일반 핸들의 최대 회전 속도(rad/s). 고속에서 키를 톡 쳐도 확 틀어져 벽 없는 길 밖으로 날아가지 않게 줄이고,
+// 드리프트는 그대로 둬서 급커브는 드리프트로 돈다
+export function kartTurnRate(speed, drifting = false) {
+  if (drifting) return KART.driftTurnRate;
+  const fade = Math.max(0, Math.min(1, (speed - KART.turnFadeFrom) / (KART.max - KART.turnFadeFrom)));
+  return KART.turnRate * (1 - KART.turnFade * fade);
+}
+
 export const SURF = {
   asphalt: { max: 1, grip: 2.2, drag: 1, kart: true },
   // 카트 맵 노면: 카트 조작 그대로, 최고 속도(max)·접지(kgrip) 배율만 다르다
@@ -628,7 +638,7 @@ function driveKart(car, input, dt, surf = SURF.asphalt) {
   const turnInput = Math.abs(steering) > 0.001 ? steering : drifting ? car.driftSide * 0.18 : 0;
   car.steerInput = steering;
   const forwardSpeed = car.vx * car.hx + car.vy * car.hy;
-  const turnLimit = forwardSpeed < 0 ? 1.8 : drifting ? KART.driftTurnRate : KART.turnRate;
+  const turnLimit = forwardSpeed < 0 ? 1.8 : kartTurnRate(before, drifting);
   const yaw = turnInput * turnLimit * Math.min(1, before / 8) * (forwardSpeed < 0 ? -1 : 1);
   const response = Math.abs(turnInput) < 0.001 ? KART.centerResponse
     : yaw * (car.yawRate || 0) < 0 ? KART.counterResponse : KART.turnResponse;
@@ -1042,6 +1052,11 @@ function kartBotInput(T, car, mem, skill, t) {
   // 입구를 한참 지나 본선에 있으면(놓쳤거나 떨어져서 다시 섰으면) 그 갈림길은 포기.
   // 이미 들어선 갈림길은 본선을 가로지르는 순간 잠깐 본선으로 잡혀도 계속 간다
   if (car.path !== 'main') (mem.on ||= {})[car.path] = true;
+  // 갈림길을 빠져나와 본선에서 그 구간을 지났으면 다음 바퀴엔 처음부터 다시
+  for (const id in mem.on || {}) {
+    const b = roadOf(T, id);
+    if (car.path === 'main' && b && !(car.ms > b.from - 5 && car.ms < b.to)) delete mem.on[id];
+  }
   // 정하지 않은 갈림길이라도 본선 노면을 벗어날 만큼 들어와 버렸으면 그 길로 끝까지 간다 (돌아 나올 수 없다)
   const into = !car.sp && car.path !== 'main' && mem.routes && !mem.routes.includes(car.path) ? roadOf(T, car.path) : null;
   if (into?.pts[car.seg]?.offMain) mem.routes.push(into.id);
@@ -1103,7 +1118,8 @@ function kartBotInput(T, car, mem, skill, t) {
   const grip = SURF[here?.pts[0]?.surface]?.kgrip ?? 1;
   // mem.bold = 숨은 길을 겁 없이 밟는 봇 (자주 떨어진다)
   const careful = mem.bold && here?.hidden ? 1 : here?.hidden ? (0.55 + 0.45 * Math.min(1, grip)) * 0.8 : 0.85 + 0.15 * Math.min(1, grip);
-  let limit = KART.max * skill * careful * (bend > 1 ? 0.50 : bend > 0.6 ? 0.67 : bend > 0.3 ? 0.85 : 1);
+  // 고속에선 핸들이 덜 꺾이니(kartTurnRate) 급커브 앞에선 그만큼 더 줄인다
+  let limit = KART.max * skill * careful * (bend > 1 ? 0.46 : bend > 0.6 ? 0.62 : bend > 0.3 ? 0.82 : 1);
   if (jump) limit = Math.max(limit, jump.min + 3);
   // 크레인 쇳덩이: 조심하는 봇은 지나갈 즈음 쇳덩이가 길 위에 올 것 같으면 앞에서 기다린다
   const ball = t != null && !mem.bold && car.path !== 'main' && (T.balls || []).find(o => o.path === car.path && o.s > car.s && o.s < car.s + 14);
@@ -1119,7 +1135,7 @@ function kartBotInput(T, car, mem, skill, t) {
   // 부스트 중엔 곧은 길이면 브레이크로 깎아 먹지 않는다
   const brake = (speed > limit + 1 && !(car.boostLeft > 0 && bend < 0.3)) || Math.abs(angle) > 1.0 && speed > 12;
   const drift = !brake && !jump && bend > 0.16 && Math.abs(angle) < 0.7 && speed > 12 && (car.charge || 0) < 1.25;
-  const yawLimit = (drift ? KART.driftTurnRate : KART.turnRate) * Math.min(1, speed / 8);
+  const yawLimit = kartTurnRate(speed, drift) * Math.min(1, speed / 8);
   const desiredYaw = 2 * Math.max(3, speed) * Math.sin(angle) / distance;
   const steer = Math.max(-1, Math.min(1, desiredYaw / Math.max(0.5, yawLimit)));
   mem.lastSteer = steer;

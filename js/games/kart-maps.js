@@ -169,7 +169,7 @@ export function buildKartMap(spec) {
   });
   const secStart = M.sections.map((_, si) => main.pts.find(p => p.sec === si).s);
   const T = {
-    key: spec, name: M.name, theme: M.theme, mirror, sections: M.sections, sprint: true, kart: true,
+    key: spec, name: M.name, theme: M.theme, mirror, sections: M.sections, sprint: true, kart: true, laps: 2,
     main, secStart, cross: { x: -1e6, y: -1e6 },
     jump: { ramp: -100, gap0: -99, gap1: -98 },
     branches: [], jumps: [], boosts: [], oil: [], gates: [], posts: [], holes: [], balls: [], waves: [],
@@ -218,8 +218,8 @@ export function buildKartMap(spec) {
     const shore = rounded(M.sea.shore.map(([x, y, r]) => [fx(x), y, r]), false);
     T.sea = { shore, poly: [...shore, ...M.sea.far.map(([x, y]) => ({ x: fx(x), y }))] };
   }
-  // 한 판 제한 시간: 느긋하게 달려도(평균 12m/s) 들어올 만큼
-  T.maxRace = Math.round((main.len / 12) * 1000 / 5000) * 5000 + 10000;
+  // 한 판(두 바퀴) 제한 시간: 느긋하게 달려도(평균 12m/s) 들어올 만큼
+  T.maxRace = Math.round(((main.len * T.laps) / 12) * 1000 / 5000) * 5000 + 10000;
   // 장식 (그림 전용): 길에서 4m 넘게 떨어진 곳에만
   const R = rng([...key].reduce((h, ch) => h * 31 + ch.charCodeAt(0), 7) + (mirror ? 1 : 0));
   const roads = [main, ...T.branches];

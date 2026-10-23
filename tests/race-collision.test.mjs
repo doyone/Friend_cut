@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildTrack, newCar, pointAt, locate, drive, stepCar, SURF, KART, PHYS, resolveKartContacts } from '../js/games/race-core.js';
+import { buildTrack, newCar, pointAt, locate, drive, stepCar, SURF, KART, PHYS, resolveKartContacts, kartTurnRate } from '../js/games/race-core.js';
 
 const T = buildTrack(true);
 const dt = 1 / 60;
@@ -183,9 +183,10 @@ test('100ms 방향 입력에 바로 반응하고 키를 놓은 뒤 100ms 안에 
     const turn = Math.atan2(hx * car.hy - hy * car.hx, hx * car.hx + hy * car.hy);
     assert.ok(turn > 0 && turn < 0.045, '차체 각도는 연속으로 변한다');
   }
-  assert.ok(car.yawRate > KART.turnRate * 0.85);
+  assert.ok(car.yawRate > kartTurnRate(KART.max) * 0.85);
   const heading = Math.atan2(car.hy, car.hx);
-  assert.ok(heading > 0.14 && heading < 0.2, `짧은 입력으로 ${heading}rad 회전`);
+  // 최고 속도에선 핸들이 덜 꺾인다 (톡 쳐서 미세 조정): 100ms에 약 6~10도
+  assert.ok(heading > 0.1 && heading < 0.18, `짧은 입력으로 ${heading}rad 회전`);
   for (let i = 0; i < 6; i++) drive(car, { throttle: 1 }, SURF.asphalt, dt);
   assert.ok(Math.abs(car.yawRate) < 0.05);
   assert.ok(Math.atan2(car.hy, car.hx) - heading < 0.05, '키를 놓은 뒤 길게 돌아가지 않는다');
@@ -279,14 +280,14 @@ test('반대 조향은 100ms 안에 반응하고 드리프트에서도 차체 �
   for (const drift of [false, true]) {
     const car = { vx: KART.max, vy: 0, hx: 1, hy: 0 };
     for (let i = 0; i < 30; i++) drive(car, { throttle: 1, steer: 1, drift }, SURF.asphalt, dt);
-    assert.ok(car.yawRate > 2);
+    assert.ok(car.yawRate > kartTurnRate(KART.max, drift) * 0.85);
     for (let i = 0; i < 6; i++) {
       const hx = car.hx; const hy = car.hy;
       drive(car, { throttle: 1, steer: -1, drift }, SURF.asphalt, dt);
       const turn = Math.atan2(hx * car.hy - hy * car.hx, hx * car.hx + hy * car.hy);
       assert.ok(Math.abs(turn) <= KART.driftTurnRate * dt + 1e-8);
     }
-    assert.ok(car.yawRate < -1.5, `카운터 입력 응답 ${car.yawRate}`);
+    assert.ok(car.yawRate < -kartTurnRate(KART.max, drift) * 0.6, `카운터 입력 응답 ${car.yawRate}`);
   }
 });
 

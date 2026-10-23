@@ -61,6 +61,7 @@ export function createBumperAudio() {
     },
     ready() { tone(660, .10, .09, 'triangle', 990); },
     skid() { tone(1150, .24, .05, 'triangle', 880); },
+    rumble() { tone(75, .07, .05, 'square', 60); },
     duel() {
       if (!ctx) return;
       for (let i = 0; i < 3; i++) tone([220, 330, 440][i], .14, .13, 'triangle', [220, 330, 440][i], ctx.currentTime + i * .12);

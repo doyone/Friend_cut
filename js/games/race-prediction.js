@@ -54,7 +54,6 @@ export function createRacePrediction(T, me) {
         brake: !!c.braking,
         drift: !!c.held,
         at: Number.isFinite(c.inputAt) ? c.inputAt : 0,
-        lockUntil: c.lockUntil || 0,
       });
     }
   }
@@ -85,11 +84,11 @@ export function createRacePrediction(T, me) {
     return input;
   }
 
-  function controls(id, car, t) {
-    if (t < Math.max(startAt, car.lockUntil || 0)) return null;
+  function controls(id, t) {
+    if (t < startAt) return null;
     if (id === me) return ownInputAt(t);
     const input = intents.get(id);
-    if (!input || t - input.at > INPUT_LEASE || t < input.lockUntil) return null;
+    if (!input || t - input.at > INPUT_LEASE) return null;
     return input;
   }
 
@@ -118,7 +117,7 @@ export function createRacePrediction(T, me) {
     for (let at = from; at < until - .00001;) {
       const dt = Math.min(STEP_MS, until - at) / 1000;
       at += dt * 1000;
-      const input = controls(me, projected, at);
+      const input = controls(me, at);
       if (!input) { projected.charge = 0; projected.driftHeld = false; }
       stepCar(T, projected, input, dt, at);
       if (easing) decayAngle(projected, easing, dt);
@@ -163,7 +162,7 @@ export function createRacePrediction(T, me) {
       const car = cars.get(id);
       if (!car || car.fin) continue;
       const prev = { x: car.x, y: car.y, hx: car.hx, hy: car.hy };
-      const input = controls(id, car, at);
+      const input = controls(id, at);
       // An expired control must not turn an old charged drift into a boost.
       if (!input) { car.charge = 0; car.driftHeld = false; }
       const ev = stepCar(T, car, input, STEP, at);
@@ -190,7 +189,8 @@ export function createRacePrediction(T, me) {
 
   function advanceTo(until) {
     const result = { events: [], impacts: [] };
-    if (phase !== 'race' || !Number.isFinite(physicsAt) || !Number.isFinite(until) || until <= physicsAt) return result;
+    // 'ready'도 돌린다: 초록불(startAt)이 켜지는 순간 방장 신호를 기다리지 않고 바로 출발 (그 전엔 controls가 null이라 그대로 서 있음)
+    if (!['ready', 'race'].includes(phase) || !Number.isFinite(physicsAt) || !Number.isFinite(until) || until <= physicsAt) return result;
     // A suspended tab catches up at most 200ms, with the whole world moving
     // together. Absolute timestamps also prevent replay + the next local tick
     // from simulating the same interval twice.

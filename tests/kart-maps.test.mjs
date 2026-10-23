@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import game, { useKartMaps } from '../js/games/race.js';
 import { buildKartMap, KART_MAP_KEYS } from '../js/games/kart-maps.js';
 import { newCar, pointAt, stepCar, botInput, ballAt } from '../js/games/race-core.js';
+import { createRacePrediction } from '../js/games/race-prediction.js';
 
 const DT = 1 / 60;
 const SPECS = KART_MAP_KEYS.flatMap(k => [k, `${k}~`]);
@@ -141,7 +142,7 @@ test('숨은 지름길은 위험하다: 겁 없이 밟으면 빙벽 길·뒷골�
   }
 });
 
-test('봇 4명이 맵 3개로 세 경기를 끝내고, 경기마다 맵이 다르다', () => {
+test('봇 4명이 맵 3개로 두 바퀴씩 세 경기를 끝내고, 경기마다 맵이 다르다', () => {
   useKartMaps(['city~', 'beach', 'site~']);
   let now = 1_000_000;
   const roster = Array.from({ length: 4 }, (_, i) => ({ id: `b${i}`, name: `봇${i}`, bot: true }));
@@ -154,11 +155,62 @@ test('봇 4명이 맵 3개로 세 경기를 끝내고, 경기마다 맵이 다�
     game.tick(ctx);
     const S = ctx.state;
     if (S.phase === 'race') seen.add(S.maps[S.round - 1]);
-    if (Object.values(S.cars || {}).some(c => c.fin)) finished.add(S.round);
+    for (const c of Object.values(S.cars || {})) {
+      if (!c.fin) continue;
+      finished.add(S.round);
+      assert.equal(c.lap, 2, 'a kart map race is two laps');
+    }
   }
   useKartMaps(null);
   assert.ok(ctx.state.over, 'the match ends');
   assert.equal(ctx.state.roundResults.length, 3);
   assert.deepEqual([...seen], ['city~', 'beach', 'site~']);
   assert.deepEqual([...finished], [1, 2, 3], 'someone finishes every round');
+});
+
+// 사람 1명 + 봇 1명 판을 신호 대기(ready)까지 돌린다
+function readyRace() {
+  useKartMaps(['city']);
+  let now = 1_000_000;
+  const roster = [{ id: 'me', name: '나' }, { id: 'b1', name: '봇', bot: true }];
+  const ctx = { roster, now: () => now, secret: {}, isOnline: () => true, nameOf: id => id, announce() {}, kill() {} };
+  ctx.state = { ...game.setup(ctx), roster };
+  while (ctx.state.phase !== 'ready') { now += 50; game.tick(ctx); }
+  useKartMaps(null);
+  return { ctx, step: ms => { now += ms; game.tick(ctx); }, at: () => now };
+}
+
+test('부정출발 없음: 신호 전에 가속을 눌러 둬도 초록불(출발 시각) 순간 바로 출발한다', () => {
+  const r = readyRace();
+  const S = r.ctx.state;
+  assert.equal(S.worldAt, S.startAt, 'the first round also starts its world clock at the green light');
+  const start = { x: S.cars.me.x, y: S.cars.me.y };
+  let seq = 0;
+  const press = () => game.onInput(r.ctx, { pid: 'me', type: 'drive', data: { round: S.round, seq: ++seq, throttle: 1, steer: 0, brake: false, drift: false } });
+  // 빨간불부터 계속 누르고 있는 사람 (손은 100ms마다 같은 입력을 다시 보낸다)
+  while (r.at() < S.startAt) {
+    assert.equal(press(), true);
+    r.step(50);
+  }
+  assert.equal(S.cars.me.lockUntil, undefined, 'no false-start lock');
+  while (r.at() < S.startAt + 500) {
+    press();
+    r.step(50);
+  }
+  const moved = Math.hypot(S.cars.me.x - start.x, S.cars.me.y - start.y);
+  assert.ok(moved > 3, `held throttle launches right at the green light (${moved.toFixed(2)}m in 0.5s)`);
+});
+
+test('내 화면도 방장이 race로 바꾸기 전에 초록불 시각부터 바로 달린다', () => {
+  const r = readyRace();
+  const S = structuredClone(r.ctx.state);
+  const world = createRacePrediction(buildKartMap('city'), 'me');
+  world.sync(S, S.startAt - 1000);
+  world.recordInput({ throttle: 1, steer: 0, brake: false, drift: false, seq: 1 }, S.startAt - 900);
+  const x0 = world.car('me').x;
+  const y0 = world.car('me').y;
+  world.step(DT, S.startAt - 100);
+  assert.ok(Math.hypot(world.car('me').x - x0, world.car('me').y - y0) < 0.01, 'still waiting before the green light');
+  for (let t = S.startAt; t <= S.startAt + 400; t += 16) world.step(DT, t);
+  assert.ok(Math.hypot(world.car('me').x - x0, world.car('me').y - y0) > 2, 'moving 0.4s after green while the snapshot still says ready');
 });
