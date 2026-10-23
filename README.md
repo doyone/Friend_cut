@@ -114,7 +114,7 @@ js/
     liar.js        라이어 게임
     professor.js   교수님 몰래 게임하기 (+ professor-view.js 화면)
     door.js        마지막 문
-  vendor/          planck.js 물리 엔진 (독박빼기·독박 시소가 CDN 없이 씀)
+  vendor/          planck.js 물리 엔진 (독박 타워·독박빼기·독박 시소가 CDN 없이 씀)
 tests/             규칙 테스트: node --test tests/bumper.test.mjs tests/professor.test.mjs tests/seesaw.test.mjs tests/door.test.mjs tests/race.test.mjs
 database.rules.json  Firebase 보안 규칙
 ```

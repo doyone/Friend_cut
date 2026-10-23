@@ -7,7 +7,7 @@
 import { h, isTyping, josa, pick, shuffle, digitOf, AGAIN_INTRO } from '../util.js';
 import { avatar, countdown, podium } from '../ui.js';
 
-const PLANCK_URL = 'https://cdn.jsdelivr.net/npm/planck@1.4.2/+esm';
+const PLANCK_URL = '../vendor/planck.mjs';
 const INTRO_TIME = 4000;
 const DECIDE_TIME = 5000;    // 내 블록이 멈춘 뒤 악마 카드 고민 시간 (고르면 바로 끝)
 const RESULT_TIME = 1500;    // 결과 잠깐 보여 주기
@@ -15,12 +15,12 @@ const SPIN_TIME = 1300;      // 차례 시작할 때 룰렛 도는 시간
 const SETTLE_MAX = 5000;     // 떨군 뒤 이만큼 지나면 거의 멈춘 건 그 자리에 세우고 다음 차례
 const SETTLE_HARD = 9000;    // 아직 날아다니는 게 있어도 이때는 무조건 다음 차례
 const DEVIL_CARDS = 1;       // 한 판에 1인당 악마 카드
-const PLATFORM_W = 6.24;     // 받침대 폭 (예전 5.2의 1.2배)
+const PLATFORM_W = 5.6;      // 받침대 폭 (5.2 → 6.24로 넓혔다가 조금 줄임)
 const PLATFORM_H = 0.6;
 const GRAVITY = 15;          // 실제(10)의 1.5배: 빨리 떨어지고 쿵 내려앉아서 묵직하다
 const DROP_GAP = 1.5;        // 떨구는 높이: 블록 맨 아래가 탑 꼭대기보다 이만큼 위
 const FALL_Y = -2;           // 이 아래로 내려가면 떨어진 것
-const X_LIMIT = 5;           // 조준 좌우 한계
+const X_LIMIT = 4.5;         // 조준 좌우 한계
 const ROT_STEP = Math.PI / 12; // 15도
 const MOVE_SPEED = 5;        // 초당
 
@@ -39,6 +39,19 @@ function starParts(ro, ri) {
   const inner = Array.from({ length: 5 }, (_, k) => at(ri, 126 + 72 * k));
   return [{ poly: inner }, ...inner.map((p, k) => ({ poly: [inner[(k + 4) % 5], p, at(ro, 90 + 72 * k)] }))];
 }
+// 휜 띠(바나나 등): 반지름 r, 두께 w, 각도 a0~a1(도)을 n조각 사다리꼴로. 무게중심을 0,0 근처로 옮긴다
+function arcParts(r, w, a0, a1, n) {
+  const at = (rr, d) => [rr * Math.cos(deg(d)), rr * Math.sin(deg(d))];
+  const polys = Array.from({ length: n }, (_, k) => {
+    const d0 = a0 + ((a1 - a0) * k) / n;
+    const d1 = a0 + ((a1 - a0) * (k + 1)) / n;
+    return [at(r - w / 2, d0), at(r - w / 2, d1), at(r + w / 2, d1), at(r + w / 2, d0)];
+  });
+  const all = polys.flat();
+  const cx = all.reduce((t, [x]) => t + x, 0) / all.length;
+  const cy = all.reduce((t, [, y]) => t + y, 0) / all.length;
+  return polys.map(poly => ({ poly: poly.map(([x, y]) => P(x - cx, y - cy)) }));
+}
 // 4칸 블록: 칸 좌표로 정의하고 무게중심을 0,0에 맞춘다
 const CELL = 0.6;
 function cells(list) {
@@ -49,13 +62,13 @@ function cells(list) {
 
 export const SHAPES = {
   // 기본 4칸 블록
-  I: { name: 'I블록', kind: 'base', parts: cells([[0, 0], [1, 0], [2, 0], [3, 0]]) },
-  O: { name: 'O블록', kind: 'base', parts: cells([[0, 0], [1, 0], [0, 1], [1, 1]]) },
-  T: { name: 'T블록', kind: 'base', parts: cells([[0, 0], [1, 0], [2, 0], [1, 1]]) },
-  S: { name: 'S블록', kind: 'base', parts: cells([[0, 0], [1, 0], [1, 1], [2, 1]]) },
-  Z: { name: 'Z블록', kind: 'base', parts: cells([[0, 1], [1, 1], [1, 0], [2, 0]]) },
-  J: { name: 'J블록', kind: 'base', parts: cells([[0, 1], [0, 0], [1, 0], [2, 0]]) },
-  L: { name: 'L블록', kind: 'base', parts: cells([[2, 1], [0, 0], [1, 0], [2, 0]]) },
+  I: { name: 'I블록', kind: 'base', cells: true, parts: cells([[0, 0], [1, 0], [2, 0], [3, 0]]) },
+  O: { name: 'O블록', kind: 'base', cells: true, parts: cells([[0, 0], [1, 0], [0, 1], [1, 1]]) },
+  T: { name: 'T블록', kind: 'base', cells: true, parts: cells([[0, 0], [1, 0], [2, 0], [1, 1]]) },
+  S: { name: 'S블록', kind: 'base', cells: true, parts: cells([[0, 0], [1, 0], [1, 1], [2, 1]]) },
+  Z: { name: 'Z블록', kind: 'base', cells: true, parts: cells([[0, 1], [1, 1], [1, 0], [2, 0]]) },
+  J: { name: 'J블록', kind: 'base', cells: true, parts: cells([[0, 1], [0, 0], [1, 0], [2, 0]]) },
+  L: { name: 'L블록', kind: 'base', cells: true, parts: cells([[2, 1], [0, 0], [1, 0], [2, 0]]) },
   // 추가 블록
   cross: { name: '십자가', kind: 'extra', parts: [{ box: [0.9, 0.2] }, { box: [0.2, 0.9] }] },
   ushape: { name: 'U자', kind: 'extra', parts: [{ box: [0.9, 0.15], at: [0, -0.45] }, { box: [0.15, 0.45], at: [-0.75, 0] }, { box: [0.15, 0.45], at: [0.75, 0] }] },
@@ -67,6 +80,29 @@ export const SHAPES = {
     name: '뼈다귀', kind: 'extra',
     parts: [{ box: [0.8, 0.15] }, { circle: 0.22, at: [-0.85, 0.15] }, { circle: 0.22, at: [-0.85, -0.15] }, { circle: 0.22, at: [0.85, 0.15] }, { circle: 0.22, at: [0.85, -0.15] }],
   },
+  heart: { name: '하트', kind: 'extra', parts: [{ circle: 0.38, at: [-0.3, 0.16] }, { circle: 0.38, at: [0.3, 0.16] }, { poly: [[-0.66, 0.06], [0.66, 0.06], [0, -0.78]] }] },
+  mushroom: { name: '버섯', kind: 'extra', parts: [{ poly: halfDisc(0.78, 10), at: [0, 0.2] }, { box: [0.22, 0.36], at: [0, -0.42] }] },
+  crown: {
+    name: '왕관', kind: 'extra',
+    parts: [
+      { box: [0.75, 0.2], at: [0, -0.25] },
+      { poly: [[-0.75, -0.06], [-0.35, -0.06], [-0.65, 0.45]] },
+      { poly: [[-0.25, -0.06], [0.25, -0.06], [0, 0.5]] },
+      { poly: [[0.35, -0.06], [0.75, -0.06], [0.65, 0.45]] },
+    ],
+  },
+  cloud: { name: '구름', kind: 'extra', parts: [{ box: [0.62, 0.16], at: [0, -0.2] }, { circle: 0.34, at: [-0.45, -0.04] }, { circle: 0.44, at: [0.05, 0.12] }, { circle: 0.32, at: [0.5, -0.06] }] },
+  bolt: {
+    name: '번개', kind: 'extra',
+    parts: [
+      { poly: [[-0.45, 0.05], [0.05, 0.05], [0.45, 0.9], [-0.05, 0.9]] },
+      { box: [0.45, 0.12], at: [0, 0.02] },
+      { poly: [[-0.45, -0.9], [-0.05, -0.9], [0.45, 0], [0.05, 0]] },
+    ],
+  },
+  arrow: { name: '화살표', kind: 'extra', parts: [{ box: [0.55, 0.15], at: [-0.3, 0] }, { poly: [[0.2, -0.5], [0.85, 0], [0.2, 0.5]] }] },
+  stairs: { name: '계단', kind: 'extra', cells: true, parts: cells([[0, 0], [1, 0], [2, 0], [1, 1], [2, 1], [2, 2]]) },
+  trapezoid: { name: '사다리꼴', kind: 'extra', parts: [{ poly: [[-0.95, -0.35], [0.95, -0.35], [0.5, 0.35], [-0.5, 0.35]] }] },
   // 😈 악마 (악마 카드로만)
   ball: { name: '공', kind: 'devil', parts: [{ circle: 0.55 }] },
   stick: { name: '젓가락', kind: 'devil', parts: [{ box: [1.8, 0.12] }] },
@@ -81,6 +117,7 @@ export const SHAPES = {
   xshape: { name: '엑스', kind: 'devil', parts: [{ box: [1.0, 0.1], rot: Math.PI / 4 }, { box: [1.0, 0.1], rot: -Math.PI / 4 }] },
   beads: { name: '꼬치', kind: 'devil', parts: [{ circle: 0.32, at: [-0.64, 0] }, { circle: 0.32 }, { circle: 0.32, at: [0.64, 0] }, { box: [0.95, 0.05] }] },
   pole: { name: '장대', kind: 'devil', parts: [{ box: [0.1, 1.4] }] },
+  banana: { name: '바나나', kind: 'devil', parts: arcParts(1.0, 0.3, 200, 340, 5), look: { fill: '#ffd43b' } },
 };
 // 아이콘 크기용 반지름
 for (const def of Object.values(SHAPES)) {
@@ -407,26 +444,56 @@ function svg(tag, attrs = {}, ...kids) {
 }
 const safeColor = c => (/^#[0-9a-f]{6}$/i.test(c || '') ? c : '#bdc3c7');
 
+// 조각 하나를 그린다. inset만큼 안쪽으로 줄인 모양도 (안쪽 밝은 테두리용)
+function partEl(part, attrs, inset = 0) {
+  const [ax, ay] = part.at || [0, 0];
+  if (part.box) {
+    const [hx, hy] = [Math.max(0.01, part.box[0] - inset), Math.max(0.01, part.box[1] - inset)];
+    return svg('rect', {
+      x: ax - hx, y: ay - hy, width: hx * 2, height: hy * 2, rx: Math.max(0.02, 0.06 - inset / 2),
+      transform: part.rot ? `rotate(${(part.rot * 180) / Math.PI} ${ax} ${ay})` : null, ...attrs,
+    });
+  }
+  if (part.circle) return svg('circle', { cx: ax, cy: ay, r: Math.max(0.01, part.circle - inset), ...attrs });
+  let pts = part.poly;
+  if (inset) {
+    // 무게중심 쪽으로 줄이기: 가장 가까운 변까지 거리 기준
+    const cx = pts.reduce((t, [x]) => t + x, 0) / pts.length;
+    const cy = pts.reduce((t, [, y]) => t + y, 0) / pts.length;
+    const edge = Math.min(...pts.map(([x1, y1], i) => {
+      const [x2, y2] = pts[(i + 1) % pts.length];
+      return Math.abs((x2 - x1) * (cy - y1) - (y2 - y1) * (cx - x1)) / Math.hypot(x2 - x1, y2 - y1);
+    }));
+    const k = Math.max(0.4, 1 - inset / edge);
+    pts = pts.map(([x, y]) => [cx + (x - cx) * k, cy + (y - cy) * k]);
+  }
+  return svg('polygon', { points: pts.map(([x, y]) => `${(x + ax).toFixed(3)},${(y + ay).toFixed(3)}`).join(' '), ...attrs });
+}
+
+// 블록 그림: 바깥 테두리만 굵게(조각 이음새는 안 보이게) → 위는 밝고 아래는 어두운 광택을 블록 전체에 한 번 →
+// 안쪽 밝은 테두리. 4칸 블록(칸 블록)은 칸마다 벽돌처럼 나눠 그린다. 광택 그라데이션(#tw-shine)은 화면 svg에 있다
+let clipNo = 0;
 function shapeGroup(s, color) {
   const def = shapeOf(s);
-  const style = { fill: safeColor(def.look?.fill || color), stroke: '#2c3e50', 'stroke-width': 0.07, 'stroke-linejoin': 'round' };
-  const parts = def.parts.map(part => {
-    const [ax, ay] = part.at || [0, 0];
-    if (part.box) {
-      return svg('rect', {
-        x: ax - part.box[0], y: ay - part.box[1], width: part.box[0] * 2, height: part.box[1] * 2, rx: 0.06,
-        transform: part.rot ? `rotate(${(part.rot * 180) / Math.PI} ${ax} ${ay})` : null, ...style,
-      });
-    }
-    if (part.circle) return svg('circle', { cx: ax, cy: ay, r: part.circle, ...style });
-    return svg('polygon', { points: part.poly.map(([x, y]) => `${x + ax},${y + ay}`).join(' '), ...style });
-  });
+  const fill = safeColor(def.look?.fill || color);
+  const all = (attrs, inset) => def.parts.map(part => partEl(part, attrs, inset));
+  const clip = `tw-clip-${++clipNo}`;
+  const r = def.r;
+  const els = [
+    ...all({ fill, stroke: '#2c3e50', 'stroke-width': 0.12, 'stroke-linejoin': 'round' }), // 안쪽 절반은 아래 칠이 덮어서 바깥 테두리만 남는다
+    ...all({ fill }),
+    svg('clipPath', { id: clip }, all({})),
+    svg('rect', { x: -r, y: -r, width: 2 * r, height: 2 * r, fill: 'url(#tw-shine)', 'clip-path': `url(#${clip})` }),
+  ];
+  const rim = { fill: 'none', stroke: '#fff', 'stroke-opacity': 0.5, 'stroke-width': 0.04, 'stroke-linejoin': 'round' };
+  if (def.cells) els.push(...all({ fill: 'none', stroke: '#2c3e50', 'stroke-opacity': 0.4, 'stroke-width': 0.035 }), ...all(rim, 0.09));
+  else if (def.parts.length === 1) els.push(...all(rim, 0.1));
   if (def.look?.mark) {
-    parts.push(svg('text', {
+    els.push(svg('text', {
       class: 'tw-mark', x: 0, y: 0, transform: 'scale(1,-1)', 'font-size': 0.5, 'text-anchor': 'middle', 'dominant-baseline': 'central',
     }, def.look.mark));
   }
-  return svg('g', {}, parts);
+  return svg('g', {}, els);
 }
 
 function shapeIcon(s, color) {
@@ -563,9 +630,17 @@ export default {
     const previewPiece = svg('g');
     const previewG = svg('g', { class: 'tw-preview' }, guide, previewPiece);
     const platform = svg('g', {},
+      svg('rect', { x: -0.35, y: -9, width: 0.7, height: 9 - PLATFORM_H, fill: '#34495e' }),
       svg('rect', { x: -PLATFORM_W / 2, y: -PLATFORM_H, width: PLATFORM_W, height: PLATFORM_H, rx: 0.08, fill: '#34495e', stroke: '#2c3e50', 'stroke-width': 0.08 }),
-      svg('rect', { x: -0.35, y: -9, width: 0.7, height: 9 - PLATFORM_H, fill: '#34495e' }));
+      svg('rect', { x: -PLATFORM_W / 2 + 0.06, y: -0.16, width: PLATFORM_W - 0.12, height: 0.12, rx: 0.04, fill: '#4f6b85' }));
+    // 블록 광택: 아래(0)는 살짝 어둡고 위(1)로 갈수록 밝게 (블록 좌표는 위가 +y)
+    const shine = svg('linearGradient', { id: 'tw-shine', x1: 0, y1: 0, x2: 0, y2: 1 },
+      svg('stop', { offset: 0, 'stop-color': '#000', 'stop-opacity': 0.22 }),
+      svg('stop', { offset: 0.45, 'stop-color': '#fff', 'stop-opacity': 0 }),
+      svg('stop', { offset: 0.8, 'stop-color': '#fff', 'stop-opacity': 0.28 }),
+      svg('stop', { offset: 1, 'stop-color': '#fff', 'stop-opacity': 0.5 }));
     const stage = svg('svg', { class: 'tw-svg', preserveAspectRatio: 'xMidYMax meet' },
+      svg('defs', {}, shine),
       svg('g', { transform: 'scale(1,-1)' }, platform, bodiesG, previewG));
     const fx = h('div', { class: 'tw-fx' });
     const nextBox = h('div', { class: 'tw-next', hidden: true });
