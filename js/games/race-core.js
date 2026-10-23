@@ -1,8 +1,8 @@
-// 범퍼카 그랑프리의 트랙과 물리. 내 차는 내 화면이, 봇은 방장이 같은 코드로 움직인다.
+// 그랑프리의 트랙과 공통 물리. 카트 코스는 방장이 모든 차량을 같은 걸음으로 움직인다.
 // 트랙 = 가운데 선(점들) + 구간별 폭·벽·노면. 기획서의 8자 스케치 좌표(px)를 0.4m로 옮겼다.
 // 좌표: x 오른쪽, y 아래 (화면과 같음). 옆 위치(lat)는 달리는 방향의 오른쪽이 +.
 
-export const LAPS = 2;
+export const LAPS = 1;
 export const CAR_R = 0.7;
 const SCALE = 0.4;            // 스케치 1px = 0.4m
 const SAMPLE = 1.5;           // 가운데 선 점 간격 (m)
@@ -27,7 +27,31 @@ export const PHYS = {
   splash: 1200,   // 물에 빠지면 이만큼 뒤 다시 출발
   wind: 3,        // 좁은 다리 옆바람 (m/s²): 다리 오른쪽으로 민다
 };
+// 카트 코스 전용. 얼음 코스의 관성과 최고 속도는 PHYS로 그대로 유지한다.
+export const KART = {
+  max: 28,
+  boost: 38,
+  thrust: [28, 46],
+  thrustTime: 1.5,
+  brake: 52,
+  drag: 0.3,
+  wheelbase: 2,
+  steerMax: 0.5,
+  steerSlew: 1.8,
+  steerInputSlew: 2,
+  steerReturn: 3,
+  steerSpeed: 0.09,
+  yawAccel: 5,
+  grip: 13.2,
+  driftGrip: 4.1,
+  gripMax: 110,
+  radius: 1.05,
+  capsuleBack: -0.20,
+  capsuleFront: 0.35,
+  restitution: 0.3,
+};
 export const SURF = {
+  asphalt: { max: 1, grip: 2.2, drag: 1 },
   ice: { max: 1, grip: 1, drag: 1 },
   snow: { max: 0.8, grip: 1.8, drag: 2 },  // 눈길: 안 미끄럽지만 느림
   oil: { max: 1, grip: 0.15, drag: 0.3 },  // 기름: 거의 안 꺾임
@@ -72,7 +96,8 @@ function finish(pts, closed) {
   return { pts, n, len, closed };
 }
 
-export function buildTrack() {
+export function buildTrack(sprint = false) {
+  const SCALE = sprint ? 0.28 : 0.4;
   // 가운데 선: 구간마다 촘촘히 점을 찍는다
   const raw = [];
   let cur = ORIGIN;
@@ -106,10 +131,10 @@ export function buildTrack() {
   const bridgeSec = SECTIONS.findIndex(s => s.key === 'bridge');
   for (const p of main.pts) {
     const sec = SECTIONS[p.sec];
-    p.half = sec.w / 2;
-    p.surface = sec.surface || 'ice';
+    p.half = sprint && (p.sec === 0 || p.sec === 7) ? 9 : sec.w / 2;
+    p.surface = sprint ? 'asphalt' : sec.surface || 'ice';
     p.layer = p.sec === bridgeSec && Math.hypot(p.x - cross.x, p.y - cross.y) < BRIDGE_HALF ? 1 : 0;
-    p.walls = p.layer ? 'both' : sec.walls || null;
+    p.walls = sprint || p.layer ? 'both' : sec.walls || null;
   }
   // 폭은 구간 이음매 앞뒤로 부드럽게 (갑자기 좁아지면 턱이 생긴다)
   const halves = main.pts.map(p => p.half);
@@ -155,11 +180,11 @@ export function buildTrack() {
     return { x: p.x, y: p.y, len: SECTIONS[6].w / 2 - 0.35, w: i ? -2.4 : 2.0 };
   });
   return {
-    main, branch, secStart, cross,
-    jump: { ramp: jumpAt, gap0: jumpAt + 5, gap1: jumpAt + 12 },
-    boosts: boosts.map(s => ({ s, len: 3.5 })),
-    oil: [{ x: wave.x - wave.ty * 1.2, y: wave.y + wave.tx * 1.2, r: 1.8 }], // 길 가운데서 오른쪽으로 1.2m
-    gates,
+    main, branch, secStart, cross, sprint,
+    jump: sprint ? { ramp: -100, gap0: -99, gap1: -98 } : { ramp: jumpAt, gap0: jumpAt + 5, gap1: jumpAt + 12 },
+    boosts: sprint ? [] : boosts.map(s => ({ s, len: 3.5 })),
+    oil: sprint ? [] : [{ x: wave.x - wave.ty * 1.2, y: wave.y + wave.tx * 1.2, r: 1.8 }],
+    gates: sprint ? [] : gates,
     start: main.len - 5, // 결승선 5m 앞에서 다 같이 출발
   };
 }
@@ -229,7 +254,7 @@ export function locate(T, cur, x, y, wide = false) {
     if (m) cands.push({ path: 'main', ...m });
     const j = pointAt(T.main, T.branch.from).i;
     const dj = Math.abs(((cur.seg - j + T.main.n / 2) % T.main.n + T.main.n) % T.main.n - T.main.n / 2);
-    if (dj < W) {
+    if (!T.sprint && dj < W) {
       const b = nearest(T.branch, 0, W, x, y);
       if (b) cands.push({ path: 'branch', ...b });
     }
@@ -260,7 +285,7 @@ export function respawnPose(T, fall) {
 
 export function newCar(T) {
   const p = pointAt(T.main, T.start);
-  return { x: p.x, y: p.y, vx: 0, vy: 0, path: 'main', seg: p.i, s: T.start, ms: T.start, lat: 0, air: 0, sp: 0, oil: 0, dr: 0, hx: p.tx, hy: p.ty };
+  return { x: p.x, y: p.y, vx: 0, vy: 0, path: 'main', seg: p.i, s: T.start, ms: T.start, lat: 0, air: 0, sp: 0, oil: 0, dr: 0, hx: p.tx, hy: p.ty, steerInput: 0, steer: 0, yawRate: 0 };
 }
 
 // 한 걸음 (dt 초, t 서버 시각 ms). input = { x, y } 방향 (-1~1). 일어난 일을 돌려준다
@@ -269,7 +294,7 @@ export function stepCar(T, car, input, dt, t) {
   if (car.sp) {
     if (t < car.sp) return ev;
     const r = respawnPose(T, car.fall || car);
-    Object.assign(car, { x: r.x, y: r.y, vx: 0, vy: 0, path: r.path, seg: r.seg, sp: 0, air: 0, dr: 0, hx: r.tx, hy: r.ty });
+    Object.assign(car, { x: r.x, y: r.y, vx: 0, vy: 0, path: r.path, seg: r.seg, sp: 0, air: 0, dr: 0, hx: r.tx, hy: r.ty, steerInput: 0, steer: 0, yawRate: 0 });
     const at = locate(T, car, car.x, car.y);
     if (at) Object.assign(car, { s: at.s, ms: at.ms, lat: at.lat });
     ev.push('respawn');
@@ -289,7 +314,9 @@ export function stepCar(T, car, input, dt, t) {
     return ev;
   }
   const here = locate(T, car, car.x, car.y) || { p: T.main.pts[car.seg] || T.main.pts[0], lat: 0, s: car.s, ms: car.ms, path: car.path, seg: car.seg };
+  const beforeBoost = car.boostLeft || 0;
   drive(car, input, SURF[t < car.oil ? 'oil' : here.p.surface] || SURF.ice, dt);
+  if ((car.boostLeft || 0) > beforeBoost) ev.push('boost');
   // 좁은 다리 옆바람
   if (here.path === 'branch') {
     car.vx += -here.p.ty * PHYS.wind * dt;
@@ -312,7 +339,7 @@ export function stepCar(T, car, input, dt, t) {
   }
   if (inGap(T, at)) return splash(car, at, t, ev);
   // 길 밖: 벽이면 튕기고, 물이면 풍덩
-  const over = Math.abs(at.lat) - at.p.half;
+  const over = Math.abs(at.lat) - (at.p.half - (T.sprint ? kartWallSupport(car, at.p, Math.sign(at.lat)) : 0));
   if (over > 0) {
     const side = Math.sign(at.lat);
     const wall = at.p.walls === 'both' || (at.p.walls === 'outer' && side === at.p.outer);
@@ -323,6 +350,8 @@ export function stepCar(T, car, input, dt, t) {
     car.y -= ny * (over + 0.05);
     const vn = car.vx * nx + car.vy * ny;
     if (vn > 0) {
+      car.charge = 0;
+      car.boostLeft = 0;
       car.vx -= nx * vn * 1.4;
       car.vy -= ny * vn * 1.4;
       car.vx *= 0.85;
@@ -350,6 +379,7 @@ export function stepCar(T, car, input, dt, t) {
 
 // 조작·타이어·마찰 (길과 상관없는 부분). surf = 노면
 export function drive(car, input, surf, dt) {
+  if (surf === SURF.asphalt) return driveKart(car, input, dt);
   const max = PHYS.max * surf.max;
   let ix = input?.x || 0;
   let iy = input?.y || 0;
@@ -395,6 +425,256 @@ export function drive(car, input, surf, dt) {
   const drag = PHYS.drag * surf.drag * dt + (Math.hypot(car.vx, car.vy) > max ? 1.2 * dt : 0);
   car.vx *= 1 - Math.min(1, drag);
   car.vy *= 1 - Math.min(1, drag);
+}
+
+function driveKart(car, input, dt) {
+  const throttle = Math.max(0, Math.min(1, input?.throttle || 0));
+  const steering = Math.max(-1, Math.min(1, input?.steer || 0));
+  const braking = !!input?.brake;
+  const held = !!input?.drift;
+  const before = Math.hypot(car.vx, car.vy);
+  car.boostLeft = Math.max(0, (car.boostLeft || 0) - dt);
+  if (car.driftHeld && !held && (car.charge || 0) >= 0.45 && before > 8 && !braking) {
+    car.boostLeft = car.charge >= 1.15 ? 1.35 : 0.65;
+  }
+  car.driftHeld = held;
+  if (!held) car.charge = 0;
+  const boosted = car.boostLeft > 0;
+
+  // 키보드 입력도 운전대를 돌리는 시간을 거친다. 반대 입력은 중앙을 지나간다.
+  car.steerInput = approach(car.steerInput || 0, steering,
+    (Math.abs(steering) < 1e-6 ? KART.steerReturn : KART.steerInputSlew) * dt);
+  const wheelMax = KART.steerMax / (1 + before * KART.steerSpeed);
+  car.steer = approach(car.steer || 0, car.steerInput * wheelMax, KART.steerSlew * dt);
+  const yawMax = 2.7 - 0.8 * Math.min(1, before / KART.max);
+  const forwardSpeed = Math.max(0, car.vx * car.hx + car.vy * car.hy);
+  const yaw = Math.max(-yawMax, Math.min(yawMax, forwardSpeed / KART.wheelbase * Math.tan(car.steer)));
+  car.yawRate = approach(car.yawRate || 0, yaw, KART.yawAccel * dt);
+  if (before < 0.1) car.yawRate = 0;
+  rotate(car, car.yawRate * dt);
+
+  if (braking) {
+    car.throttleTime = 0;
+    // 실제 속도 방향으로 제동한다. 정지 뒤 후진하지 않는다.
+    const factor = before > 0 ? Math.max(0, 1 - KART.brake * dt / before) : 0;
+    car.vx *= factor;
+    car.vy *= factor;
+  } else if (throttle > 0) {
+    car.throttleTime = Math.min(KART.thrustTime, (car.throttleTime || 0) + dt * throttle);
+    const u = car.throttleTime / KART.thrustTime;
+    const thrust = boosted ? 62 : KART.thrust[0] + (KART.thrust[1] - KART.thrust[0]) * u * u;
+    car.vx += car.hx * thrust * throttle * dt;
+    car.vy += car.hy * thrust * throttle * dt;
+  } else car.throttleTime = 0;
+
+  // 접지력은 가속 페달을 떼고 굴러가는 동안에도 작동한다.
+  const nx = -car.hy;
+  const ny = car.hx;
+  const lat = car.vx * nx + car.vy * ny;
+  const grip = held ? KART.driftGrip : KART.grip;
+  const cut = Math.sign(lat) * Math.min(Math.abs(lat) * Math.min(1, grip * dt), KART.gripMax * (held ? 0.38 : 1) * dt);
+  car.vx -= nx * cut;
+  car.vy -= ny * cut;
+  const forward = car.vx * car.hx + car.vy * car.hy;
+  car.dr = held && !braking && before > 8 && Math.abs(lat) > 1.5 ? 1 : 0;
+  if (car.dr && forward > before * 0.6 && Math.abs(car.steerInput) > 0.08) car.charge = Math.min(1.5, (car.charge || 0) + dt);
+  else car.charge = Math.max(0, (car.charge || 0) - dt * (braking ? 1 : 0.35));
+
+  const drag = Math.max(0, 1 - KART.drag * dt);
+  car.vx *= drag;
+  car.vy *= drag;
+  // 일정한 최고 속도. 부스트 종료·충돌 직후의 초과 속도는 부드럽게 줄인다.
+  const limit = boosted ? KART.boost : Math.min(KART.boost, Math.max(KART.max, before - 20 * dt));
+  const speed = Math.hypot(car.vx, car.vy);
+  if (speed > limit) {
+    car.vx *= limit / speed;
+    car.vy *= limit / speed;
+  }
+}
+
+// 방장이 모든 차량을 같은 걸음으로 움직인 뒤 호출한다.
+// entries = [{ id, car, prev?: { x, y, hx, hy } }]. prev를 주면 걸음 사이의 스치는 접촉도 검사한다.
+// car를 직접 갱신하고 효과용 { a, b, x, y, strength } 배열을 반환한다.
+export function resolveKartContacts(T, entries, dt = 1 / 60) {
+  const cars = entries.filter(({ car }) => car && !car.fin && !car.sp && !car.air
+    && [car.x, car.y, car.vx, car.vy].every(Number.isFinite));
+  const impacts = [];
+  const moved = new Set();
+  const diameter = KART.radius * 2;
+  for (let pass = 0; pass < 6; pass++) {
+    for (let i = 0; i < cars.length; i++) {
+      for (let j = i + 1; j < cars.length; j++) {
+        const ea = cars[i];
+        const eb = cars[j];
+        const a = ea.car;
+        const b = eb.car;
+        const travel = pass === 0
+          ? (validPose(ea.prev) ? Math.hypot(a.x - ea.prev.x, a.y - ea.prev.y) : 0)
+            + (validPose(eb.prev) ? Math.hypot(b.x - eb.prev.x, b.y - eb.prev.y) : 0)
+          : 0;
+        if (Math.hypot(b.x - a.x, b.y - a.y) > diameter + 2 * KART.capsuleFront + 0.04 + travel) continue;
+        let hit = capsuleContact(a, b);
+        let remaining = 0;
+        if (pass === 0 && !moved.has(ea.id) && !moved.has(eb.id) && (validPose(ea.prev) || validPose(eb.prev))) {
+          const swept = sweptKartContact(ea, eb);
+          if (swept) {
+            const aa = locate(T, a, swept.a.x, swept.a.y);
+            const bb = locate(T, b, swept.b.x, swept.b.y);
+            if (aa && bb && aa.p.layer === bb.p.layer) {
+              a.x = swept.a.x; a.y = swept.a.y;
+              b.x = swept.b.x; b.y = swept.b.y;
+              hit = swept.hit;
+              remaining = Math.max(0, dt) * (1 - swept.u);
+            }
+          }
+        }
+        if (hit.dist > diameter + 0.04) continue;
+        const aa = locate(T, a, a.x, a.y);
+        const bb = locate(T, b, b.x, b.y);
+        if (!aa || !bb || aa.p.layer !== bb.p.layer) continue;
+        const rvx = b.vx - a.vx;
+        const rvy = b.vy - a.vy;
+        const rv = Math.hypot(rvx, rvy);
+        const nx = hit.dist > 1e-8 ? (hit.bx - hit.ax) / hit.dist : rv > 1e-8 ? -rvx / rv : 1;
+        const ny = hit.dist > 1e-8 ? (hit.by - hit.ay) / hit.dist : rv > 1e-8 ? -rvy / rv : 0;
+        const correction = Math.max(0, diameter - hit.dist + 0.003) * 0.5;
+        a.x -= nx * correction;
+        a.y -= ny * correction;
+        b.x += nx * correction;
+        b.y += ny * correction;
+        const closing = rvx * nx + rvy * ny;
+        // 이미 멀어지고 있는 접촉에는 반동을 더하지 않는다.
+        if (closing < 0) {
+          const impulse = -(1 + KART.restitution) * closing * 0.5;
+          a.vx -= nx * impulse;
+          a.vy -= ny * impulse;
+          b.vx += nx * impulse;
+          b.vy += ny * impulse;
+          if (pass === 0 && -closing > 1.5) impacts.push({
+            a: ea.id, b: eb.id, x: (hit.ax + hit.bx) * 0.5, y: (hit.ay + hit.by) * 0.5, strength: -closing,
+          });
+        }
+        if (remaining > 0) {
+          a.x += a.vx * remaining; a.y += a.vy * remaining;
+          b.x += b.vx * remaining; b.y += b.vy * remaining;
+        }
+        moved.add(ea.id); moved.add(eb.id);
+        keepKartOnRoad(T, a);
+        keepKartOnRoad(T, b);
+      }
+    }
+  }
+  return impacts;
+}
+
+const approach = (value, target, amount) => value + Math.max(-amount, Math.min(amount, target - value));
+const validPose = p => p && [p.x, p.y].every(Number.isFinite);
+
+function capsuleEnds(p) {
+  const h = Math.hypot(p.hx || 0, p.hy || 0) || 1;
+  const hx = Number.isFinite(p.hx) ? p.hx / h : 1;
+  const hy = Number.isFinite(p.hy) ? p.hy / h : 0;
+  return [
+    { x: p.x + hx * KART.capsuleBack, y: p.y + hy * KART.capsuleBack },
+    { x: p.x + hx * KART.capsuleFront, y: p.y + hy * KART.capsuleFront },
+  ];
+}
+
+function capsuleContact(a, b) {
+  const [a0, a1] = capsuleEnds(a);
+  const [b0, b1] = capsuleEnds(b);
+  let best = { dist: Infinity };
+  const offer = (ax, ay, bx, by) => {
+    const dist = Math.hypot(bx - ax, by - ay);
+    if (dist < best.dist) best = { ax, ay, bx, by, dist };
+  };
+  const endpoint = (p, q0, q1, reverse) => {
+    const dx = q1.x - q0.x;
+    const dy = q1.y - q0.y;
+    const t = Math.max(0, Math.min(1, ((p.x - q0.x) * dx + (p.y - q0.y) * dy) / (dx * dx + dy * dy || 1)));
+    const x = q0.x + dx * t;
+    const y = q0.y + dy * t;
+    if (reverse) offer(x, y, p.x, p.y); else offer(p.x, p.y, x, y);
+  };
+  endpoint(a0, b0, b1, false); endpoint(a1, b0, b1, false);
+  endpoint(b0, a0, a1, true); endpoint(b1, a0, a1, true);
+  const ax = a1.x - a0.x;
+  const ay = a1.y - a0.y;
+  const bx = b1.x - b0.x;
+  const by = b1.y - b0.y;
+  const cross = ax * by - ay * bx;
+  if (Math.abs(cross) > 1e-10) {
+    const dx = b0.x - a0.x;
+    const dy = b0.y - a0.y;
+    const t = (dx * by - dy * bx) / cross;
+    const u = (dx * ay - dy * ax) / cross;
+    if (t >= 0 && t <= 1 && u >= 0 && u <= 1) offer(a0.x + ax * t, a0.y + ay * t, a0.x + ax * t, a0.y + ay * t);
+  }
+  return best;
+}
+
+function interpolatePose(a, b, t) {
+  const start = Math.atan2(a.hy || 0, a.hx ?? 1);
+  const end = Math.atan2(b.hy || 0, b.hx ?? 1);
+  const angle = start + Math.atan2(Math.sin(end - start), Math.cos(end - start)) * t;
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, hx: Math.cos(angle), hy: Math.sin(angle) };
+}
+
+function sweptKartContact(a, b) {
+  const pa = validPose(a.prev) ? a.prev : a.car;
+  const pb = validPose(b.prev) ? b.prev : b.car;
+  // 이미 맞닿은 쌍은 과거로 돌리지 않고 현재 위치에서 푼다.
+  const diameter = KART.radius * 2;
+  if (capsuleContact(pa, pb).dist <= diameter + 0.003) return null;
+  const travel = Math.hypot(a.car.x - pa.x, a.car.y - pa.y) + Math.hypot(b.car.x - pb.x, b.car.y - pb.y);
+  const steps = Math.max(1, Math.min(64, Math.ceil((travel + 0.1) / 0.08)));
+  let previous = 0;
+  for (let k = 1; k <= steps; k++) {
+    let u = k / steps;
+    let aa = interpolatePose(pa, a.car, u);
+    let bb = interpolatePose(pb, b.car, u);
+    if (capsuleContact(aa, bb).dist <= diameter + 0.04) {
+      let lo = previous;
+      let hi = u;
+      for (let q = 0; q < 8; q++) {
+        const mid = (lo + hi) * 0.5;
+        if (capsuleContact(interpolatePose(pa, a.car, mid), interpolatePose(pb, b.car, mid)).dist <= diameter + 0.04) hi = mid;
+        else lo = mid;
+      }
+      u = hi;
+      aa = interpolatePose(pa, a.car, u);
+      bb = interpolatePose(pb, b.car, u);
+      return { a: aa, b: bb, hit: capsuleContact(aa, bb), u };
+    }
+    previous = u;
+  }
+  return null;
+}
+
+function kartWallSupport(car, p, side) {
+  const lateral = (car.hx || 0) * -p.ty * side + (car.hy || 0) * p.tx * side;
+  return KART.radius + Math.max(KART.capsuleBack * lateral, KART.capsuleFront * lateral);
+}
+
+function keepKartOnRoad(T, car) {
+  let at = locate(T, car, car.x, car.y);
+  if (!at) return;
+  const side = Math.sign(at.lat);
+  const wall = at.p.walls === 'both' || (at.p.walls === 'outer' && side === at.p.outer);
+  const over = Math.abs(at.lat) - Math.max(0, at.p.half - kartWallSupport(car, at.p, side));
+  if (wall && over > 0) {
+    const nx = -at.p.ty * side;
+    const ny = at.p.tx * side;
+    car.x -= nx * over;
+    car.y -= ny * over;
+    const out = car.vx * nx + car.vy * ny;
+    if (out > 0) {
+      car.vx -= nx * out;
+      car.vy -= ny * out;
+    }
+    at = locate(T, car, car.x, car.y) || at;
+  }
+  Object.assign(car, { path: at.path, seg: at.seg, s: at.s, ms: at.ms, lat: at.lat });
 }
 
 // 몸통을 a 라디안 돌린다 (화면 기준 시계 방향 +)
@@ -466,7 +746,7 @@ function ahead(T, car, d, short) {
   const ms = car.ms + d;
   // 지름길로 가기로 했으면: 입구 전부터 다리 끝까지 다리 선을 따라간다 (큰길 위에 있어도 다리 쪽 거리로 바꿔서)
   const { from, to, len } = T.branch;
-  if (short && car.ms > from - 40 && car.ms < to - 3 && ms > from) {
+  if (!T.sprint && short && car.ms > from - 40 && car.ms < to - 3 && ms > from) {
     const s = car.ms < from ? ms - from : ((car.ms - from) / (to - from)) * len + d;
     return s <= len ? pointAt(T.branch, s) : pointAt(T.main, to + (s - len));
   }
@@ -475,6 +755,7 @@ function ahead(T, car, d, short) {
 
 // 봇: 앞쪽 가운데 선을 노려서 8방향으로 민다. 급커브 앞에선 브레이크. skill 0.85~1, mem.short = 이번엔 지름길
 export function botInput(T, car, mem, skill) {
+  if (T.sprint) return kartBotInput(T, car, skill);
   // 다리 입구를 한참 지나 큰길에 있으면(물에서 다시 섰을 때 등) 이번 바퀴는 눈길로
   if (mem.short && car.path === 'main' && car.ms > T.branch.from + 8 && car.ms < T.branch.to) mem.short = false;
   const sp = Math.hypot(car.vx, car.vy);
@@ -493,12 +774,30 @@ export function botInput(T, car, mem, skill) {
   }
   // 앞이 급하게 꺾이면 속도를 줄인다
   const bend = Math.acos(Math.max(-1, Math.min(1, tgt.tx * far.tx + tgt.ty * far.ty)));
-  const limit = (PHYS.max * skill) * (bend > 1 ? 0.55 : bend > 0.6 ? 0.75 : 1) * (bridge ? 0.85 : 1);
+  const limit = ((T.sprint ? KART.max : PHYS.max) * skill) * (bend > 1 ? 0.55 : bend > 0.6 ? 0.75 : 1) * (bridge ? 0.85 : 1);
   if (sp > limit && sp > 6) {
     dx = -car.vx / sp + dx * 0.02;
     dy = -car.vy / sp + dy * 0.02;
   }
   // 8방향으로 (사람처럼)
   const ang = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4);
-  return { x: Math.round(Math.cos(ang)), y: Math.round(Math.sin(ang)) };
+  return { x: Math.round(Math.cos(ang)), y: Math.round(Math.sin(ang)), drift: T.sprint && bend > 0.16 && sp > 10 && (car.charge || 0) < 1.25 };
+}
+
+function kartBotInput(T, car, skill) {
+  const speed = Math.hypot(car.vx, car.vy);
+  const look = 5 + speed * 0.55;
+  const target = ahead(T, car, look, false);
+  const far = ahead(T, car, look + 12, false);
+  const dx = target.x - car.x;
+  const dy = target.y - car.y;
+  const distance = Math.max(1, Math.hypot(dx, dy));
+  const angle = Math.atan2(car.hx * dy - car.hy * dx, car.hx * dx + car.hy * dy);
+  const wheelMax = KART.steerMax / (1 + speed * KART.steerSpeed);
+  const steer = Math.max(-1, Math.min(1, Math.atan(2 * KART.wheelbase * Math.sin(angle) / distance) / wheelMax));
+  const bend = Math.acos(Math.max(-1, Math.min(1, target.tx * far.tx + target.ty * far.ty)));
+  const limit = KART.max * skill * (bend > 1 ? 0.50 : bend > 0.6 ? 0.67 : bend > 0.3 ? 0.85 : 1);
+  const brake = speed > limit + 1 || Math.abs(angle) > 1.0 && speed > 12;
+  return { throttle: brake ? 0 : 1, steer, brake,
+    drift: !brake && bend > 0.16 && Math.abs(angle) < 0.7 && speed > 12 && (car.charge || 0) < 1.25 };
 }

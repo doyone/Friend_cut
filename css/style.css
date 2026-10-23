@@ -938,6 +938,15 @@ button, input { font: inherit; color: inherit; }
 .rc-ahead { color: var(--green-ink); }
 .rc-hot { margin-left: auto; color: var(--red); animation: bc-blink 1s steps(2) infinite; }
 .rc-stage { position: relative; background: #2f86d6; }
+.rc-drivehud { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); display: flex; align-items: center; gap: 18px; padding: 8px 16px; border-radius: 14px; background: rgba(22, 32, 44, .87); color: #edf2f7; box-shadow: 0 3px 14px #0003; pointer-events: none; font-size: 11px; font-weight: 800; white-space: nowrap; }
+.rc-drivehud[hidden] { display: none; }
+.rc-drivehud kbd { font: 800 11px system-ui; border-radius: 5px; padding: 3px 5px; background: #ffffff20; }
+.rc-pedal { display: flex; flex-direction: column; align-items: center; gap: 4px; opacity: .6; }
+.rc-pedal.active { opacity: 1; }
+.rc-pedal.gas.active kbd { background: #38c987; color: #102d23; }
+.rc-pedal.brake.active kbd { background: #ff7169; color: #3d1818; }
+.rc-steering-label { display: flex; align-items: center; gap: 9px; }
+.rc-steering-wheel { display: inline-flex; width: 38px; height: 38px; color: #ffdc83; }
 .rc-canvas { display: block; width: 100%; height: min(66vh, 620px); }
 .rc-mini { position: absolute; right: 10px; top: 10px; width: 200px; height: 150px; background: rgba(20, 85, 143, .55); border-radius: 10px; border: 2px solid rgba(255, 255, 255, .7); pointer-events: none; }
 .rc-overlay { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }

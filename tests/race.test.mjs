@@ -89,49 +89,82 @@ function race(n, humans = 0) {
   return { ctx, step(ms = 100) { now += ms; game.tick(ctx); }, now: () => now };
 }
 
-test('봇끼리 2바퀴: 다 끝나고 완주 순서대로 등수', () => {
+test('봇끼리 3경기: 매번 출발선을 초기화하고 합산 점수로 등수', () => {
   const r = race(4);
   while (!r.ctx.state.over && r.now() < 10000 + 400000) r.step();
   const S = r.ctx.state;
   assert.ok(S.over);
   const fins = S.order.map(id => S.cars[id].fin).filter(Boolean);
   assert.ok(fins.length >= 1);
-  assert.deepEqual(fins, [...fins].sort((a, b) => a - b));
-  assert.ok(fins[0] > 40000 && fins[0] < 150000, `1등 ${fins[0]}ms`);
+  assert.equal(S.round, 3);
+  assert.equal(S.roundResults.length, 3);
+  assert.deepEqual(S.order.map(id => S.points[id]), S.order.map(id => S.points[id]).sort((a,b) => b-a));
+  assert.ok(fins[0] > 18000 && fins[0] < 45000, `1등 ${fins[0]}ms`);
   assert.ok(S.titles[S.order[0]].some(t => t.startsWith('🏁 우승')));
   for (const id of S.order.filter(x => S.cars[x].fin)) assert.equal(S.cars[id].lap, LAPS);
 });
 
-test('사람 차: 순간이동은 무시, 물에서 다시 설 때만 뒤로 이동 인정', () => {
-  const r = race(2, 1);
-  while (r.ctx.state.phase !== 'race') r.step();
+test('체크포인트: 결승선만 왕복하면 완주할 수 없고 코스 전체를 지나야 한다', () => {
+  const track = buildTrack(true);
+  const r = race(2, 2);
+  while (r.ctx.state.phase !== 'race') r.step(50);
   const S = r.ctx.state;
   const c = S.cars.p0;
-  const far = pointAt(T.main, 300);
-  assert.equal(game.onInput(r.ctx, { pid: 'p0', type: 'car', data: { x: far.x, y: far.y, path: 'main', seg: far.i, t: r.now() } }), false);
-  const near = pointAt(T.main, (c.ms + 2) % T.main.len);
-  assert.equal(game.onInput(r.ctx, { pid: 'p0', type: 'car', data: { x: near.x, y: near.y, path: 'main', seg: near.i, t: r.now() + 100 } }), true);
-  const back = pointAt(T.main, T.main.len - 30);
-  assert.equal(game.onInput(r.ctx, { pid: 'p0', type: 'car', data: { x: back.x, y: back.y, path: 'main', seg: back.i, rs: 1, ev: ['respawn'], t: r.now() + 200 } }), true);
+  // Move the other kart away. Fixture changes the authoritative host state, never client position messages.
+  const away = pointAt(track.main, 100);
+  Object.assign(S.cars.p1, {x:away.x,y:away.y,seg:away.i,s:away.s,ms:away.s});
+  const position = s => {
+    const p = pointAt(track.main,s);
+    Object.assign(c,{x:p.x,y:p.y,seg:p.i,s:p.s,ms:p.s,vx:p.tx*20,vy:p.ty*20,hx:p.tx,hy:p.ty});
+  };
+  position(track.main.len-.1);
+  r.step(50);
+  assert.equal(c.lap,0,'crossing only the finish line is insufficient');
+  assert.equal(c.fin,undefined);
+  for(let i=1;i<track.secStart.length;i++) {
+    position(track.secStart[i]-.1);
+    r.step(50);
+    assert.equal(c.cp,i,`checkpoint ${i}`);
+  }
+  position(track.main.len-.1);
+  r.step(50);
+  assert.equal(c.lap,1);
+  assert.ok(c.fin>0);
 });
 
-test('바퀴: 체크포인트를 다 지나야 결승선 통과가 한 바퀴', () => {
-  const r = race(2, 1);
-  while (r.ctx.state.phase !== 'race') r.step();
-  const S = r.ctx.state;
-  let t = r.now();
-  // 결승선만 왔다 갔다 하면 바퀴가 안 늘어남
-  for (const s of [T.main.len - 3, 2, T.main.len - 3, 3]) {
-    const p = pointAt(T.main, s);
-    t += 100;
-    game.onInput(r.ctx, { pid: 'p0', type: 'car', data: { x: p.x, y: p.y, path: 'main', seg: p.i, rs: 1, t } });
+
+test('차고 코스는 짧고 난간이 있으며 위험 장치가 없다', () => {
+  const track = buildTrack(true);
+  assert.ok(track.main.len > 400 && track.main.len < 480);
+  assert.ok(track.main.pts.every(p => p.walls === 'both' && p.surface === 'asphalt'));
+  assert.equal(track.gates.length + track.oil.length + track.boosts.length, 0);
+});
+
+test('드리프트: 직선 유지로는 충전 안 되고, 코너 충전 후 놓으면 부스트', () => {
+  const car = { vx: 18, vy: 0, hx: 1, hy: 0, dr: 0 };
+  for (let i=0;i<120;i++) drive(car, {throttle:1,steer:0,brake:false,drift:true}, SURF.asphalt, 1/60);
+  assert.equal(car.charge, 0);
+  let maxCharge = 0;
+  for (let i=0;i<150;i++) {
+    drive(car, {throttle:1,steer:.65,brake:false,drift:true}, SURF.asphalt, 1/60);
+    maxCharge = Math.max(maxCharge,car.charge);
   }
-  assert.equal(S.cars.p0.lap, 0);
-  // 2m씩 한 바퀴 돌면 1바퀴
-  for (let s = 4; s < T.main.len + 3; s += 2) {
-    const p = pointAt(T.main, s % T.main.len);
-    t += 100;
-    game.onInput(r.ctx, { pid: 'p0', type: 'car', data: { x: p.x, y: p.y, path: 'main', seg: p.i, t } });
-  }
-  assert.equal(S.cars.p0.lap, 1);
+  assert.ok(maxCharge >= 1.15, `charge ${maxCharge}`);
+  drive(car, {throttle:1,steer:0,brake:false,drift:false}, SURF.asphalt, 1/60);
+  assert.ok(car.boostLeft > 1);
+  assert.equal(car.charge, 0);
+  for(let i=0;i<15;i++) drive(car,{throttle:1,steer:0,brake:false,drift:false},SURF.asphalt,1/60);
+  assert.ok(Math.hypot(car.vx,car.vy)>23);
+});
+
+test('이전 라운드 입력은 무시하고 45초 제한으로 잠수해도 세 경기가 끝난다', () => {
+  const r = race(2,2);
+  while(r.ctx.state.phase !== 'race') r.step();
+  const S=r.ctx.state;
+  const c=S.cars.p0;
+  assert.equal(game.onInput(r.ctx,{pid:'p0',type:'drive',data:{round:0,seq:1,throttle:1,steer:0,brake:false,drift:false}}),false);
+  while(!S.over && r.now()<200000) r.step(1000);
+  assert.equal(S.over,true);
+  assert.equal(S.roundResults.length,3);
+  assert.equal(S.points.p0,0);
 });

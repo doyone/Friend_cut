@@ -1,31 +1,40 @@
-// 범퍼카 그랑프리: 물 위에 뜬 8자 얼음 트랙을 2바퀴 먼저 돌면 우승. 순수 실력 대결.
-// 다른 차는 반투명 유령이라 부딪히지 않는다(방해 불가). 조작은 방향키(WASD)뿐 — 그 방향으로 밀기, 반대 = 브레이크.
-// 부딪힘이 없으니 내 차는 내 화면이 바로 계산하고(와이파이 지연 없음) 0.1초마다 위치를 보낸다.
-// 방장은 심판: 위치로 체크포인트·바퀴·완주 순서를 기록하고, 봇 차를 같은 물리로 움직인다.
-// 트랙·물리는 race-core.js (구간: 출발 직선 → 빙하 점프 → 펭귄 헤어핀 → 물결 S자 → 8자 고가 다리 → 갈림길 → 펭귄 회전문 → 마지막 직선)
+// 카트 그랑프리: 난간 있는 차고 8자 한 바퀴씩, 3경기 합산 점수.
+// 방장이 모든 카트의 이동·충돌을 함께 계산한다. 내 화면은 입력을 즉시 예측하고 방장 상태로 보정한다.
+// SPACE 드리프트를 놓으면 충전에 비례한 부스트. 같은 층의 카트끼리 부딪혀 밀려난다.
 import { h, isTyping, AGAIN_INTRO } from '../util.js';
 import { avatar, nameTag } from '../ui.js';
+import { createRacePrediction } from './race-prediction.js';
 import { createBumperAudio } from './bumper-audio.js';
-import { buildTrack, newCar, stepCar, locate, botInput, gateAngle, pointAt, LAPS, CAR_R, SECTIONS } from './race-core.js';
+import { buildTrack, newCar, stepCar, locate, botInput, gateAngle, pointAt, LAPS, CAR_R, SECTIONS, KART, resolveKartContacts } from './race-core.js';
 
-const T = buildTrack();
+const T = buildTrack(true);
 const L = T.main.len;
 const CPS = SECTIONS.length - 1;  // 체크포인트 = 구간 시작 (출발 직선 빼고). 다 지나고 결승선을 넘으면 한 바퀴
 const INTRO = 4500;
 const LIGHT = 1000;               // 신호등 한 칸
 const READY = LIGHT * 3;          // 빨강 → 주황 → 초록(= 출발)
-const FINISH_WAIT = 20000;        // 첫 완주 뒤 이 안에 들어와야 완주
-const MAX_RACE = 5 * 60000;
+const FINISH_WAIT = 8000;        // 첫 완주 뒤 이 안에 들어와야 완주
+const MAX_RACE = 45000;
+const POINTS = [10, 8, 6, 5, 4, 3, 2, 1];
+const TRACK_NAMES = ["출발 직선", "첫 번째 코너", "헤어핀", "S자 코너", "고가 직선", "롱 코너", "마지막 코너", "결승 직선"];
 const FALSE_START = 1000;         // 부정출발 벌칙
 const SEND_EVERY = 100;
 const STEP = 1 / 60;
+const INPUT_LEASE = 600;
 const r2 = v => Math.round(v * 100) / 100;
 const fmt = ms => (ms == null ? '-' : `${Math.floor(ms / 60000)}:${((ms % 60000) / 1000).toFixed(1).padStart(4, '0')}`);
 
 /* ───────── 심판 (방장) ───────── */
 
-function carEntry(car) {
-  return { x: r2(car.x), y: r2(car.y), vx: r2(car.vx), vy: r2(car.vy), path: car.path, seg: car.seg, ms: r2(car.ms), dist: 0, lap: 0, cp: 0, spl: 0, sh: 0, jmp: 0, jf: 0 };
+function gridCars(roster) {
+  const start = pointAt(T.main, T.start);
+  const spacing = Math.min(2.2, (start.half - KART.radius - 0.1) * 2 / Math.max(1, roster.length - 1));
+  return Object.fromEntries(roster.map((p, i) => {
+    const car = newCar(T);
+    const lat = (i - (roster.length - 1) / 2) * spacing;
+    car.x -= start.ty * lat; car.y += start.tx * lat; car.lat = lat;
+    return [p.id, { ...car, dist: 0, lap: 0, cp: 0, spl: 0, sh: 0, jmp: 0, jf: 0, seq: 0, throttle: 0, steerIntent: 0, braking: false, held: false, inputAt: 0, t: 0 }];
+  }));
 }
 
 // 위치가 바뀔 때마다: 큰 길 거리(ms)로 체크포인트·결승선 통과를 센다
@@ -51,6 +60,7 @@ function advance(S, id, ms, t) {
       split(S, c, t);
       if (c.lap >= LAPS) {
         c.fin = Math.max(1, t - S.startAt);
+        Object.assign(c, { vx: 0, vy: 0, charge: 0, boostLeft: 0, dr: 0 });
         S.finishBy ??= t + FINISH_WAIT;
       }
     }
@@ -66,81 +76,78 @@ function split(S, c, t) {
   c.split = Math.round((t - S.firsts[key]) / 100) / 10;
 }
 
-function onCar(ctx, pid, data, now) {
+function onDrive(ctx, pid, data, now) {
   const S = ctx.state;
   const c = S.cars?.[pid];
-  if (!c || S.phase !== 'race') return false;
-  const t = Number.isFinite(data.t) ? Math.max(now - 1000, Math.min(now, data.t)) : now;
-  const x = Number(data.x);
-  const y = Number(data.y);
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
-  // 위치가 트랙 근처인지 보고, 말도 안 되는 속도(순간이동)는 무시. 물에서 다시 설 때(rs)만 뒤로 순간이동 허용
-  const at = locate(T, { path: data.path === 'branch' ? 'branch' : 'main', seg: Number(data.seg) || 0 }, x, y);
-  if (!at || at.d > 12) return false;
-  const dt = Math.max(0.05, (t - (c.t || t - 100)) / 1000);
-  if (!data.rs && Math.hypot(x - c.x, y - c.y) / dt > 45) return false;
-  if (c.path === 'main' && at.path === 'branch') c.sh++;
-  for (const e of Array.isArray(data.ev) ? data.ev.slice(0, 8) : []) {
-    if (e === 'splash') {
-      c.spl++;
-      if (at.path === 'main' && at.ms > T.jump.ramp - 5 && at.ms < T.jump.gap1 + 3) c.jf++;
-    }
-    if (e === 'land') c.jmp++;
-  }
-  Object.assign(c, { x: r2(x), y: r2(y), vx: r2(Number(data.vx) || 0), vy: r2(Number(data.vy) || 0), h: r2(Number(data.h) || 0), dr: data.dr ? 1 : 0, path: at.path, seg: at.seg, air: data.air ? 1 : 0, sp: data.sp ? 1 : 0, t });
-  advance(S, pid, at.ms, t);
+  if (!c || c.fin || !['ready', 'race'].includes(S.phase) || data.round !== S.round ||
+      S.roster.find(p => p.id === pid)?.bot || !ctx.isOnline(pid)) return false;
+  if (!Number.isSafeInteger(data.seq) || data.seq <= (c.seq || 0) ||
+      !Number.isFinite(data.throttle) || data.throttle < 0 || data.throttle > 1 ||
+      !Number.isFinite(data.steer) || data.steer < -1 || data.steer > 1 || typeof data.brake !== 'boolean' || typeof data.drift !== 'boolean') return false;
+  // Consume elapsed time under the previous input before installing this one.
+  if (S.phase === 'race') stepWorld(ctx, now);
+  if (c.fin) return true;
+  Object.assign(c, { throttle: data.throttle, steerIntent: data.steer, braking: data.brake, held: data.drift, seq: data.seq, inputAt: now });
+  if (S.phase === 'ready' && now < S.startAt && data.throttle > 0 && !data.brake) c.lockUntil = S.startAt + FALSE_START;
   return true;
 }
 
-// 봇 차: 방장이 같은 물리로 1/60초씩. 가끔 실수(핸들을 그대로 둠)해서 코너에서 빠지기도
-function stepBots(ctx, now) {
+// Shared host world: all drivers move once, then contacts resolve in the same 60Hz step.
+function stepWorld(ctx, now) {
   const S = ctx.state;
-  ctx.bots ||= new Map();
-  const from = ctx.botAt || now;
-  const stepMs = 1000 * STEP;
-  const steps = Math.min(30, Math.floor((now - from) / stepMs));
-  ctx.botAt = steps === 30 ? now : from + steps * stepMs; // 자투리 시간은 다음 틱으로 (봇이 느려지지 않게)
-  for (const p of S.roster) {
-    if (!p.bot || S.cars[p.id].fin) continue;
-    let b = ctx.bots.get(p.id);
-    if (!b) {
+  const end = Math.min(now, S.startAt + MAX_RACE, S.finishBy || Infinity);
+  let at = S.worldAt ?? S.startAt;
+  const count = Math.min(30, Math.floor((end - at + 0.00001) / (STEP * 1000)));
+  if (count <= 0) return false;
+  if (end - at > 500) at = end - count * STEP * 1000;
+  ctx.drivers ||= new Map();
+  for (let i = 0; i < count; i++) {
+    at += STEP * 1000;
+    const live = S.roster.filter(p => !S.cars[p.id].fin);
+    const prev = new Map(live.map(p => {
       const c = S.cars[p.id];
-      b = { car: { ...newCar(T), x: c.x, y: c.y, vx: c.vx, vy: c.vy, path: c.path, seg: c.seg, ms: c.ms }, mem: { short: Math.random() < 0.5 }, skill: 0.86 + Math.random() * 0.13 };
-      ctx.bots.set(p.id, b);
-    }
-    const { car, mem } = b;
-    const c = S.cars[p.id];
-    for (let i = 0; i < steps; i++) {
-      const t = from + (i + 1) * STEP * 1000;
+      return [p.id, { x: c.x, y: c.y, hx: c.hx, hy: c.hy, ms: c.ms }];
+    }));
+    for (const p of live) {
+      const c = S.cars[p.id];
       let input = null;
-      if (!car.sp && !car.air) {
-        // 초당 5%쯤 (실력 낮을수록 자주) 0.5~1초 동안 핸들을 그대로 둔다
-        if (t > (mem.blunderEnd || 0) && Math.random() < ((0.05 * STEP) * (1.6 - b.skill)) / 0.7) {
-          mem.blunderEnd = t + 500 + Math.random() * 500;
-          mem.hold = botInput(T, car, mem, b.skill);
-        }
-        input = t < (mem.blunderEnd || 0) ? mem.hold : botInput(T, car, mem, b.skill);
+      if (p.bot) {
+        let driver = ctx.drivers.get(p.id);
+        if (!driver) ctx.drivers.set(p.id, driver = { mem: { short: false }, skill: .88 + Math.random() * .1 });
+        input = botInput(T, c, driver.mem, driver.skill);
+      } else if (ctx.isOnline(p.id) && at - c.inputAt <= INPUT_LEASE && at >= (c.lockUntil || 0)) {
+        input = { throttle: c.throttle || 0, steer: c.steerIntent || 0, brake: !!c.braking, drift: !!c.held };
       }
-      const prevPath = car.path;
-      const ev = stepCar(T, car, input, STEP, t);
-      if (prevPath === 'main' && car.path === 'branch') c.sh++;
-      for (const e of ev) {
-        if (e === 'splash') {
-          c.spl++;
-          if (car.fall?.path === 'main' && car.fall.s > T.jump.ramp - 5 && car.fall.s < T.jump.gap1 + 3) c.jf++;
-        }
-        if (e === 'land') c.jmp++;
-      }
-      if (!car.sp && !car.air) advance(S, p.id, car.ms, t);
-      // 바퀴마다 지름길로 갈지 다시 정함
-      if (c.lap !== mem.lap) {
-        mem.lap = c.lap;
-        mem.short = Math.random() < 0.5;
-      }
-      if (c.fin) break;
+      if (p.bot) Object.assign(c, { throttle: input?.throttle || 0, steerIntent: input?.steer || 0, braking: !!input?.brake, held: !!input?.drift, inputAt: at });
+      if (!input) { c.charge = 0; c.driftHeld = false; }
+      const events = stepCar(T, c, input, STEP, at);
+      if (events.includes('splash')) c.spl++;
+      if (events.includes('land')) c.jmp++;
     }
-    Object.assign(c, { x: r2(car.x), y: r2(car.y), vx: r2(car.vx), vy: r2(car.vy), h: r2(Math.atan2(car.hy, car.hx)), dr: car.dr ? 1 : 0, path: car.path, seg: car.seg, air: car.air ? 1 : 0, sp: car.sp ? 1 : 0, t: now });
+    const impacts = resolveKartContacts(T, live.map(p => ({ id: p.id, car: S.cars[p.id], prev: prev.get(p.id) })), STEP);
+    for (const hit of impacts) {
+      const a = S.cars[hit.a], b = S.cars[hit.b];
+      if (at - Math.max(a.hitAt || 0, b.hitAt || 0) < 140) continue;
+      a.hitAt = b.hitAt = at;
+      S.fxNo = (S.fxNo || 0) + 1;
+      S.fx = [...(S.fx || []), { n: S.fxNo, at, ...hit }].slice(-12);
+    }
+    for (const p of live) {
+      const c = S.cars[p.id];
+      const place = locate(T, c, c.x, c.y);
+      if (place && !c.sp && !c.air) {
+        Object.assign(c, { path: place.path, seg: place.seg, s: place.s, lat: place.lat });
+        c.ms = prev.get(p.id).ms;
+        advance(S, p.id, place.ms, at);
+      }
+      c.t = at;
+      c.h = Math.atan2(c.hy, c.hx);
+      c.boost = c.boostLeft > 0 ? 1 : 0;
+    }
+    S.worldAt = at;
+    if (S.roster.every(p => S.cars[p.id].fin) || S.finishBy && at >= S.finishBy) break;
   }
+  return true;
 }
 
 function rank(S) {
@@ -156,24 +163,26 @@ function rank(S) {
 function finish(ctx) {
   const S = ctx.state;
   const order = rank(S);
-  const standings = Object.fromEntries(order.map(id => {
-    const c = S.cars[id];
-    return [id, c.fin ? 1e9 - c.fin : 1e6 + Math.max(-1e5, c.dist)];
-  }));
-  const titles = {};
-  const add = (id, t) => (titles[id] ||= []).push(t);
-  const win = S.cars[order[0]];
-  if (win?.fin) add(order[0], `🏁 우승 (${fmt(win.fin)})`);
-  const best = order.filter(id => S.cars[id].best).sort((a, b) => S.cars[a].best - S.cars[b].best)[0];
-  if (best) add(best, `⚡ 최고 랩 (${(S.cars[best].best / 1000).toFixed(1)}초)`);
-  const most = (key, min) => order.filter(id => S.cars[id][key] >= min).sort((a, b) => S.cars[b][key] - S.cars[a][key])[0];
-  const wet = most('spl', 2);
-  if (wet) add(wet, `🌊 입수왕 (${S.cars[wet].spl}번)`);
-  const short = most('sh', 2);
-  if (short) add(short, `🌉 지름길 장인 (${S.cars[short].sh}번)`);
-  const jumper = order.find(id => S.cars[id].fin && S.cars[id].jmp >= LAPS && !S.cars[id].jf);
-  if (jumper) add(jumper, '🛷 점프왕');
-  Object.assign(S, { order, standings, titles, phase: 'final', over: true });
+  S.points ||= {};
+  const earned = {};
+  order.forEach((id, i) => {
+    earned[id] = S.cars[id].fin || S.cars[id].dist > 5 ? POINTS[i] : 0;
+    S.points[id] = (S.points[id] || 0) + earned[id];
+  });
+  S.roundResults ||= [];
+  S.roundResults.push({ round: S.round, order, earned });
+  S.totalOrder = [...order].sort((a, b) => S.points[b] - S.points[a] || order.indexOf(a) - order.indexOf(b));
+  S.order = order;
+  if (S.round < 3) {
+    S.phase = 'intermission';
+    S.nextAt = ctx.now() + 5000;
+  } else {
+    S.order = S.totalOrder;
+    S.standings = Object.fromEntries(S.order.map((id, i) => [id, S.points[id] > 0 ? S.points[id] * 10 + S.order.length - i : 0]));
+    S.titles = { [S.order[0]]: ['🏁 우승', `🏆 ${S.points[S.order[0]]}점`] };
+    S.phase = 'final';
+    S.over = true;
+  }
   return true;
 }
 
@@ -205,37 +214,46 @@ const BOUNDS = (() => {
 const TAU = Math.PI * 2;
 // 몸통 방향 (라디안): 내 차는 hx·hy, 남의 차는 받은 h
 const heading = c => (c.hx !== undefined ? Math.atan2(c.hy, c.hx) : Number.isFinite(c.h) ? c.h : Math.atan2(c.vy || 0, c.vx || 1));
-const COLORS = { water: '#2f86d6', waterHi: '#5aa8eb', edge: '#14558f', ice: '#e8f4fd', snow: '#ffffff', wall: '#ffffff', bridge: '#b8bec7', rail: '#f8f9fa' };
+const COLORS = { water: '#344552', waterHi: '#425563', edge: '#202a36', ice: '#657382', snow: '#657382', wall: '#ffcf67', bridge: '#7b8998', rail: '#f8f9fa' };
 
 export default {
   id: 'race',
-  title: '범퍼카 그랑프리',
+  title: '카트 그랑프리',
   emoji: '🏁',
   tag: '액션',
   color: '#1c7ed6',
-  desc: '물 위 8자 얼음 트랙 2바퀴 레이스! 남의 차는 반투명 유령이라 부딪히지 않아요. 점프·헤어핀·회전문… 순수 실력 대결',
+  desc: '짧게 3번 달리는 카트 레이스! 스페이스로 드리프트, 놓으면 부스트. 3경기 합산 점수로 우승!',
   minPlayers: 2,
   maxPlayers: 8,
+  tickMs: 50,
 
   setup(ctx, prev) {
     const now = ctx.now();
-    const car = newCar(T);
     return {
-      phase: 'intro',
+      phase: 'intro', round: 1, points: Object.fromEntries(ctx.roster.map(p => [p.id, 0])), roundResults: [],
       introUntil: now + (prev ? AGAIN_INTRO : INTRO),
       again: !!prev,
-      cars: Object.fromEntries(ctx.roster.map(p => [p.id, carEntry(car)])),
+      cars: gridCars(ctx.roster), fx: [], fxNo: 0,
     };
   },
 
   onInput(ctx, { pid, type, data = {} }) {
-    if (type !== 'car') return false;
-    return onCar(ctx, pid, data, ctx.now());
+    if (type !== 'drive') return false;
+    return onDrive(ctx, pid, data, ctx.now());
   },
 
   tick(ctx) {
     const S = ctx.state;
     const now = ctx.now();
+    if (S.phase === 'intermission') {
+      if (now < S.nextAt) return false;
+      S.round++;
+      S.cars = gridCars(S.roster); S.fx = []; S.fxNo = 0;
+      S.firsts = {}; S.finishBy = null; S.order = S.roster.map(p => p.id);
+      S.phase = 'ready'; S.startAt = now + READY;
+      ctx.drivers = new Map(); S.worldAt = S.startAt;
+      return true;
+    }
     if (S.phase === 'intro') {
       if (now < S.introUntil) return false;
       Object.assign(S, { phase: 'ready', startAt: now + READY });
@@ -244,14 +262,15 @@ export default {
     if (S.phase === 'ready') {
       if (now < S.startAt) return false;
       S.phase = 'race';
-      ctx.botAt = S.startAt;
+      S.worldAt = S.startAt;
+      for (const c of Object.values(S.cars)) c.t = S.startAt;
       return true;
     }
     if (S.phase !== 'race') return false;
-    stepBots(ctx, now);
+    stepWorld(ctx, now);
     S.order = rank(S);
     const all = S.roster.every(p => S.cars[p.id].fin);
-    if (all || (S.finishBy && now >= S.finishBy) || now - S.startAt > MAX_RACE) return finish(ctx);
+    if (all || (S.finishBy && now >= S.finishBy) || now - S.startAt >= MAX_RACE) return finish(ctx);
     return true;
   },
 
@@ -268,11 +287,17 @@ export default {
     const mini = h('canvas', { class: 'rc-mini', width: 200, height: 150 });
     const overlay = h('div', { class: 'rc-overlay' });
     const fxBox = h('div', { class: 'rc-fx' });
+    const wheel = h('span', { class: 'rc-steering-wheel', 'aria-hidden': 'true' });
+    wheel.innerHTML = '<svg viewBox="0 0 48 48" width="38" height="38"><circle cx="24" cy="24" r="19" fill="none" stroke="currentColor" stroke-width="6"/><path d="M8 20L24 27 40 20M24 27V42" fill="none" stroke="currentColor" stroke-width="5"/><circle cx="24" cy="25" r="5" fill="currentColor"/></svg>';
+    const gasKey = h('span', { class: 'rc-pedal gas' }, h('kbd', {}, 'W / ↑'), '가속');
+    const brakeKey = h('span', { class: 'rc-pedal brake' }, h('kbd', {}, 'S / ↓'), '제동');
+    const steerLabel = h('span', { class: 'rc-steering-label' }, h('kbd', {}, 'A ←'), wheel, h('kbd', {}, '→ D'));
+    const driveHud = h('div', { class: 'rc-drivehud', hidden: true }, gasKey, steerLabel, brakeKey);
     const sound = h('button', { class: 'rc-sound', type: 'button', tabindex: '-1' });
     const soundLabel = () => { sound.textContent = audio.enabled ? '🔊' : '🔇'; };
     soundLabel();
     sound.addEventListener('click', () => { audio.toggle(); soundLabel(); sound.blur(); });
-    const stage = h('div', { class: 'rc-stage' }, canvas, mini, overlay, fxBox, sound);
+    const stage = h('div', { class: 'rc-stage' }, canvas, mini, overlay, fxBox, sound, driveHud);
     const box = h('div', { class: 'rc-box' }, top, stage);
     const side = h('aside', { class: 'side' });
     root.append(h('div', { class: 'rc' }, box, side));
@@ -286,8 +311,10 @@ export default {
     let drawnAt = 0;
     let acc = 0;
     let sentAt = 0;
-    let events = [];
-    let respawned = false;
+    let inputSeq = 0;
+    const prediction = createRacePrediction(T, me);
+    let seenFx = 0;
+    let impactFlashAt = 0;
     let falseStart = false;
     let lockUntil = 0;
     let started = false;
@@ -296,10 +323,11 @@ export default {
     let sideKey = '';
     let overlayKey = '';
     let seenFin = false;
+    let lastRound = null;
     let litLamp = -1;
-    const car = newCar(T);                      // 내 차 (내 화면이 계산)
-    const keys = { l: false, r: false, u: false, d: false };
-    const ghosts = new Map();                   // id → [{ t, x, y, vx, vy }]
+    let car = newCar(T);                        // 내 차와 상대 차를 같은 시각으로 예측
+    const keys = { l: false, r: false, u: false, d: false, drift: false };
+    const pressed = new Set();
     const parts = [];                           // 효과 알갱이
     const skids = [];                           // 미끄러진 자국 { x0, y0, x1, y1, layer, t } (뒷바퀴 둘)
     const skidAt = new Map();                   // id → 지난 뒷바퀴 자리
@@ -308,26 +336,39 @@ export default {
     const who = id => S?.roster.find(p => p.id === id) || { id, name: '?' };
     const mine = () => S?.cars?.[me];
     const racing = () => S?.phase === 'race';
-    const canDrive = () => racing() && !!mine() && api.now() >= Math.max(S.startAt, lockUntil);
 
-    const KEY = { ArrowLeft: 'l', KeyA: 'l', ArrowRight: 'r', KeyD: 'r', ArrowUp: 'u', KeyW: 'u', ArrowDown: 'd', KeyS: 'd' };
+    const KEY = { Space: 'drift', ArrowLeft: 'l', KeyA: 'l', ArrowRight: 'r', KeyD: 'r', ArrowUp: 'u', KeyW: 'u', ArrowDown: 'd', KeyS: 'd' };
     function onKey(e) {
-      if (isTyping(e)) return;
+      if (isTyping(e) && e.type !== 'keyup') return;
       const k = KEY[e.code];
       if (!k) return;
       e.preventDefault();
-      keys[k] = e.type === 'keydown';
+      if (e.type === 'keydown') pressed.add(e.code); else pressed.delete(e.code);
+      const next = [...pressed].some(code => KEY[code] === k);
+      if (keys[k] === next) return;
+      keys[k] = next;
       if (e.type === 'keydown') void audio.unlock();
       // 초록불 전에 누르면 부정출발
-      if (e.type === 'keydown' && S?.phase === 'ready' && !falseStart) {
+      if (S?.phase === 'ready' && keys.u && !keys.d && !falseStart) {
         falseStart = true;
         flash('🚫 부정출발! 1초 늦게 출발', 'bad');
       }
+      sendDrive(performance.now(), true);
     }
     window.addEventListener('keydown', onKey);
     window.addEventListener('keyup', onKey);
-    const onBlur = () => { keys.l = keys.r = keys.u = keys.d = false; };
+    function resetControls(send = true) {
+      pressed.clear();
+      keys.l = keys.r = keys.u = keys.d = keys.drift = false;
+      car.charge = 0; car.driftHeld = false;
+      if (send) sendDrive(performance.now(), true);
+    }
+    const onBlur = () => resetControls();
     window.addEventListener('blur', onBlur);
+    const onFocus = e => { if (isTyping(e)) onBlur(); };
+    const onVisibility = () => { if (document.hidden) onBlur(); };
+    window.addEventListener('focusin', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
 
     function resize() {
       const r = canvas.getBoundingClientRect();
@@ -345,15 +386,17 @@ export default {
       setTimeout(() => el.remove(), 1800);
     }
 
-    function sendCar(now) {
-      if (now - sentAt < SEND_EVERY && !events.length) return;
+    function rawInput() {
+      return { throttle: keys.u ? 1 : 0, steer: (keys.r ? 1 : 0) - (keys.l ? 1 : 0), brake: keys.d, drift: keys.drift };
+    }
+
+    function sendDrive(now, force = false) {
+      if (!S || !['ready', 'race'].includes(S.phase) || !mine() || mine().fin || now - sentAt < SEND_EVERY && !force) return;
       sentAt = now;
-      api.send('car', {
-        x: r2(car.x), y: r2(car.y), vx: r2(car.vx), vy: r2(car.vy), h: r2(Math.atan2(car.hy, car.hx)), dr: car.dr ? 1 : 0, path: car.path, seg: car.seg,
-        air: car.air ? 1 : 0, sp: car.sp ? 1 : 0, rs: respawned ? 1 : 0, t: api.now(), ev: events,
-      });
-      events = [];
-      respawned = false;
+      const input = rawInput();
+      const t = api.now();
+      prediction.recordInput({ ...input, seq: ++inputSeq }, t);
+      api.send('drive', { round: S.round, seq: inputSeq, ...input });
     }
 
     // 내 차 물리: 1/60초 고정 걸음 (노트북 속도와 상관없이 같은 결과)
@@ -362,9 +405,12 @@ export default {
       while (acc >= STEP * 1000) {
         acc -= STEP * 1000;
         const t = api.now() - acc;
-        const input = canDrive() && !mine()?.fin ? { x: (keys.r ? 1 : 0) - (keys.l ? 1 : 0), y: (keys.d ? 1 : 0) - (keys.u ? 1 : 0) } : null;
-        const ev = stepCar(T, car, car.sp || car.air || !canDrive() ? null : input, STEP, t);
-        for (const e of ev) onEvent(e);
+        const result = prediction.step(STEP, t);
+        car = prediction.car(me) || car;
+        for (const e of result.events) onEvent(e);
+        for (const hit of result.impacts) {
+          if (hit.a === me || hit.b === me) cam.shake = Math.max(cam.shake, Math.min(.6, hit.strength / 35));
+        }
         // 꼬리가 빠지면(드리프트): 끼익 + 얼음 가루
         if (car.dr && !wasDrift) audio.skid();
         wasDrift = car.dr;
@@ -374,19 +420,16 @@ export default {
 
     function onEvent(e) {
       if (e === 'splash') {
-        events.push('splash');
         splashes.push({ x: car.x, y: car.y, t: performance.now() });
         audio.impact(true, true);
         cam.shake = 0.6;
         flash('🌊 풍덩!', 'bad');
       } else if (e === 'respawn') {
-        respawned = true;
+        car.charge = 0;
       } else if (e === 'land') {
-        events.push('land');
         cam.shake = 0.35;
         audio.impact(false, true);
-      } else if (e === 'jump') {
-        events.push('jump');
+
       } else if (e === 'wall' || e === 'gate') {
         cam.shake = Math.max(cam.shake, 0.3);
         audio.impact(e === 'gate', true);
@@ -396,23 +439,9 @@ export default {
       }
     }
 
-    // 남의 차: 받은 위치를 0.18초 늦게 이어 그린다 (반투명 유령이라 티 안 남)
-    function ghostAt(id, now) {
-      const buf = ghosts.get(id);
-      if (!buf?.length) return null;
-      const t = now - 180;
-      let a = buf[0];
-      for (const b of buf) {
-        if (b.t >= t) {
-          if (b === a || b.t === a.t) return b;
-          const f = (t - a.t) / (b.t - a.t);
-          const dh = ((((b.h || 0) - (a.h || 0)) % TAU) + TAU * 1.5) % TAU - Math.PI;
-          return { ...b, x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, h: (a.h || 0) + dh * f };
-        }
-        a = b;
-      }
-      const dt = Math.min(0.3, (t - a.t) / 1000);
-      return a.sp || a.air ? a : { ...a, x: a.x + a.vx * dt, y: a.y + a.vy * dt };
+    // All karts come from one predicted world at the same timestamp, including contact resolution.
+    function ghostAt(id) {
+      return prediction.car(id);
     }
 
     /* 그리기 */
@@ -463,7 +492,7 @@ export default {
       }
       for (const run of runs) {
         const sec = SECTIONS[run.sec];
-        g.fillStyle = layer ? COLORS.bridge : sec.surface === 'snow' ? COLORS.snow : COLORS.ice;
+        g.fillStyle = layer ? COLORS.bridge : COLORS.ice;
         band(run.pts, 0);
         g.fill();
       }
@@ -477,11 +506,17 @@ export default {
         }
         g.setLineDash([]);
       }
-      // 벽: 눈벽(바깥쪽)·난간
+      if (!layer) {
+        g.setLineDash([1.8, 2.6]); g.strokeStyle = 'rgba(255,255,255,.26)'; g.lineWidth = .13;
+        for (const run of runs) { poly(run.pts); g.stroke(); }
+        g.setLineDash([]);
+      }
+      // 벽: 타이어 색상의 보호 난간
+
       for (const run of RUNS) {
         if (run.layer !== layer) continue;
         const sec = SECTIONS[run.sec];
-        const walls = layer ? 'both' : sec.walls;
+        const walls = 'both';
         if (!walls) continue;
         g.strokeStyle = layer ? COLORS.rail : COLORS.wall;
         g.lineWidth = layer ? 0.35 : 0.7;
@@ -490,12 +525,17 @@ export default {
           if (pts.length < 2) continue;
           poly(edgeLine(pts, side, layer ? 0.1 : 0.35));
           g.stroke();
+          if (!layer) {
+            g.setLineDash([1.1, 1.1]); g.strokeStyle = '#e86656'; g.lineWidth = .48; g.stroke();
+            g.setLineDash([]); g.strokeStyle = COLORS.wall; g.lineWidth = .7;
+          }
         }
       }
     }
 
     function drawFeatures(now) {
       // 지름길: 좁은 나무 다리 (양옆 물, 옆바람). 양 끝은 깔때기처럼 넓다 (물리와 같은 폭)
+      if (!T.sprint) {
       const b = T.branch.pts;
       g.fillStyle = '#8b5a2b';
       band(b, 0.3);
@@ -543,6 +583,7 @@ export default {
       poly(gap);
       g.stroke();
       g.lineCap = 'round';
+      }
       // 부스트 발판: 노란 화살표
       for (const bo of T.boosts) {
         for (let k = 0; k < 3; k++) {
@@ -647,30 +688,50 @@ export default {
         g.fill();
       }
       g.save();
-      g.globalAlpha = ghost ? 0.45 : 1;
+      g.globalAlpha = 1;
       g.translate(c.x, c.y);
-      g.scale(air, air);
+      g.scale(air * 1.2, air * 1.2);
       g.rotate(heading(c));
-      // 몸통 (앞뒤로 살짝 긴 범퍼카) — 미끄러지면 가는 방향과 몸통이 어긋나 보인다
-      g.fillStyle = '#343a40';
-      g.beginPath();
-      g.ellipse(0, 0, CAR_R + 0.26, CAR_R + 0.08, 0, 0, Math.PI * 2);
-      g.fill();
-      g.fillStyle = p.color || '#adb5bd';
-      g.beginPath();
-      g.ellipse(0, 0, CAR_R + 0.12, CAR_R - 0.05, 0, 0, Math.PI * 2);
-      g.fill();
-      g.fillStyle = 'rgba(255,255,255,.55)';
-      g.beginPath();
-      g.arc(-0.15, -0.2, 0.25, 0, Math.PI * 2);
-      g.fill();
-      g.fillStyle = ghost ? '#ffffff' : '#ffd43b';
-      g.beginPath();
-      g.moveTo(1.2, 0);
-      g.lineTo(0.5, -0.42);
-      g.lineTo(0.5, 0.42);
-      g.closePath();
-      g.fill();
+      const color = p.color || '#4dabf7';
+      const charge = ghost ? c.charge || 0 : car.charge || 0;
+      const boosting = ghost ? c.boost : car.boostLeft > 0;
+      const rect = (x, y, w, h, r, fill) => {
+        g.fillStyle = fill; g.beginPath(); g.roundRect(x, y, w, h, r); g.fill();
+      };
+      // Four exposed tires, chassis, front bumper and rear engine: a kart silhouette.
+      rect(-1.08, -0.66, 2.2, 1.4, 0.35, 'rgba(0,0,0,.25)');
+      rect(-0.75, -0.58, 1.4, 1.16, 0.12, '#202a36');
+      for (const x of [-0.72, 0.65]) for (const y of [-0.69, 0.69]) {
+        g.save(); g.translate(x, y);
+        if (x > 0) g.rotate(c.steer || 0);
+        rect(-0.32, -0.19, 0.64, 0.38, 0.09, '#141b24');
+        rect(-0.17, -0.13, 0.09, 0.26, 0.02, '#566474');
+        g.restore();
+      }
+      rect(-0.65, -0.43, 1.65, 0.86, 0.22, color);
+      rect(0.88, -0.67, 0.3, 1.34, 0.1, color);
+      rect(0.94, -0.49, 0.12, 0.98, 0.03, '#f8f9fa');
+      rect(-1.02, -0.38, 0.38, 0.76, 0.07, '#2c3544');
+      for (let j = 0; j < 3; j++) rect(-0.96 + j * 0.1, -0.3, 0.035, 0.6, 0.01, '#8995a3');
+      rect(-0.48, -0.32, 0.64, 0.64, 0.18, '#19222e');
+      // Helmet and visor, with a steering wheel in front of the driver.
+      g.fillStyle = '#fff4dc'; g.beginPath(); g.arc(-0.12, 0, 0.29, 0, TAU); g.fill();
+      rect(-0.02, -0.23, 0.16, 0.46, 0.06, '#263a52');
+      g.strokeStyle = '#18202b'; g.lineWidth = 0.08;
+      g.beginPath(); g.arc(0.34, 0, 0.17, 0, TAU); g.stroke();
+      rect(0.48, -0.2, 0.29, 0.4, 0.04, '#ffffff');
+      g.fillStyle = '#172331'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = 'bold .28px system-ui';
+      g.fillText(String((S?.roster.findIndex(v => v.id === p.id) ?? 0) + 1), 0.63, 0);
+      if (boosting) {
+        g.fillStyle = '#ff922b'; g.beginPath(); g.moveTo(-1, -0.25); g.lineTo(-2.3 - Math.random() * 0.7, 0); g.lineTo(-1, 0.25); g.fill();
+        g.fillStyle = '#fff3bf'; g.beginPath(); g.moveTo(-1, -0.12); g.lineTo(-1.9, 0); g.lineTo(-1, 0.12); g.fill();
+      }
+      if (charge >= 0.45) {
+        g.fillStyle = charge >= 1.15 ? '#ff922b' : '#4ddcff';
+        for (const y of [-0.75, 0.75]) {
+          g.beginPath(); g.arc(-0.85 - Math.random() * 0.15, y, 0.14 + Math.random() * 0.1, 0, TAU); g.fill();
+        }
+      }
       g.restore();
       // 이름표 (화면 크기 그대로)
       if (ghost) {
@@ -721,7 +782,7 @@ export default {
       g.fillStyle = COLORS.waterHi;
       for (let x = Math.floor(vx0 / 6) * 6; x < vx0 + W / cam.z + 6; x += 6) {
         for (let y = Math.floor(vy0 / 5) * 5; y < vy0 + H / cam.z + 5; y += 5) {
-          const o = Math.sin((x * 0.7 + y + now / 400)) * 0.8;
+          const o = 0;
           g.fillRect(x + o + ((y / 5) % 2) * 3, y, 1.4, 0.18);
         }
       }
@@ -793,6 +854,10 @@ export default {
         }
       }
       drawMini();
+      driveHud.hidden = !racing();
+      gasKey.classList.toggle('active', keys.u && !keys.d);
+      brakeKey.classList.toggle('active', keys.d);
+      wheel.style.transform = `rotate(${(car.steer || 0) * 180 / Math.PI * 8}deg)`;
     }
 
     // 미니맵: 트랙 전체와 모두의 위치
@@ -815,7 +880,7 @@ export default {
       mg.strokeStyle = '#d9b382';
       mg.lineWidth = 2;
       mg.beginPath();
-      T.branch.pts.forEach((p, i) => (i ? mg.lineTo(p.x, p.y) : mg.moveTo(p.x, p.y)));
+      (T.sprint ? [] : T.branch.pts).forEach((p, i) => (i ? mg.lineTo(p.x, p.y) : mg.moveTo(p.x, p.y)));
       mg.stroke();
       const t = api.now();
       for (const p of S?.roster || []) {
@@ -844,9 +909,10 @@ export default {
       }
       if (racing() && mine()) {
         drive(dt);
-        sendCar(now);
+        sendDrive(now);
       }
       lights();
+      renderTop();
       // 화면이 보이는데 그리기가 멈춰 있으면(가려진 창 등) 여기서라도 그린다
       if (!document.hidden && now - drawnAt > 200) draw(now);
     }, 16);
@@ -872,45 +938,53 @@ export default {
       const c = mine();
       const order = S.order || S.roster.map(p => p.id);
       const pos = order.indexOf(me) + 1;
-      const lap = c ? Math.min(LAPS, c.lap + 1) : 1;
-      const key = JSON.stringify([S.phase, c?.lap, c?.fin, pos, c?.split, Math.floor((api.now() - (S.startAt || 0)) / 100)]);
+      const key = JSON.stringify([S.round, S.points?.[me], Math.floor((car.charge || 0) * 10), car.boostLeft > 0, S.phase, c?.lap, c?.fin, pos, c?.split, Math.floor((api.now() - (S.startAt || 0)) / 100)]);
       if (key === topKey) return;
       topKey = key;
       const time = c?.fin ?? (S.phase === 'race' ? Math.max(0, api.now() - S.startAt) : 0);
       top.replaceChildren(...[
-        h('span', { class: 'rc-lap' }, c?.fin ? '🏁 완주!' : S.phase === 'final' ? '미완주' : `${lap}/${LAPS}바퀴`),
+        h('span', { class: 'rc-lap' }, c?.fin ? '🏁 완주!' : S.phase === 'final' ? '미완주' : `ROUND ${S.round}/3`),
         S.phase === 'final' && !c?.fin ? null : h('span', { class: 'rc-time' }, fmt(time)),
         c ? h('span', {}, `${pos}등 / ${S.roster.length}명`) : null,
         c?.split != null && !c.fin ? h('span', { class: c.split > 0 ? 'rc-behind' : 'rc-ahead' }, c.split > 0 ? `선두와 +${c.split}초` : '구간 선두!') : null,
-        c?.best ? h('span', { class: 'muted' }, `최고 랩 ${(c.best / 1000).toFixed(1)}초`) : null,
+        h('span', { class: 'muted' }, `합계 ${S.points?.[me] || 0}점 · ${Math.round(Math.hypot(car.vx, car.vy) * 3.6)} km/h`),
+        h('span', { class: 'rc-hot' }, car.boostLeft > 0 ? '🔥 부스트!' : (car.charge || 0) >= 1.15 ? '🟠 놓으면 강력 부스트!' : (car.charge || 0) >= .45 ? '🔵 놓으면 부스트!' : `SPACE 드리프트 ${Math.round((car.charge || 0) / 1.5 * 100)}%`),
         S.finishBy && S.phase === 'race' ? h('span', { class: 'rc-hot' }, `⏱ ${Math.max(0, Math.ceil((S.finishBy - api.now()) / 1000))}초 안에 결승선!`) : null,
       ].filter(Boolean));
     }
 
     function renderOverlay() {
-      const key = `${S.phase}:${!!mine()?.fin}`;
+      const key = `${S.round}:${S.phase}:${!!mine()?.fin}`;
       if (key === overlayKey) return;
       overlayKey = key;
       overlay.replaceChildren();
       if (S.phase === 'intro') {
         overlay.append(h('div', { class: 'rc-card' },
-          h('h2', {}, '🏁 범퍼카 그랑프리'),
+          h('h2', {}, '🏎️ 카트 그랑프리'),
           S.again ? null : h('ul', { class: 'rules big' },
-            h('li', {}, `8자 얼음 트랙 ${LAPS}바퀴 먼저 돌면 우승! 남의 차는 반투명 유령이라 안 부딪혀요`),
-            h('li', {}, '방향키(WASD) = 그 방향으로 밀기 · 반대 방향 = 브레이크'),
-            h('li', {}, '길 밖은 물 🌊 (빠지면 1.2초 뒤 조금 뒤에서 다시). 하얀 눈벽·난간·회전문은 튕기기만 해요'),
-            h('li', {}, '🛷 점프대는 빠르게 똑바로 · 🌉 갈림길 좁은 다리는 짧지만 옆바람 · ⚡ 노란 화살표 = 부스트'),
-            h('li', {}, '신호등이 초록이 되기 전에 누르면 부정출발 (1초 늦게)'))));
+            h('li', {}, '차고 8자 코스 한 바퀴씩, 3경기 합산 점수로 승부!'),
+            h('li', {}, 'W / ↑ = 가속 · S / ↓ = 브레이크 · A D / ← → = 핸들'),
+            h('li', {}, '코너에서 SPACE 꾹 = 드리프트 · 놓으면 부스트!'),
+            h('li', {}, '파란 불꽃은 짧게, 주황 불꽃은 길게 가속! 벽에 박으면 충전이 사라져요'),
+            h('li', {}, '초록불 전 가속하면 부정출발! 핸들은 미리 돌릴 수 있어요'))));
       }
       if (S.phase === 'ready') {
         overlay.append(h('div', { class: 'tc-light rc-light' }, h('i', { class: 'lamp red' }), h('i', { class: 'lamp amber' }), h('i', { class: 'lamp green' })));
+      }
+      if (S.phase === 'intermission') {
+        const result = S.roundResults?.at(-1);
+        overlay.append(h('div', { class: 'rc-card' },
+          h('h2', {}, `ROUND ${S.round} 종료 · 5초 후 다시 출발!`),
+          h('p', {}, '모두 출발선에서 새로 시작 · 3경기 합산 승부'),
+          h('ol', { class: 'podium' }, (S.totalOrder || []).map((id, i) => h('li', {},
+            h('span', {}, `${i + 1}위`), nameTag(who(id), me), h('b', {}, `${S.points[id]}점 (+${result?.earned?.[id] || 0})`))))));
       }
       if (S.phase === 'final') {
         // 점수 대신 기록 (등수 계산용 standings는 큰 숫자라 보여 주지 않는다)
         const rows = (S.order || []).map((id, i) => h('li', { class: `r${i + 1}${id === me ? ' me' : ''}` },
           h('span', { class: 'medal' }, ['🥇', '🥈', '🥉'][i] || i + 1),
           nameTag(who(id), me),
-          h('b', {}, S.cars[id].fin ? fmt(S.cars[id].fin) : '미완주')));
+          h('b', {}, `${S.points[id]}점`)));
         overlay.append(h('div', { class: 'rc-card' }, h('h2', {}, `🏁 ${who(S.order?.[0]).name} 우승!`), h('ol', { class: 'podium' }, rows)));
       }
     }
@@ -919,47 +993,61 @@ export default {
       const order = S.order || S.roster.map(p => p.id);
       const key = JSON.stringify(order.map(id => {
         const c = S.cars[id];
-        return [id, c.lap, c.cp, c.fin, c.spl];
+        return [id, S.round, S.points?.[id], c.lap, c.cp, c.fin, c.spl];
       }));
       if (key === sideKey) return;
       sideKey = key;
       side.replaceChildren(
-        h('h3', {}, '순위'),
+        h('h3', {}, `ROUND ${S.round}/3 · 실시간 순위`),
         h('ol', { class: 'tw-bag rc-rank' }, order.map(id => {
           const c = S.cars[id];
           const p = who(id);
           return h('li', { class: id === me ? 'now' : '' }, avatar(p), h('span', {}, p.name),
-            h('em', {}, c.fin ? `🏁 ${fmt(c.fin)}` : `${Math.min(LAPS, c.lap + 1)}바퀴 · ${SECTIONS[c.cp]?.name || ''}`));
+            h('em', {}, c.fin ? `🏁 ${fmt(c.fin)}` : `${S.points?.[id] || 0}점 · ${TRACK_NAMES[c.cp] || ''}`));
         })),
         h('h3', {}, '조작'),
         h('ul', { class: 'rules' },
-          h('li', {}, '←↑→↓ (WASD) = 그 방향으로 밀기, 같이 누르면 대각선'),
-          h('li', {}, '반대 방향 = 브레이크. 얼음이라 코너 앞에서 미리!'),
-          h('li', {}, '빠를 때 확 꺾으면 바깥으로 밀리고 꼬리가 빠져요 (드리프트)'),
+          h('li', {}, 'W / ↑ = 차가 향하는 앞으로 가속 · S / ↓ = 브레이크'),
+          h('li', {}, 'A D / ← → = 핸들. 떼면 중앙으로 돌아와요'),
+          h('li', {}, '고속에서는 핸들이 덜 꺾여요. 코너 전 감속!'),
+          h('li', {}, 'SPACE 꾹 = 드리프트, 놓으면 모은 만큼 부스트'),
+          h('li', {}, '🔵 짧은 부스트 → 🟠 강력 부스트. 직선에서는 충전되지 않아요'),
           h('li', {}, '오른쪽 위 미니맵 = 트랙 전체')),
-        h('h3', {}, '트랙'),
-        h('ul', { class: 'rules' }, SECTIONS.map((sec, i) => h('li', {}, `${i + 1}. ${sec.name}`))));
+        h('h3', {}, '차고 8자 · 카트끼리 밀고 추월!'),
+        h('ul', { class: 'rules' }, TRACK_NAMES.map((name, i) => h('li', {}, `${i + 1}. ${name}`))));
     }
 
     return {
       update({ state }) {
-        const prevPhase = S?.phase;
+        const prevRound = lastRound;
         S = state;
-        // 남의 차 위치 받아 두기
-        for (const p of S.roster) {
-          if (p.id === me) continue;
-          const c = S.cars?.[p.id];
-          if (!c) continue;
-          const buf = ghosts.get(p.id) || [];
-          const t = c.t || api.now();
-          if (!buf.length || buf[buf.length - 1].t !== t) buf.push({ t, x: c.x, y: c.y, vx: c.vx, vy: c.vy, h: c.h, dr: c.dr, seg: c.seg, path: c.path, air: c.air, sp: c.sp });
-          while (buf.length > 12) buf.shift();
-          ghosts.set(p.id, buf);
+        if (prevRound !== S.round) {
+          lastRound = S.round;
+          Object.assign(car, newCar(T), { charge: 0, boostLeft: 0, driftHeld: false });
+          resetControls(false); prediction.clear(); parts.length = 0; skids.length = 0; skidAt.clear();
+          started = false; falseStart = false; seenFin = false; lockUntil = 0;
+          inputSeq = mine()?.seq || 0; seenFx = 0;
+          acc = 0; sentAt = 0; wasDrift = 0; litLamp = -1;
+          topKey = sideKey = overlayKey = '';
+          cam.x = car.x; cam.y = car.y;
         }
-        // 처음 들어왔거나 다시 들어왔으면 내 차를 방장이 아는 자리로
+        const synced = prediction.sync(S, api.now());
+        car = prediction.car(me) || car;
+        if (synced) acc = 0;
         const c = mine();
-        if (c && (!prevPhase || (S.phase !== 'race' && !racing()))) {
-          Object.assign(car, { x: c.x, y: c.y, vx: c.vx || 0, vy: c.vy || 0, path: c.path || 'main', seg: c.seg || 0, ms: c.ms });
+        if (c) inputSeq = Math.max(inputSeq, c.seq || 0);
+        for (const fx of S.fx || []) {
+          if (fx.n <= seenFx) continue;
+          seenFx = fx.n;
+          if (api.now() - fx.at > 800) continue;
+          for (let i = 0; i < 12; i++) parts.push({ x: fx.x, y: fx.y, vx: (Math.random() - .5) * 12, vy: (Math.random() - .5) * 12, life: .35, c: i % 2 ? '#fff3bf' : '#ff922b' });
+          if (fx.a === me || fx.b === me) {
+            cam.shake = Math.min(.7, fx.strength / 35);
+            audio.impact(fx.strength > 14, true);
+            if (fx.strength > 6 && api.now() - impactFlashAt > 600) {
+              impactFlashAt = api.now(); flash('💥 카트 충돌!');
+            }
+          }
         }
         if (c?.fin && !seenFin) {
           seenFin = true;
@@ -973,6 +1061,8 @@ export default {
         renderSide();
       },
       unmount() {
+        resetControls();
+        prediction.clear();
         cancelAnimationFrame(raf);
         clearInterval(ticker);
         ro.disconnect();
@@ -980,6 +1070,8 @@ export default {
         window.removeEventListener('keydown', onKey);
         window.removeEventListener('keyup', onKey);
         window.removeEventListener('blur', onBlur);
+        window.removeEventListener('focusin', onFocus);
+        document.removeEventListener('visibilitychange', onVisibility);
       },
     };
   },
