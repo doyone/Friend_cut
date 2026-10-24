@@ -439,7 +439,7 @@ export default {
     let predTrack = T;
     let seenFx = 0;
     let impactFlashAt = 0;
-    let cam = { x: 0, y: 0, z: 18, shake: 0 };
+    let cam = { x: 0, y: 0, z: 18, goal: 18, vx: 0, vy: 0, at: null, shake: 0 };
     let topKey = '';
     let sideKey = '';
     let overlayKey = '';
@@ -1317,23 +1317,35 @@ export default {
         const id = (S.order || []).find(x => !S.cars[x].fin) || S.order?.[0];
         focus = (id && id !== me ? ghostAt(id, t) : null) || car;
       }
-      const sp = Math.hypot(focus.vx || 0, focus.vy || 0);
+      // 속도는 충돌·드리프트·방장 보정으로 프레임마다 조금씩 출렁인다. 날것으로 줌을 정하면 매 프레임 미세하게
+      // 확대·축소돼 가는 선·점선이 지지직거린다 → 걸러진 속도로, 줌은 단계(1px/m 넘게 달라질 때만)로 바꾸고
+      // 부드럽게 다가간 뒤 딱 멈춘다. 모든 따라가기는 프레임 간격과 상관없이 같은 빠르기.
+      const fdt = cam.at == null ? 0 : Math.min(0.1, Math.max(0, (now - cam.at) / 1000));
+      cam.at = now;
+      const ease = tau => 1 - Math.exp(-fdt / tau);
+      cam.vx += ((focus.vx || 0) - cam.vx) * ease(0.35);
+      cam.vy += ((focus.vy || 0) - cam.vy) * ease(0.35);
+      const sp = Math.hypot(cam.vx, cam.vy);
       const wantZ = Math.max(11.5, 21 - sp * 0.35) * Math.min(1, Math.max(0.6, Math.min(W, H) / 520));
-      cam.z += (wantZ - cam.z) * 0.06;
-      cam.x += (focus.x + (focus.vx || 0) * 0.5 - cam.x) * 0.12;
-      cam.y += (focus.y + (focus.vy || 0) * 0.5 - cam.y) * 0.12;
-      cam.shake *= 0.88;
+      if (Math.abs(wantZ - cam.goal) > 1) cam.goal = wantZ;
+      cam.z += (cam.goal - cam.z) * ease(0.3);
+      if (Math.abs(cam.goal - cam.z) < 0.03) cam.z = cam.goal;
+      cam.x += (focus.x + cam.vx * 0.5 - cam.x) * ease(0.13);
+      cam.y += (focus.y + cam.vy * 0.5 - cam.y) * ease(0.13);
+      cam.shake = cam.shake > 0.01 ? cam.shake * Math.exp(-fdt / 0.13) : 0;
       const sx = (Math.random() - 0.5) * cam.shake;
       const sy = (Math.random() - 0.5) * cam.shake;
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
       g.fillStyle = themeOf().bg;
       g.fillRect(0, 0, W, H);
-      g.translate(W / 2, H / 2);
+      // 화면 픽셀에 맞춰 옮긴다 (선이 픽셀 사이를 미끄러지며 번쩍이지 않게). 화면 = (ox, oy) + 세상 좌표 × 줌
+      const ox = Math.round((W / 2 + (sx - cam.x) * cam.z) * dpr) / dpr;
+      const oy = Math.round((H / 2 + (sy - cam.y) * cam.z) * dpr) / dpr;
+      g.translate(ox, oy);
       g.scale(cam.z, cam.z);
-      g.translate(-cam.x + sx, -cam.y + sy);
       // 물결 (예전 와이드 8자)
-      const vx0 = cam.x - W / 2 / cam.z;
-      const vy0 = cam.y - H / 2 / cam.z;
+      const vx0 = -ox / cam.z;
+      const vy0 = -oy / cam.z;
       if (themeOf().ripple) {
         g.fillStyle = COLORS.waterHi;
         for (let x = Math.floor(vx0 / 6) * 6; x < vx0 + W / cam.z + 6; x += 6) {
@@ -1371,8 +1383,8 @@ export default {
       if (darkMine) {
         g.save();
         g.setTransform(dpr, 0, 0, dpr, 0, 0);
-        const cx = W / 2 + (car.x - cam.x) * cam.z;
-        const cy = H / 2 + (car.y - cam.y) * cam.z;
+        const cx = ox + car.x * cam.z;
+        const cy = oy + car.y * cam.z;
         const lx = cx + car.hx * cam.z * 3.5;
         const ly = cy + car.hy * cam.z * 3.5;
         const glow = g.createRadialGradient(lx, ly, cam.z * 1.5, lx, ly, cam.z * 7);
@@ -1656,7 +1668,7 @@ export default {
           inputSeq = mine()?.seq || 0; seenFx = 0;
           acc = 0; sentAt = 0; wasDrift = 0; litLamp = -1;
           topKey = sideKey = overlayKey = '';
-          cam.x = car.x; cam.y = car.y;
+          Object.assign(cam, { x: car.x, y: car.y, vx: 0, vy: 0 });
         }
         const synced = prediction.sync(S, api.now());
         car = prediction.car(me) || car;
