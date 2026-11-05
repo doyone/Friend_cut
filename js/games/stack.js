@@ -27,10 +27,11 @@ const TAP = 0.15;             // 톡 쳤을 때 (칸의 1/4)
 const TOL = 0.05;             // 기준선 판정 여유: 물리로 몇 cm 가라앉는 건 봐준다
 const VIEW_MAX = 16;          // 화면에 한 번에 보이는 최대 높이 (m). 이보다 높아지면 꼭대기 쪽만 따라간다
 // 기준선 상승폭: 끝난 차례 수(t)에 따라 RISE_EVERY 차례마다 RISE_STEP씩 커진다 (최대 RISE_MAX)
-// 처음엔 0.3 → +0.15 → 최대 2.1이었는데, 관전해 보니 너무 빨리 올라가서 약 1/3 줄임 (10차례 동안 6m → 4m)
+// 처음엔 0.3 → 2차례마다 +0.15 → 최대 2.1이었는데, 관전해 보니 너무 빨리 올라가서 약 1/3 줄였고 (10차례 동안 6m → 4m),
+// 한 번 더 '3차례마다'로 늦춤 (10차례 동안 3.2m)
 const RISE_START = 0.2;
 const RISE_STEP = 0.1;
-const RISE_EVERY = 2;
+const RISE_EVERY = 3;
 const RISE_MAX = 1.5;
 const Q = Math.PI / 2;
 

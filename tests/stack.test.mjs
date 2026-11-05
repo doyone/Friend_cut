@@ -35,10 +35,10 @@ function norm(list) {
 const cellsOf = (k, f) => defOf(k, f).parts.map(p => [p.at[0] / 0.6, p.at[1] / 0.6]);
 const rot = list => list.map(([x, y]) => [-y, x]);
 
-test('기준선 상승폭: 처음엔 조금, 2차례마다 커지고, 끝이 있다', () => {
+test('기준선 상승폭: 처음엔 조금, 3차례마다 커지고, 끝이 있다', () => {
   assert.equal(riseOf(0), 0.2);
-  assert.equal(riseOf(1), 0.2);
-  assert.equal(riseOf(2), 0.3);
+  assert.equal(riseOf(2), 0.2);
+  assert.equal(riseOf(3), 0.3);
   assert.ok(riseOf(10) > riseOf(4));
   assert.equal(riseOf(1000), riseOf(500));
   assert.ok(riseOf(1000) <= 1.5);
