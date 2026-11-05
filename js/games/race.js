@@ -343,6 +343,9 @@ export default {
   minPlayers: 2,
   maxPlayers: 8,
   tickMs: 50,
+  // 상태는 0.05초에 한 번만 보낸다. 예전엔 입력(사람마다 초당 10번)이 올 때마다 전체 상태를 다시 보내서
+  // 1명 + 봇 3명에도 초당 38번, 8명이면 180번쯤 → 다른 친구들 화면이 렉으로 못 할 지경이었다
+  commitMs: 50,
 
   setup(ctx, prev) {
     const now = ctx.now();

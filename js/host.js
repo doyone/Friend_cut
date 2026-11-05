@@ -159,7 +159,17 @@ export class GameHost {
     } catch (e) {
       console.error('[host] tick', e);
     }
-    if (changed) this.commit();
+    // step은 박자 말고도 입력이 올 때마다(그리고 그 입력을 지울 때 한 번 더) 돈다. 그때마다 상태 전체를 보내면
+    // 사람 수만큼 전송이 불어나서(카트 8명이면 초당 180번쯤) 다른 사람 화면이 렉으로 못 할 지경이 된다.
+    // 그래서 commitMs를 정한 게임은 바뀐 걸 모아 두었다가 그 간격마다 한 번만 보낸다.
+    if (changed) this.dirty = true;
+    const gap = game.commitMs || 0;
+    const t = performance.now();
+    if (this.dirty && (!gap || t - (this.committedAt ?? -Infinity) >= gap - 8)) {
+      this.dirty = false;
+      this.committedAt = t;
+      this.commit();
+    }
     this.flush();
     if (ctx.state.over && !this.awardStarted) {
       this.awardStarted = true;
