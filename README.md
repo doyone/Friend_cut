@@ -18,6 +18,7 @@
 | 🚪 마지막 문 | 2~8명 | 불길에 쫓기며 방마다 문 고르기. 지름길은 1명만, 몰린 문은 아무도 못 지나감. 마지막 1.5초는 🌑 정전이라 가는 척하다 바꾸기 |
 | ☁️ 하늘끝까지 | 2~8명 | 모두 동시에 각자 물건을 쌓아 하늘 끝(10m)에 먼저 닿아 3초 버티면 우승. 30초마다 제일 낮은 사람 컷, 😈 택배로 친구 다음 짐을 볼링공으로 |
 | 🧩 독박쌓기 | 2~8명 | 펜토미노 12종을 돌아가며 쌓기. 빨간 기준선이 차례마다 올라가요(처음엔 조금, 갈수록 많이). 내가 놓은 뒤 탑이 선보다 낮거나 블록이 떨어지면 독박, 독박은 탑을 넘겨준 앞 사람 킬 |
+| ⌨️ 순발력 타자 | 2~8명 | 3·2·1 뒤에 뜨는 알파벳·숫자·자음·모음의 키를 제일 빨리 누르기. 알파벳은 그냥 그 키, 자음·모음은 두벌식 자리(ㄱ = R, ㅣ = L). 틀린 키는 -1, 8라운드. 흰 바탕에 검은 글씨라 뒤에서 봐도 티 안 나요 |
 
 기획과 앞으로 만들 게임은 [기획서.md](기획서.md)에 있어요.
 
@@ -118,8 +119,9 @@ js/
     door.js        마지막 문
     sky.js         하늘끝까지 (+ sky-core.js 탑 물리: 내 화면과 방장(봇)이 같이 씀)
     stack.js       독박쌓기 (블록 그림·순서 가방은 tower.js 것을 같이 씀)
+    quick.js       순발력 타자 (반응속도 대결 화면 스타일을 같이 씀)
   vendor/          planck.js 물리 엔진 (독박 타워·독박빼기·독박 시소·하늘끝까지·독박쌓기가 CDN 없이 씀)
-tests/             규칙 테스트: node --test tests/bumper.test.mjs tests/professor.test.mjs tests/seesaw.test.mjs tests/door.test.mjs tests/race.test.mjs tests/race-track.test.mjs tests/race-collision.test.mjs tests/race-network.test.mjs tests/race-prediction.test.mjs tests/kart-maps.test.mjs tests/stack.test.mjs
+tests/             규칙 테스트: node --test tests/bumper.test.mjs tests/professor.test.mjs tests/seesaw.test.mjs tests/door.test.mjs tests/race.test.mjs tests/race-track.test.mjs tests/race-collision.test.mjs tests/race-network.test.mjs tests/race-prediction.test.mjs tests/kart-maps.test.mjs tests/stack.test.mjs tests/host.test.mjs tests/quick.test.mjs
 database.rules.json  Firebase 보안 규칙
 ```
 
