@@ -604,6 +604,19 @@ button, input { font: inherit; color: inherit; }
 .tw-bag li.dead { opacity: .4; text-decoration: line-through; }
 .tw-bag li.dead .avatar { filter: grayscale(1); }
 
+/* ── 독박쌓기 ── (독박 타워 화면을 같이 쓰고 기준선·착지 그림자만 더. SVG 안 글자 크기 px = m) */
+.pz-line-bar { stroke: var(--red); stroke-width: .07; stroke-dasharray: .32 .18; }
+.pz-line-label { font-size: .42px; font-weight: 900; fill: var(--red-ink); stroke: #fff; stroke-width: .14px; paint-order: stroke fill; }
+.pz-line.safe .pz-line-bar { stroke: var(--green); }
+.pz-line.safe .pz-line-label { fill: var(--green-ink); }
+.pz-ghost rect { fill: none; stroke-width: .05; stroke-dasharray: .14 .1; }
+.pz-ghost.ok rect { stroke: var(--green-ink); fill: rgba(46, 204, 113, .12); }
+.pz-ghost.bad rect { stroke: var(--red); fill: rgba(231, 76, 60, .1); }
+.pz-chip { padding: 2px 10px; border-radius: 999px; font-size: 13px; }
+.pz-chip.ok { background: #e6f8ee; color: var(--green-ink); }
+.pz-chip.bad { background: #fdecea; color: var(--red-ink); }
+.pz-pred { min-height: 1.3em; }
+
 /* ── 범퍼카 난투 ── (SVG 안 글자 크기 px = 경기장 m) */
 .bc { display: grid; grid-template-columns: 1fr 300px; gap: 18px; }
 .bc-box {

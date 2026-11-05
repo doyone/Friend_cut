@@ -52,9 +52,9 @@ function arcParts(r, w, a0, a1, n) {
   const cy = all.reduce((t, [, y]) => t + y, 0) / all.length;
   return polys.map(poly => ({ poly: poly.map(([x, y]) => P(x - cx, y - cy)) }));
 }
-// 4칸 블록: 칸 좌표로 정의하고 무게중심을 0,0에 맞춘다
+// 4칸 블록: 칸 좌표로 정의하고 무게중심을 0,0에 맞춘다 (독박쌓기 펜토미노도 이걸로 만든다)
 const CELL = 0.6;
-function cells(list) {
+export function cells(list) {
   const cx = list.reduce((s, [x]) => s + x, 0) / list.length;
   const cy = list.reduce((s, [, y]) => s + y, 0) / list.length;
   return list.map(([x, y]) => ({ box: [CELL / 2, CELL / 2], at: P((x - cx) * CELL, (y - cy) * CELL) }));
@@ -473,8 +473,9 @@ function partEl(part, attrs, inset = 0) {
 // 블록 그림: 바깥 테두리만 굵게(조각 이음새는 안 보이게) → 위는 밝고 아래는 어두운 광택을 블록 전체에 한 번 →
 // 안쪽 밝은 테두리. 4칸 블록(칸 블록)은 칸마다 벽돌처럼 나눠 그린다. 광택 그라데이션(#tw-shine)은 화면 svg에 있다
 let clipNo = 0;
-function shapeGroup(s, color) {
-  const def = shapeOf(s);
+const shapeGroup = (s, color) => pieceGroup(shapeOf(s), color);
+// 모양 정의(def: parts·cells·r·look)로 그린다. 독박쌓기도 같이 쓴다 (화면 svg에 #tw-shine 그라데이션이 있어야 함)
+export function pieceGroup(def, color) {
   const fill = safeColor(def.look?.fill || color);
   const all = (attrs, inset) => def.parts.map(part => partEl(part, attrs, inset));
   const clip = `tw-clip-${++clipNo}`;
