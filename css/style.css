@@ -303,6 +303,43 @@ button, input { font: inherit; color: inherit; }
 .qk-pad.done .rx-sub { color: var(--green-ink); }
 .qk-pad.early .rx-sub { color: var(--red-ink); }
 
+/* ── 눈치 게임 ── (반응속도 대결 화면을 같이 씀) 꺼진 전구가 깜빡이며 켜진다 */
+.nc-pad { cursor: default; }
+.nc-pad.shaking { animation: shake .1s linear 4; }
+.nc-pad.board .nc-main { display: none; }
+.nc-main { display: grid; justify-items: center; gap: 12px; width: 100%; padding: 20px; }
+.nc-status { font-family: var(--display); font-size: clamp(34px, 5vw, 60px); line-height: 1.1; min-height: 1.2em; }
+.nc-bulbs { display: flex; justify-content: center; align-items: flex-end; flex-wrap: wrap; gap: clamp(6px, 2vw, 22px); min-height: 130px; }
+.nc-bulb { display: grid; justify-items: center; gap: 6px; width: 76px; }
+.nc-bulb svg { width: 66px; height: 80px; overflow: visible; }
+.nc-glass { fill: #e9ecef; stroke: #495057; stroke-width: 3; transition: fill .25s; }
+.nc-base { fill: #adb5bd; stroke: #495057; stroke-width: 3; }
+.nc-thread { stroke: #495057; stroke-width: 2; fill: none; }
+.nc-num { font-family: var(--display); font-size: 24px; fill: #adb5bd; text-anchor: middle; dominant-baseline: central; transition: fill .25s; }
+.nc-bulb.on .nc-glass { fill: #ffd43b; }
+.nc-bulb.on .nc-num { fill: #5c3c00; }
+.nc-bulb.on svg { filter: drop-shadow(0 0 12px rgba(255, 196, 0, .85)); animation: nc-on .55s ease-out; }
+.nc-bulb.last .nc-glass { fill: #ff8787; }
+.nc-bulb.last svg { filter: drop-shadow(0 0 10px rgba(231, 76, 60, .7)); }
+.nc-bulb.flick .nc-glass { animation: nc-flick .45s steps(1) 1; }
+.nc-bulb.bang svg { animation: nope .3s; }
+.nc-bulb.bang .nc-glass { fill: #ffc9c9; }
+.nc-who { display: flex; align-items: center; gap: 4px; min-height: 26px; font-size: 13px; font-weight: 800; white-space: nowrap; }
+.nc-who .avatar { width: 22px; height: 22px; }
+.nc-timer { width: min(360px, 90%); min-height: 12px; }
+.nc-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.nc-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: var(--pill); font-weight: 800; font-size: 13px; }
+.nc-chip .avatar { width: 22px; height: 22px; }
+.nc-chip.me { box-shadow: inset 0 0 0 2px var(--line); }
+.nc-chip.pending { box-shadow: inset 0 0 0 2px #fab005; }
+.nc-chip.lit { background: #fff3bf; }
+.nc-chip.bang, .nc-chip.lose { background: #fdecea; color: var(--red-ink); }
+.nc-hint { font-weight: 800; color: var(--muted-2); min-height: 1.4em; }
+.nc-life { font-style: normal; font-size: 11px; letter-spacing: -2px; }
+/* 꺼져 있다가: 깜빡 → 꺼짐 → 확 켜짐 */
+@keyframes nc-on { 0% { opacity: .35; } 20% { opacity: 1; } 35% { opacity: .45; } 55% { opacity: 1; } 100% { opacity: 1; } }
+@keyframes nc-flick { 0% { fill: #fff3bf; } 50% { fill: #e9ecef; } 75% { fill: #fff3bf; } 100% { fill: #e9ecef; } }
+
 .podium { list-style: none; padding: 0; margin: 18px auto 12px; max-width: 480px; display: grid; gap: 8px; text-align: left; }
 .podium li { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-radius: 10px; background: var(--pill); font-weight: 800; }
 .podium li.r1 { background: #fff6d6; box-shadow: inset 0 0 0 2px var(--yellow); font-size: 20px; padding: 16px; }
