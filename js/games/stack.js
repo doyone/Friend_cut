@@ -1,6 +1,7 @@
-// 독박쌓기: 펜토미노(5칸 블록) 12종을 돌아가며 받침대 위에 쌓는다. 블록은 물리로 미끄러지고 무너진다(planck.js).
+// 독박쌓기: 펜토미노(5칸 블록) 12종을 돌아가며 바닥 위에 쌓는다. 블록은 물리로 미끄러지고 무너진다(planck.js).
 // 빨간 기준선이 차례마다 저절로 올라간다 — 처음엔 조금, 갈수록 많이(판이 너무 길어지지 않게).
-// 내가 떨군 블록까지 다 멈췄을 때 탑 꼭대기가 기준선보다 낮거나, 블록이 하나라도 받침대 밖으로 떨어지면 독박(탈락).
+// 내가 떨군 블록까지 다 멈췄을 때 탑 꼭대기가 기준선보다 낮으면 독박(탈락). 바닥은 화면 끝까지 평평한 마루라
+// 블록이 떨어질 데는 없다 (무너지면 꼭대기가 낮아져서 기준선에 걸린다).
 // 독박이 나면 기준선을 남은 탑 높이로 다시 내린다 → 다음 사람은 늘 '이번 상승폭'만 올리면 되는 선을 받는다.
 // 블록 순서는 12종 가방(12개가 한 번씩 섞여 나옴)이고 NEXT에 다음 사람 블록이 보인다:
 // 앞 사람은 다음 사람 블록을 보고, 그 블록으로는 올라가기 힘든 꼭대기를 남길 수 있다.
@@ -15,24 +16,27 @@ const INTRO_TIME = 5000;
 const RESULT_TIME = 1400;     // 통과·독박 결과를 잠깐 보여 주고 다음 차례 (그사이 기준선이 올라가는 게 보임)
 const SETTLE_MAX = 5000;      // 떨군 뒤 이만큼 지나면 거의 멈춘 건 그 자리에 세우고 판정
 const SETTLE_HARD = 9000;     // 아직 날아다니는 게 있어도 이때는 무조건 판정
-const PLATFORM_W = 6;         // 받침대 폭 (10칸)
-const PLATFORM_H = 0.6;
+// 바닥: 화면 끝까지 평평한 마루. 예전엔 폭 6m 받침대라 끝으로 빠지면 독박이었는데, 빠지는 일 없이 기준선만 보게 바꿈 (사용자 결정)
+const FLOOR_HALF = 40;        // 물리 바닥 반폭 (m): 화면(약 ±7m)보다 훨씬 넓어서 굴러가도 안 떨어진다
+const FLOOR_H = 0.6;
 const GRAVITY = 15;           // 독박 타워처럼 묵직하게 (실제의 1.5배)
 const DROP_GAP = 0.6;         // 떨구는 높이: 블록 맨 아래가 그 자리(블록 폭) 가장 높은 곳보다 이만큼 위
 const FRICTION = 0.85;        // 블록끼리 마찰: 플라스틱 블록처럼 잘 붙게 (독박 타워는 0.7)
 const FALL_Y = -2;            // 이 아래로 내려가면 떨어진 것
-const X_LIMIT = 4.2;          // 조준 좌우 한계 (받침대 밖으로 조금 삐져나오게 놓을 수는 있다)
+const X_LIMIT = 4.2;          // 조준 좌우 한계 (화면 가운데 쪽에서 쌓게)
 const MOVE_SPEED = 4;         // 꾹 눌렀을 때 초당
 const TAP = 0.15;             // 톡 쳤을 때 (칸의 1/4)
 const TOL = 0.05;             // 기준선 판정 여유: 물리로 몇 cm 가라앉는 건 봐준다
 const VIEW_MAX = 16;          // 화면에 한 번에 보이는 최대 높이 (m). 이보다 높아지면 꼭대기 쪽만 따라간다
 // 기준선 상승폭: 끝난 차례 수(t)에 따라 RISE_EVERY 차례마다 RISE_STEP씩 커진다 (최대 RISE_MAX)
 // 처음엔 0.3 → 2차례마다 +0.15 → 최대 2.1이었는데, 관전해 보니 너무 빨리 올라가서 약 1/3 줄였고 (10차례 동안 6m → 4m),
-// 한 번 더 '3차례마다'로 늦춤 (10차례 동안 3.2m)
-const RISE_START = 0.2;
+// 한 번 더 '3차례마다'로 늦췄다가 (10차례 동안 3.2m), 초반이 너무 느려서 0.3m에서 시작하고 4차례마다로 바꿈
+// (6차례 동안 1.5m → 2m, 24차례째 쌓인 높이는 그대로, 그 뒤엔 조금 느림).
+// 바닥을 넓혀 떨어지는 독박이 없어진 뒤 "0.1씩만 더" → 모든 차례 +0.1m (0.4m에서 시작, 최대 1.6m)
+const RISE_START = 0.4;
 const RISE_STEP = 0.1;
-const RISE_EVERY = 3;
-const RISE_MAX = 1.5;
+const RISE_EVERY = 4;
+const RISE_MAX = 1.6;
 const Q = Math.PI / 2;
 
 const r3 = v => Math.round(v * 1000) / 1000;
@@ -99,9 +103,9 @@ function cellBoxes(def, x, y, a) {
 
 const topOfBody = b => Math.max(...cellBoxes(defOf(b.k, b.f), b.x, b.y, b.a).map(c => c.hi));
 
-// 받침대 + 쌓인 블록의 칸들 = 위에서 떨어지는 블록이 닿을 수 있는 면
+// 바닥 + 쌓인 블록의 칸들 = 위에서 떨어지는 블록이 닿을 수 있는 면
 export function solidsOf(S) {
-  const out = [{ l: -PLATFORM_W / 2, r: PLATFORM_W / 2, top: 0 }];
+  const out = [{ l: -FLOOR_HALF, r: FLOOR_HALF, top: 0 }];
   for (const b of S.bodies || []) {
     for (const c of cellBoxes(defOf(b.k, b.f), b.x, b.y, b.a)) out.push({ l: c.l, r: c.r, top: c.hi });
   }
@@ -113,7 +117,7 @@ export function spawnY(S, k, f, x, a, solids = solidsOf(S)) {
   const mine = cellBoxes(defOf(k, f), x, 0, a);
   const l = Math.min(...mine.map(c => c.l));
   const r = Math.max(...mine.map(c => c.r));
-  let top = -PLATFORM_H;
+  let top = -FLOOR_H;
   for (const s of solids) if (s.l < r && s.r > l) top = Math.max(top, s.top);
   return r3(top + DROP_GAP - Math.min(...mine.map(c => c.lo)));
 }
@@ -129,7 +133,7 @@ export function landing(S, k, f, x, a, solids = solidsOf(S)) {
   for (const c of mine) {
     for (const s of solids) if (s.l < c.r - EPS && s.r > c.l + EPS) y = Math.max(y, s.top - c.lo);
   }
-  if (y === -Infinity) return null; // 아래에 아무것도 없음 (받침대 밖 허공)
+  if (y === -Infinity) return null; // 아래에 아무것도 없음 (바닥 끝 밖: 조준 범위 안에선 안 생김)
   let cl = Infinity;
   let cr = -Infinity;
   for (const c of mine) {
@@ -163,7 +167,7 @@ function makeSim(S) {
   const { World, Vec2, Box } = planck;
   const world = new World({ gravity: new Vec2(0, -GRAVITY) });
   const ground = world.createBody();
-  ground.createFixture(new Box(PLATFORM_W / 2, PLATFORM_H / 2, new Vec2(0, -PLATFORM_H / 2), 0), { friction: 0.9 });
+  ground.createFixture(new Box(FLOOR_HALF, FLOOR_H / 2, new Vec2(0, -FLOOR_H / 2), 0), { friction: 0.9 });
   const sim = { world, bodies: new Map(), meta: new Map() };
   // 이어받은 탑은 잠든 상태로 복원해야 혼자 흔들리지 않는다
   for (const b of S.bodies || []) addBody(sim, b, false);
@@ -238,7 +242,7 @@ function stepFall(ctx, now) {
   }
   for (const [id, body] of [...sim.bodies]) {
     const p = body.getPosition();
-    if (p.y > FALL_Y && Math.abs(p.x) < 14) continue;
+    if (p.y > FALL_Y && Math.abs(p.x) < FLOOR_HALF) continue; // 바닥이 넓어서 실제론 거의 안 생긴다
     sim.world.destroyBody(body);
     sim.bodies.delete(id);
     sim.meta.delete(id);
@@ -433,7 +437,7 @@ export default {
   emoji: '🧩',
   tag: '우정파괴',
   color: '#7048e8',
-  desc: '펜토미노 12종을 돌아가며 쌓아요. 빨간 기준선이 차례마다 올라가요. 내가 놓은 뒤 탑이 선보다 낮거나 블록이 떨어지면 독박!',
+  desc: '펜토미노 12종을 돌아가며 쌓아요. 빨간 기준선이 차례마다 올라가요. 내가 놓은 뒤 탑 꼭대기가 선보다 낮으면 독박!',
   minPlayers: 2,
   maxPlayers: 8,
 
@@ -525,10 +529,16 @@ export default {
     const previewG = svg('g', { class: 'tw-preview' }, guide, previewPiece);
     const lineText = svg('text', { class: 'pz-line-label', transform: 'translate(-6.75 0.14) scale(1,-1)' });
     const lineG = svg('g', { class: 'pz-line' }, svg('line', { class: 'pz-line-bar', x1: -30, y1: 0, x2: 30, y2: 0 }), lineText);
-    const platform = svg('g', {},
-      svg('rect', { x: -0.35, y: -9, width: 0.7, height: 9 - PLATFORM_H, fill: '#34495e' }),
-      svg('rect', { x: -PLATFORM_W / 2, y: -PLATFORM_H, width: PLATFORM_W, height: PLATFORM_H, rx: 0.08, fill: '#34495e', stroke: '#2c3e50', 'stroke-width': 0.08 }),
-      svg('rect', { x: -PLATFORM_W / 2 + 0.06, y: -0.16, width: PLATFORM_W - 0.12, height: 0.12, rx: 0.04, fill: '#4f6b85' }));
+    // 바닥: 화면 끝까지 이어지는 나무 마루 (판자 무늬 #pz-planks, 위쪽 모서리만 밝게)
+    const platform = svg('g', { class: 'pz-floor' },
+      svg('rect', { x: -FLOOR_HALF, y: -14, width: FLOOR_HALF * 2, height: 14, fill: 'url(#pz-planks)' }),
+      svg('rect', { x: -FLOOR_HALF, y: -0.12, width: FLOOR_HALF * 2, height: 0.12, fill: '#e3b583' }),
+      svg('line', { x1: -FLOOR_HALF, y1: 0, x2: FLOOR_HALF, y2: 0, stroke: '#7a4f2c', 'stroke-width': 0.04 }));
+    // 판자 두 줄이 한 무늬: 줄마다 이음새가 엇갈린다 (좌표는 위가 +y인 월드 기준)
+    const planks = svg('pattern', { id: 'pz-planks', patternUnits: 'userSpaceOnUse', width: 2.4, height: 1.2 },
+      svg('rect', { width: 2.4, height: 0.6, fill: '#c7965f' }),
+      svg('rect', { y: 0.6, width: 2.4, height: 0.6, fill: '#bd8a53' }),
+      svg('path', { d: 'M0 0H2.4M0 0.6H2.4M1.6 0V0.6M0.4 0.6V1.2', stroke: '#8f6038', 'stroke-width': 0.03, fill: 'none' }));
     // 블록 광택 (독박 타워 그림과 같은 #tw-shine)
     const shine = svg('linearGradient', { id: 'tw-shine', x1: 0, y1: 0, x2: 0, y2: 1 },
       svg('stop', { offset: 0, 'stop-color': '#000', 'stop-opacity': 0.22 }),
@@ -536,7 +546,7 @@ export default {
       svg('stop', { offset: 0.8, 'stop-color': '#fff', 'stop-opacity': 0.28 }),
       svg('stop', { offset: 1, 'stop-color': '#fff', 'stop-opacity': 0.5 }));
     const stage = svg('svg', { class: 'tw-svg', preserveAspectRatio: 'xMidYMax meet' },
-      svg('defs', {}, shine),
+      svg('defs', {}, shine, planks),
       svg('g', { transform: 'scale(1,-1)' }, platform, bodiesG, ghostG, lineG, previewG));
     const fx = h('div', { class: 'tw-fx' });
     const nextBox = h('div', { class: 'tw-next', hidden: true });
@@ -690,7 +700,7 @@ export default {
           ghostG.setAttribute('transform', `translate(${p.x} ${L.y}) rotate(${(p.a * 180) / Math.PI})`);
         }
         if (predEl) {
-          predEl.textContent = !L ? '⚠️ 받침대 밖이에요 (떨어짐)'
+          predEl.textContent = !L ? '⚠️ 바닥 밖이에요'
             : L.top >= S.line - TOL ? `예상 꼭대기 ${m1(Math.max(L.top, S.top))} ✅ 기준선 넘음${L.stable ? '' : ' · 😬 기울어질 듯'}`
               : `예상 꼭대기 ${m1(Math.max(L.top, S.top))} ❌ ${m1(S.line - Math.max(L.top, S.top))} 모자람`;
         }
@@ -698,7 +708,7 @@ export default {
         previewG.style.display = 'none';
         ghostG.style.display = 'none';
       }
-      // 카메라: 탑이나 기준선이 높아지면 위로. 처음엔 받침대까지 다 보이다가, 16m보다 높이 봐야 하면
+      // 카메라: 탑이나 기준선이 높아지면 위로. 처음엔 바닥까지 다 보이다가, 16m보다 높이 봐야 하면
       // 꼭대기 쪽만 따라 올라간다 (탑이 10m를 넘어도 블록이 너무 작아져서 조준이 힘들어지지 않게)
       const want = Math.max(9, Math.max(S.top || 0, S.line || 0) + 5.5);
       camTop += (want - camTop) * 0.08;
@@ -782,9 +792,9 @@ export default {
         return h('div', { class: 'bt-act' },
           h('div', { class: 'bt-act-title' }, '🧩 독박쌓기'),
           S.again ? null : h('ul', { class: 'rules big' },
-            h('li', {}, '돌아가며 받침대 위에 펜토미노(5칸 블록)를 하나씩 떨궈요. 12종이 한 바퀴씩 섞여 나오고 NEXT에 다음 사람 블록이 보여요'),
+            h('li', {}, '돌아가며 바닥 위에 펜토미노(5칸 블록)를 하나씩 떨궈요. 12종이 한 바퀴씩 섞여 나오고 NEXT에 다음 사람 블록이 보여요'),
             h('li', {}, '빨간 기준선이 차례마다 올라가요. 내가 놓은 뒤 탑 꼭대기가 기준선보다 낮으면 독박!'),
-            h('li', {}, '블록이 하나라도 떨어져도 독박 · 독박 나면 기준선은 남은 탑 높이로 다시 맞춰져요'),
+            h('li', {}, '바닥이 넓어서 떨어질 데는 없지만, 탑이 무너지면 꼭대기가 낮아져서 기준선에 걸려요 · 독박 나면 기준선은 남은 탑 높이로 다시 맞춰져요'),
             h('li', {}, '기준선은 처음엔 조금씩, 갈수록 많이 올라가요'),
             h('li', {}, '독박은 탑을 넘겨준 앞 사람의 킬 (다음 사람 블록을 보고 꼭대기를 괴롭게 남겨 보세요)'),
             h('li', {}, '← → 이동 · ↑ ↓ 90° 돌리기 · Shift 뒤집기 · 스페이스 떨구기')),

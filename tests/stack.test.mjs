@@ -35,13 +35,13 @@ function norm(list) {
 const cellsOf = (k, f) => defOf(k, f).parts.map(p => [p.at[0] / 0.6, p.at[1] / 0.6]);
 const rot = list => list.map(([x, y]) => [-y, x]);
 
-test('기준선 상승폭: 처음엔 조금, 3차례마다 커지고, 끝이 있다', () => {
-  assert.equal(riseOf(0), 0.2);
-  assert.equal(riseOf(2), 0.2);
-  assert.equal(riseOf(3), 0.3);
+test('기준선 상승폭: 처음엔 조금, 4차례마다 커지고, 끝이 있다', () => {
+  assert.equal(riseOf(0), 0.4);
+  assert.equal(riseOf(3), 0.4);
+  assert.equal(riseOf(4), 0.5);
   assert.ok(riseOf(10) > riseOf(4));
   assert.equal(riseOf(1000), riseOf(500));
-  assert.ok(riseOf(1000) <= 1.5);
+  assert.ok(riseOf(1000) <= 1.6);
 });
 
 test('블록은 12종 가방: 12개마다 모두 한 번씩', () => {
@@ -62,7 +62,7 @@ test('펜토미노 12종은 5칸이고, 뒤집기가 필요 없는 모양 목록
   }
 });
 
-test('빈 받침대에 놓으면 착지 예상과 실제 물리가 같다', () => {
+test('빈 바닥에 놓으면 착지 예상과 실제 물리가 같다', () => {
   for (const [k, a] of [['P', 0], ['U', 0], ['I', 0], ['L', Math.PI / 2]]) {
     const g = newGame(3);
     const S = g.ctx.state;
@@ -101,16 +101,17 @@ test('기준선에 못 미치면 독박: 앞 사람 킬, 기준선은 남은 탑
   assert.equal(g.kills.length, 1);
 });
 
-test('받침대 밖으로 떨어뜨리면 독박 (블록 추락)', () => {
+test('바닥이 화면 끝까지 평평해서 조준 끝에 놓아도 안 떨어진다', () => {
   const g = newGame(3);
   const who = g.ctx.state.turn;
   g.ctx.state.piece = 'X';
   g.dropNow(4.2);
   const S = g.ctx.state;
-  assert.equal(S.lastResult.ok, false);
-  assert.ok(S.lastResult.fell >= 1);
-  assert.ok(!S.alive.includes(who));
-  assert.equal((S.bodies || []).length, 0);
+  assert.equal(S.lastResult.fell, 0);
+  assert.equal(S.lastResult.ok, true);
+  assert.ok(S.alive.includes(who));
+  assert.equal(S.bodies.length, 1);
+  assert.ok(Math.abs(S.bodies[0].x - 4.2) < 0.1 && Math.abs(S.bodies[0].y - 0.9) < 0.05, `x ${S.bodies[0].x} y ${S.bodies[0].y}`);
 });
 
 test('봇끼리 한 판: 끝까지 가고, 차례 시작 때 필요한 높이는 늘 이번 상승폭 안', () => {

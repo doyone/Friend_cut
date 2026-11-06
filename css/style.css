@@ -626,6 +626,7 @@ button, input { font: inherit; color: inherit; }
 .pz-chip.ok { background: #e6f8ee; color: var(--green-ink); }
 .pz-chip.bad { background: #fdecea; color: var(--red-ink); }
 .pz-pred { min-height: 1.3em; }
+.pz .tw-stage { background: #f5efe4; } /* 나무 마루 위 따뜻한 벽 (독박 타워의 하늘색 대신) */
 
 /* ── 범퍼카 난투 ── (SVG 안 글자 크기 px = 경기장 m) */
 .bc { display: grid; grid-template-columns: 1fr 300px; gap: 18px; }
