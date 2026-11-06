@@ -18,17 +18,19 @@ function newGame(n = 3) {
   };
 }
 
-test('키: 알파벳은 그 키, 숫자는 키패드도, 자음·모음은 두벌식 자리', () => {
+test('키: 알파벳은 그 키, 자음·모음은 두벌식 자리, 숫자는 안 나옴', () => {
   assert.equal(keyOf('A'), 'KeyA');
-  assert.equal(keyOf('5'), 'Digit5');
-  assert.equal(normCode('Numpad5'), 'Digit5');
-  for (const [ch, code] of [['ㄱ', 'KeyR'], ['ㅎ', 'KeyG'], ['ㅋ', 'KeyZ'], ['ㅏ', 'KeyK'], ['ㅣ', 'KeyL'], ['ㅔ', 'KeyP'], ['ㅡ', 'KeyM']]) {
+  for (const [ch, code] of [['ㄱ', 'KeyR'], ['ㅎ', 'KeyG'], ['ㅋ', 'KeyZ'], ['ㅏ', 'KeyK'], ['ㅣ', 'KeyL'], ['ㅓ', 'KeyJ'], ['ㅔ', 'KeyP'], ['ㅡ', 'KeyM']]) {
     assert.equal(keyOf(ch), code, ch);
   }
   for (const kind of KINDS) for (const ch of kind.chars) assert.ok(isAnswerKey(keyOf(ch)), ch);
-  // 모양이 헷갈리는 I·O·0·1은 안 나온다
+  // 숫자는 안 나오고, 모양이 헷갈리는 I·O도 안 나온다
   const all = KINDS.flatMap(k => k.chars);
-  for (const ch of ['I', 'O', '0', '1']) assert.ok(!all.includes(ch), ch);
+  assert.deepEqual(KINDS.map(k => k.id), ['letter', 'consonant', 'vowel']);
+  for (const ch of ['I', 'O', ...'0123456789']) assert.ok(!all.includes(ch), ch);
+  // 숫자 키(키패드 포함)는 눌러도 답으로는 치니까 틀린 키가 된다
+  assert.equal(normCode('Numpad5'), 'Digit5');
+  assert.ok(isAnswerKey('Digit5'));
   assert.ok(!isAnswerKey('ShiftLeft') && !isAnswerKey('Space') && !isAnswerKey('Enter'));
 });
 

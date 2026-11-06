@@ -1,4 +1,4 @@
-// 순발력 타자: 3 · 2 · 1 카운트다운 뒤 화면에 글자 하나(알파벳·숫자·자음·모음)가 뜨면 그 키를 제일 빨리 누르는 사람이 이긴다.
+// 순발력 타자: 3 · 2 · 1 카운트다운 뒤 화면에 글자 하나(알파벳·자음·모음)가 뜨면 그 키를 제일 빨리 누르는 사람이 이긴다.
 // 알파벳은 대문자로 보여 주지만 그냥 그 키만 누르면 된다(Shift 필요 없음). 자음·모음은 두벌식 자판 자리(ㄱ = R, ㅏ = K).
 // 키는 e.code(자판의 물리적인 자리)로 보니까 한/영 상태와 상관없다.
 // 글자는 카운트다운이 시작될 때 미리 보내 두고, 화면이 서버 시각(revealAt)에 맞춰 다 같이 보여 준다.
@@ -24,10 +24,9 @@ const JAMO_KEYS = {
   'ㄱ': 'R', 'ㄴ': 'S', 'ㄷ': 'E', 'ㄹ': 'F', 'ㅁ': 'A', 'ㅂ': 'Q', 'ㅅ': 'T', 'ㅇ': 'D', 'ㅈ': 'W', 'ㅊ': 'C', 'ㅋ': 'Z', 'ㅌ': 'X', 'ㅍ': 'V', 'ㅎ': 'G',
   'ㅏ': 'K', 'ㅑ': 'I', 'ㅓ': 'J', 'ㅕ': 'U', 'ㅗ': 'H', 'ㅛ': 'Y', 'ㅜ': 'N', 'ㅠ': 'B', 'ㅡ': 'M', 'ㅣ': 'L', 'ㅐ': 'O', 'ㅔ': 'P',
 };
-// 알파벳 I·O, 숫자 0·1은 뺀다: 모음 ㅣ·자음 ㅇ과 모양이 거의 같아서 실력이 아니라 운이 된다
+// 숫자는 안 나온다 (사용자 결정). 알파벳 I·O는 뺀다: 모음 ㅣ·자음 ㅇ과 모양이 거의 같아서 실력이 아니라 운이 된다
 export const KINDS = [
   { id: 'letter', label: '알파벳', chars: 'ABCDEFGHJKLMNPQRSTUVWXYZ'.split('') },
-  { id: 'digit', label: '숫자', chars: '23456789'.split('') },
   { id: 'consonant', label: '자음', chars: 'ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎ'.split('') },
   { id: 'vowel', label: '모음', chars: 'ㅏㅑㅓㅕㅗㅛㅜㅠㅡㅣㅐㅔ'.split('') },
 ];
@@ -41,14 +40,14 @@ export function keyOf(ch) {
 }
 // 숫자는 키패드로 눌러도 같은 키
 export const normCode = code => String(code || '').replace(/^Numpad(\d)$/, 'Digit$1');
-// 답으로 치는 키: 글자·숫자 키만 (Shift·스페이스·한/영·Enter 같은 건 무시)
+// 답으로 치는 키: 글자·숫자 키 (숫자는 안 나오니 누르면 틀림. Shift·스페이스·한/영·Enter 같은 건 무시)
 export const isAnswerKey = code => /^(Key[A-Z]|Digit\d|Numpad\d)$/.test(String(code || ''));
 const keyName = code => normCode(code).replace(/^Key|^Digit/, '');
-// '❌ 틀림' 옆 안내: ㄱ = R 키, 5 키
+// '❌ 틀림' 옆 안내: ㄱ = R 키, A 키
 const hintOf = ch => (JAMO_KEYS[ch] ? `${ch} = ${JAMO_KEYS[ch]} 키` : `${keyName(keyOf(ch))} 키`);
-const ALL_CODES = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].map(c => `Key${c}`).concat([...'0123456789'].map(d => `Digit${d}`));
+const ALL_CODES = [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'].map(c => `Key${c}`); // 봇이 잘못 누르는 키
 
-// 라운드 글자: 종류(알파벳·숫자·자음·모음)를 먼저 고르고 그 안에서. 방금 글자는 다시 안 나온다
+// 라운드 글자: 종류(알파벳·자음·모음)를 먼저 고르고 그 안에서. 방금 글자는 다시 안 나온다
 export function pickChar(prev) {
   const kind = pick(KINDS);
   return { t: pick(kind.chars.filter(c => c !== prev)), kind: kind.id };
@@ -109,7 +108,7 @@ export default {
   emoji: '⌨️',
   tag: '타이밍',
   color: '#0ca678',
-  desc: '3·2·1 뒤에 뜨는 알파벳·숫자·자음·모음을 제일 빨리 누르면 승리! 알파벳은 그냥 그 키, 자음·모음은 두벌식 자리 (ㄱ = R)',
+  desc: '3·2·1 뒤에 뜨는 알파벳·자음·모음을 제일 빨리 누르면 승리! 알파벳은 그냥 그 키, 자음·모음은 두벌식 자리 (ㄱ = R)',
   minPlayers: 2,
   maxPlayers: 8,
 
@@ -307,7 +306,7 @@ export default {
           scoreboard(S.roster, S.scores, api.me, S.phase === 'result' ? S.deltas : null),
           h('h3', {}, '규칙'),
           h('ul', { class: 'rules' },
-            h('li', {}, '3 · 2 · 1 뒤에 글자 하나: 알파벳 · 숫자 · 자음 · 모음'),
+            h('li', {}, '3 · 2 · 1 뒤에 글자 하나: 알파벳 · 자음 · 모음'),
             h('li', {}, '그 키를 제일 빨리! 1등 +3 · 2등 +2 · 3등 +1'),
             h('li', {}, '알파벳은 대문자로 나와도 그냥 그 키 (Shift 필요 없음)'),
             h('li', {}, '자음·모음은 두벌식 자리 (ㄱ = R, ㅏ = K) · 한/영 상관없음'),
