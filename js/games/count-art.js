@@ -205,15 +205,15 @@ const SVG_OPEN = `<svg class="cn-art" viewBox="0 0 120 100" stroke="${LINE}" str
 const CACHE = {};
 export const artSvg = id => (CACHE[id] ||= `${SVG_OPEN}${ART[id]()}</svg>`);
 
-// 풀밭 배경: 하늘·해·구름·언덕, 꽃과 풀포기는 늘 같은 자리
-function meadow() {
+// 꽃과 풀포기: 늘 같은 자리
+function flowers(w, y0, y1, n) {
   let seed = 7;
   const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
   const COLORS = ['#ffffff', '#ffd6e0', '#fff0a8', '#e3d4ff'];
   let deco = '';
-  for (let i = 0; i < 46; i++) {
-    const x = Math.round(rnd() * 800);
-    const y = Math.round(130 + rnd() * 360);
+  for (let i = 0; i < n; i++) {
+    const x = Math.round(rnd() * w);
+    const y = Math.round(y0 + rnd() * (y1 - y0));
     if (i % 2) deco += `<path d="M${x - 6} ${y}q2-8 3-1q2-10 4 0q2-7 4 1" fill="none" stroke="#9fd67a" stroke-width="2.4" stroke-linecap="round"/>`;
     else {
       const c = COLORS[i % 8 >> 1];
@@ -224,6 +224,12 @@ function meadow() {
       deco += `<circle cx="${x}" cy="${y}" r="2.2" fill="#ffc94d"/>`;
     }
   }
+  return deco;
+}
+
+// 1라운드 배경: 하늘·해·구름·언덕
+function meadow() {
+  const deco = flowers(800, 130, 490, 46);
   const cloud = (x, y, s) => `<g fill="#fff" transform="translate(${x} ${y}) scale(${s})"><ellipse cx="0" cy="8" rx="40" ry="14"/><ellipse cx="-16" cy="0" rx="17" ry="15"/><ellipse cx="12" cy="-3" rx="21" ry="19"/></g>`;
   return '<svg class="cn-bg" viewBox="0 0 800 500" preserveAspectRatio="xMidYMin slice" aria-hidden="true">' +
     '<rect width="800" height="500" fill="#cdeeff"/><circle cx="78" cy="44" r="30" fill="#ffeaa3"/><circle cx="78" cy="44" r="42" fill="#ffeaa3" opacity=".35"/>' +
@@ -232,3 +238,5 @@ function meadow() {
     deco + '</svg>';
 }
 export const MEADOW = meadow();
+// 2라운드 배경: 화면 끝까지 풀밭만
+export const GRASS = `<svg class="cn-bg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><rect width="1600" height="900" fill="#cdeeaa"/>${flowers(1600, 10, 890, 110)}</svg>`;

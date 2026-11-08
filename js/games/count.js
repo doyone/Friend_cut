@@ -1,92 +1,125 @@
-// 세어라: 정해진 동물(판마다 하나)이 지나갈 때마다 스페이스를 눌러서 실시간으로 센다. 다 지나가면 누른 횟수가 내 답.
-// 1~2라운드는 그 동물만 걸어가고, 3라운드부터 다른 동물이 섞이고, 4라운드부터는 다른 동물 떼가 우르르 확 지나간다
-// (떼 속에도 세는 동물이 한두 마리 숨어 있다). 라운드마다 더 많이·더 빨리.
-// 정확히 맞히면 +3, 1마리 차이 +2, 2마리 차이 +1. 5라운드 합산.
-// 지나가는 순서·자리·빠르기는 방장이 정해 state에 적고, 모두의 화면이 서버 시각에 맞춰 똑같이 그린다.
+// 세어라 (2라운드): 정해진 동물만 스페이스로 센다. 스페이스 = +1, 백스페이스 = -1, 끝났을 때 숫자가 내 답.
+// 1라운드: 동물들이 풀밭을 가로질러 지나간다. 처음엔 한 마리씩 천천히 오다가, 간격·빠르기가 기하급수로 세지고
+//          다른 동물이 섞이고, 뒤로 갈수록 떼가 점점 자주 몰려와서 끝엔 감당이 안 된다.
+// 2라운드: 화면 전체에 동물이 쫙 깔려서 제자리 근처를 조금씩 어슬렁거린다. 그중 정해진 동물을 15초 안에 센다.
+// 점수: 정답에 제일 가까운 순으로 +5·+3·+2·+1, 정확히 맞히면 +2 더. 한 번도 안 누르면 0점.
+// 동물 행렬은 방장이 정해 state에 적고, 모두의 화면이 서버 시각에 맞춰 똑같이 그린다.
 // 누른 횟수는 라운드가 끝날 때까지 방장만 안다(secret) → 남의 숫자를 볼 수 없고, 누를 때마다 상태를 안 보내서 렉도 없다.
 import { h, isTyping, josa, pick, shuffle, AGAIN_INTRO } from '../util.js';
 import { nameTag, podium, scoreboard } from '../ui.js';
-import { ANIMALS, MEADOW, artSvg } from './count-art.js';
+import { ANIMALS, GRASS, MEADOW, artSvg } from './count-art.js';
 
-const ROUNDS = 5;
+const ROUNDS = 2;
 const INTRO_TIME = 6000;
-const COUNT_TIME = 3000;     // 3·2·1
-export const SHOW_TIME = 8000; // 동물들이 지나가는 시간
-const LATE = 300;            // 다 지나간 직후 이만큼은 눌러도 인정
-const GRACE = 900;           // 그다음 늦게 도착하는 신호를 기다린다
-const RESULT_TIME = 4500;
-const POINTS = [3, 2, 1];    // 오차 0 · 1 · 2마리
+const COUNT_TIME = 3000;       // 1라운드 3·2·1
+const CROWD_READY = 5000;      // 2라운드는 방식이 바뀌니 조금 더 길게 알려 준다
+export const RUSH_TIME = 25000;  // 1라운드 길이
+export const CROWD_TIME = 15000; // 2라운드 길이
+const LATE = 300;              // 끝난 직후 이만큼은 눌러도 인정
+const GRACE = 900;             // 그다음 늦게 도착하는 신호를 기다린다
+const REVEAL = 2600;           // 2라운드 끝나고 정답 동물만 밝게 보여 주는 시간 (그동안 늦은 신호도 받는다)
+const RESULT_TIME = 5000;
+const POINTS = [5, 3, 2, 1];   // 정답에 제일 가까운 순
+const EXACT_BONUS = 2;
 const MAX_LAG = 1500;
-const MAX_TAPS = 60;
+const MAX_TAPS = 300;
 
 export const TARGETS = ANIMALS.slice(0, 6);
-// 휙 지나가면 헷갈리는 짝: 세는 동물이 이 중 하나면 나머지는 그 판에 안 나온다 (어려움은 '많고 빠름'에서만)
+// 휙 지나가면 헷갈리는 짝: 세는 동물이 이 중 하나면 나머지는 그 라운드에 안 나온다 (어려움은 '많고 빠름'에서만)
 const LOOKALIKE = [['deer', 'monkey', 'fox'], ['giraffe', 'deer']];
 export const alike = (a, b) => a === b || LOOKALIKE.some(g => g.includes(a) && g.includes(b));
 
-// 라운드별: 세는 동물 수 · 다른 동물 수 · 다른 동물 종류 · 떼 수 · 가로지르는 시간(ms)
-const PLAN = [
-  null,
-  { n: [5, 8], d: [0, 0], kinds: 0, bursts: 0, dur: 2400 },
-  { n: [7, 10], d: [0, 0], kinds: 0, bursts: 0, dur: 2000 },
-  { n: [9, 12], d: [4, 6], kinds: 2, bursts: 0, dur: 1800 },
-  { n: [10, 13], d: [8, 11], kinds: 3, bursts: 1, dur: 1500 },
-  { n: [12, 15], d: [12, 16], kinds: 5, bursts: 2, dur: 1300 },
-];
-const between = ([a, b]) => a + Math.floor(Math.random() * (b - a + 1));
+/* ── 1라운드 행렬: 진행률 f(0~1)에 따라 기하급수로 세진다 ── */
+const GAP = [1400, 90];        // 다음 동물이 나올 때까지(ms): 처음 → 끝
+const DUR = [3000, 800];       // 화면을 가로지르는 시간(ms): 처음 → 끝
+const WAVES = [0.42, 0.58, 0.7, 0.8, 0.88, 0.94]; // 떼가 몰려오는 때: 갈수록 자주
 const LANES = [30, 45, 60, 75, 90]; // 위아래 자리(%). 하늘 말고 풀밭 위로만 다닌다
+const expo = ([a, b], f) => a * (b / a) ** Math.min(1, f);
+// 세는 동물의 비율: 처음 20%는 그 동물만, 끝엔 38%까지 줄어든다
+const targetShare = f => (f < 0.2 ? 1 : 0.38 + 0.62 * (1 - (f - 0.2) / 0.8) ** 2);
+// 섞이는 동물 종류: 뒤로 갈수록 많아진다
+const kindsAt = f => (f < 0.35 ? 1 : f < 0.5 ? 2 : f < 0.65 ? 3 : f < 0.8 ? 5 : 99);
 
-// 라운드 r의 행렬. 떼(burst): 다른 동물 4~5 + 세는 동물 1~2마리가 0.25초 안에 한꺼번에, 1.7배 빠르게 같은 쪽으로
-export function makeShow(round, targetId) {
-  const P = PLAN[Math.min(round, PLAN.length - 1)];
-  const count = between(P.n);
-  const decoys = between(P.d);
-  const pool = shuffle(ANIMALS.filter(a => !alike(a.id, targetId))).slice(0, P.kinds).map(a => a.id);
-  const busy = LANES.map(() => []);
-  const walker = () => { // 같은 줄에선 시간이 안 겹치게 자리를 고른다 (서로 가리면 못 세니까)
-    const dur = Math.round(P.dur * (0.8 + Math.random() * 0.4));
-    let at = 0;
-    let li = 0;
-    for (let k = 0; k < 12; k++) {
-      at = Math.round(Math.random() * (SHOW_TIME - dur));
-      li = Math.floor(Math.random() * LANES.length);
-      if (!busy[li].some(([a, b]) => at < b + 150 && at + dur > a - 150)) break;
-    }
-    busy[li].push([at, at + dur]);
-    return { at, dur, y: LANES[li], dir: Math.random() < 0.5 ? 1 : -1 };
-  };
-  const items = shuffle([...Array(count).fill(targetId), ...Array.from({ length: decoys }, () => pick(pool))]).map(k => ({ k, ...walker() }));
-  // 떼가 둘이면 시간을 나눠서 따로 온다 (겹치면 서로 가려서 셀 수가 없음)
-  const slot = (SHOW_TIME - 750) / Math.max(1, P.bursts);
-  for (let b = 1; b <= P.bursts; b++) {
-    const dur = Math.round(P.dur * 0.6);
-    const at0 = Math.round(600 + (b - 1) * slot + Math.random() * (slot - dur - 250));
-    const dir = Math.random() < 0.5 ? 1 : -1;
-    const free = want => shuffle(items.map((it, i) => [it, i]).filter(([it]) => !it.burst && (it.k === targetId) === want).map(([, i]) => i));
-    const group = [...free(false).slice(0, 4 + Math.floor(Math.random() * 2)), ...free(true).slice(0, 1 + Math.floor(Math.random() * 2))];
-    const gap = (LANES.at(-1) - LANES[0]) / Math.max(1, group.length - 1); // 위아래로 고르게 (서로 안 가리게)
-    shuffle(group).forEach((i, j) => Object.assign(items[i], {
-      at: at0 + Math.round(Math.random() * 250), dur, dir, burst: b,
-      y: Math.round(LANES[0] + j * gap),
-    }));
+export function makeRush(targetId) {
+  const pool = shuffle(ANIMALS.filter(a => !alike(a.id, targetId))).map(a => a.id);
+  const others = f => pick(pool.slice(0, kindsAt(f)));
+  const list = [];
+  const used = LANES.map(() => -1e9);
+  let t = 300;
+  for (;;) {
+    const f = t / RUSH_TIME;
+    const dur = Math.round(expo(DUR, f) * (0.85 + Math.random() * 0.3));
+    if (t + dur > RUSH_TIME) break;
+    // 제일 오래 비어 있던 줄로 (서로 가리지 않게)
+    const order = LANES.map((_, i) => i).sort((a, b) => used[a] - used[b]);
+    const li = order[Math.random() < 0.7 ? 0 : 1];
+    used[li] = t;
+    list.push({ k: Math.random() < targetShare(f) ? targetId : others(f), at: Math.round(t), dur, y: LANES[li], dir: Math.random() < 0.5 ? 1 : -1 });
+    t += expo(GAP, f) * (0.75 + Math.random() * 0.5);
   }
-  items.sort((a, b) => a.at - b.at);
-  return { list: items, count, decoys };
+  // 떼: 다섯 줄을 한꺼번에 같은 쪽으로 (세는 동물이 1~2마리 숨어 있다)
+  for (const f of WAVES) {
+    const at = Math.round(f * RUSH_TIME);
+    const dur = Math.round(expo(DUR, f) * 0.7);
+    const dir = Math.random() < 0.5 ? 1 : -1;
+    const hidden = 1 + Math.floor(Math.random() * 2);
+    shuffle(LANES).forEach((y, i) => list.push({ k: i < hidden ? targetId : others(f), at: at + Math.round(Math.random() * 200), dur, y, dir, wave: 1 }));
+  }
+  list.sort((a, b) => a.at - b.at);
+  const count = list.filter(c => c.k === targetId).length;
+  return { list, count, decoys: list.length - count };
 }
 
-// 오차 → 점수
-export const pointsFor = (n, truth) => POINTS[Math.abs(n - truth)] || 0;
+/* ── 2라운드 행렬: 칸마다 한 마리씩, 빈칸을 조금 두고 쫙 깐다 ── */
+const COLS = 13;
+const ROWS = 8;
+const r2 = v => Math.round(v * 100) / 100;
+
+export function makeCrowd(targetId) {
+  const pool = ANIMALS.filter(a => !alike(a.id, targetId)).map(a => a.id);
+  const total = 78 + Math.floor(Math.random() * 10);
+  const count = 14 + Math.floor(Math.random() * 9);
+  const kinds = shuffle([...Array(count).fill(targetId), ...Array.from({ length: total - count }, () => pick(pool))]);
+  const cells = shuffle(Array.from({ length: COLS * ROWS }, (_, i) => i));
+  const jitter = () => (Math.random() - 0.5) * 0.4;
+  const list = kinds.map((k, i) => ({
+    k,
+    x: r2(4 + (((cells[i] % COLS) + 0.5 + jitter()) / COLS) * 92),
+    y: r2(6 + ((Math.floor(cells[i] / COLS) + 0.5 + jitter()) / ROWS) * 89),
+    ax: r2(0.5 + Math.random() * 0.9), // 어슬렁거리는 폭 (화면 비율 %)
+    ay: r2(0.6 + Math.random() * 1.1),
+    px: Math.round(2600 + Math.random() * 3000), // 한 번 왔다 갔다 하는 시간
+    py: Math.round(2400 + Math.random() * 3000),
+    p1: r2(Math.random()),
+    p2: r2(Math.random()),
+  }));
+  return { list, count, decoys: total - count };
+}
+
+// 정답에 가까운 순서로 점수 (같은 오차는 같은 점수, 안 누른 사람은 0점)
+export function scoreRound(counts, truth) {
+  const rows = Object.entries(counts).filter(([, n]) => n > 0).map(([id, n]) => ({ id, err: Math.abs(n - truth) }));
+  const deltas = {};
+  for (const r of rows) {
+    const p = (POINTS[rows.filter(o => o.err < r.err).length] || 0) + (r.err === 0 ? EXACT_BONUS : 0);
+    if (p) deltas[r.id] = p;
+  }
+  return deltas;
+}
 
 function startRound(ctx, now) {
   const S = ctx.state;
   S.round += 1;
-  const startAt = now + COUNT_TIME;
+  const crowd = S.round === 2;
+  if (crowd) S.target = pick(TARGETS.filter(t => t.id !== S.target.id)); // 2라운드는 다른 동물로
+  const startAt = now + (crowd ? CROWD_READY : COUNT_TIME);
   ctx.secret.taps = {};
   Object.assign(S, {
     phase: 'count',
-    show: makeShow(S.round, S.target.id),
+    mode: crowd ? 'crowd' : 'rush',
+    show: crowd ? makeCrowd(S.target.id) : makeRush(S.target.id),
     startAt,
-    showEnd: startAt + SHOW_TIME,
+    showEnd: startAt + (crowd ? CROWD_TIME : RUSH_TIME),
     counts: null,
     deltas: null,
   });
@@ -98,19 +131,16 @@ function finishRound(ctx, now) {
   const truth = S.show.count;
   const taps = ctx.secret.taps || {};
   const counts = Object.fromEntries(S.roster.map(p => [p.id, taps[p.id] || 0]));
-  const deltas = {};
+  const deltas = scoreRound(counts, truth);
   S.scores = { ...(S.scores || {}) };
   S.exacts = { ...(S.exacts || {}) };
   S.overs = { ...(S.overs || {}) };
+  for (const [id, d] of Object.entries(deltas)) S.scores[id] = (S.scores[id] || 0) + d;
   for (const [id, n] of Object.entries(counts)) {
-    const p = pointsFor(n, truth);
-    if (p) {
-      deltas[id] = p;
-      S.scores[id] = (S.scores[id] || 0) + p;
-    }
     if (n === truth) S.exacts[id] = (S.exacts[id] || 0) + 1;
     if (n > truth) S.overs[id] = (S.overs[id] || 0) + n - truth;
   }
+  S.show = { count: truth, decoys: S.show.decoys }; // 동물 명단은 이제 필요 없다 (상태 전송을 가볍게)
   Object.assign(S, { counts, deltas, phase: 'result', phaseEndsAt: now + RESULT_TIME });
   return true;
 }
@@ -121,12 +151,14 @@ function finish(ctx) {
   const add = (id, t) => (titles[id] ||= []).push(t);
   const top = obj => Object.entries(obj || {}).sort((a, b) => b[1] - a[1])[0] || [];
   const [eye, n] = top(S.exacts);
-  if (n >= 2) add(eye, `🦅 매의 눈 (정답 ${n}번)`);
+  if (n >= 1) add(eye, `🦅 매의 눈 (정답 ${n}번)`);
   const [hasty, m] = top(S.overs);
-  if (m >= 3) add(hasty, `🔨 손이 먼저 (${m}번 더 누름)`);
+  if (m >= 5) add(hasty, `🔨 손이 먼저 (${m}번 더 누름)`);
   Object.assign(S, { phase: 'final', over: true, titles });
   return true;
 }
+
+const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) / 0.5;
 
 export default {
   id: 'count',
@@ -134,7 +166,7 @@ export default {
   emoji: '🐾',
   tag: '타이밍',
   color: '#fab005',
-  desc: '정해진 동물이 지나갈 때마다 스페이스로 세기! 갈수록 다른 동물들이 떼로 확 지나가요',
+  desc: '정해진 동물만 스페이스로 세기! 지나가는 동물은 갈수록 기하급수로 몰려오고, 2라운드는 화면에 쫙 깔린 동물 속에서 찾아요',
   minPlayers: 2,
   maxPlayers: 8,
 
@@ -145,7 +177,7 @@ export default {
       again: !!prev,
       round: 0,
       totalRounds: ROUNDS,
-      target: pick(TARGETS.filter(t => t.id !== prev?.state?.target?.id)), // 이번 판에 셀 동물 (한 판 더면 다른 동물로)
+      target: pick(TARGETS.filter(t => t.id !== prev?.state?.target?.id)), // 이번에 셀 동물 (한 판 더면 다른 동물로)
       scores: Object.fromEntries(ctx.roster.map(p => [p.id, 0])),
     };
   },
@@ -153,16 +185,17 @@ export default {
   // 누른 횟수는 secret에만 쌓는다: false를 돌려주니 상태 전송이 없다
   onInput(ctx, { pid, type, data = {} }) {
     const S = ctx.state;
-    if (type !== 'tap' || !['count', 'show'].includes(S.phase) || data.round !== S.round) return false;
+    if ((type !== 'tap' && type !== 'untap') || !['count', 'show'].includes(S.phase) || data.round !== S.round) return false;
     if (!S.roster.some(p => p.id === pid)) return false;
     const rel = ctx.now() - S.startAt;
     if (rel < -150) return false; // 시작 전
     let t = Math.round(Number(data.t));
     if (!Number.isFinite(t)) t = Math.round(rel);
     t = Math.min(rel + 100, Math.max(0, t, rel - MAX_LAG));
-    if (t > SHOW_TIME + LATE) return false; // 다 지나간 뒤
+    if (t > S.showEnd - S.startAt + LATE) return false; // 끝난 뒤
     const taps = (ctx.secret.taps ||= {});
-    if ((taps[pid] || 0) < MAX_TAPS) taps[pid] = (taps[pid] || 0) + 1;
+    const n = taps[pid] || 0;
+    taps[pid] = type === 'tap' ? Math.min(MAX_TAPS, n + 1) : Math.max(0, n - 1);
     return false;
   },
 
@@ -175,27 +208,30 @@ export default {
       S.phase = 'show';
       return true;
     }
-    if (S.phase === 'show') return now >= S.showEnd + GRACE && finishRound(ctx, now);
+    if (S.phase === 'show') return now >= S.showEnd + (S.mode === 'crowd' ? REVEAL : GRACE) && finishRound(ctx, now);
     if (S.phase === 'result' && now >= S.phaseEndsAt) return S.round >= S.totalRounds ? finish(ctx) : startRound(ctx, now);
     return false;
   },
 
-  // 봇: 세는 동물이 지나갈 때 대체로 누르지만, 뒤 라운드일수록 놓치거나 다른 동물에 잘못 누른다
+  // 봇: 1라운드는 처음엔 거의 다 누르다가 뒤로 갈수록 놓치고 다른 동물에 잘못 누른다. 2라운드는 몇 마리 차이로 세어서 차근차근 누른다
   bot(ctx, id, mem) {
     const S = ctx.state;
-    if (S.phase !== 'count' && S.phase !== 'show') return null;
+    if ((S.phase !== 'count' && S.phase !== 'show') || !S.show?.list) return null;
     if (mem.round !== S.round) {
-      const r = Math.min(S.round, 5);
-      const hit = [0, 0.97, 0.95, 0.92, 0.88, 0.84][r];
-      const wrong = [0, 0, 0, 0.05, 0.07, 0.09][r];
       mem.round = S.round;
       mem.taps = [];
-      for (const c of S.show.list) {
-        const mine = c.k === S.target.id;
-        if (Math.random() < (mine ? hit : wrong)) mem.taps.push(S.startAt + c.at + c.dur * (0.2 + Math.random() * 0.5));
-        if (mine && Math.random() < 0.03) mem.taps.push(S.startAt + c.at + c.dur * 0.75); // 실수로 두 번
+      if (S.mode === 'crowd') {
+        const n = Math.max(1, S.show.count + Math.round(gauss() * 2));
+        const from = 2000 + Math.random() * 1500;
+        const step = (CROWD_TIME - 1500 - from) / n;
+        for (let i = 0; i < n; i++) mem.taps.push(S.startAt + from + i * step);
+      } else {
+        for (const c of S.show.list) {
+          const f = c.at / RUSH_TIME;
+          if (Math.random() < (c.k === S.target.id ? 0.98 - 0.7 * f ** 3 : 0.01 + 0.25 * f ** 3)) mem.taps.push(S.startAt + c.at + c.dur * (0.2 + Math.random() * 0.5));
+        }
+        mem.taps.sort((a, b) => a - b);
       }
-      mem.taps.sort((a, b) => a - b);
     }
     if (!mem.taps.length || ctx.now() < mem.taps[0]) return null;
     return { type: 'tap', data: { round: S.round, t: Math.round(mem.taps.shift() - S.startAt) } };
@@ -213,10 +249,16 @@ export default {
     const head = h('div', { class: 'rx-head' });
     const field = h('div', { class: 'cn-field' });
     const center = h('div', { class: 'cn-center' });
-    const bar = h('div', { class: 'cn-bar' });
+    const miniSlot = h('span', { class: 'cn-minislot' });
+    const nameEl = h('span', { class: 'cn-barname' });
+    const numEl = h('b', { class: 'cn-count display' }, '0');
+    const timerEl = h('span', { class: 'cn-timer' });
+    const hintEl = h('span', { class: 'cn-keyhint' }, h('kbd', {}, '스페이스'), ' +1 ', h('kbd', {}, 'Backspace'), ' -1');
+    const bar = h('div', { class: 'cn-bar' }, miniSlot, nameEl, numEl, timerEl, hintEl);
     const board = h('div', { class: 'rx-board' });
     const stage = h('div', { class: 'cn-stage' }, bg, field, center);
-    const pad = h('div', { class: 'rx-pad cn-pad' }, h('div', { class: 'cn-main' }, stage, bar), board);
+    const main = h('div', { class: 'cn-main' }, stage, bar);
+    const pad = h('div', { class: 'rx-pad cn-pad' }, main, board);
     const side = h('aside', { class: 'side' });
     root.append(h('div', { class: 'rx cn' }, h('div', { class: 'rx-main' }, head, pad), side));
     document.activeElement?.blur?.();
@@ -228,13 +270,15 @@ export default {
     let critters = [];
     let centerKey = '';
     let barKey = '';
-    let numEl = null;
+    let timerText = '';
     const isPlayer = () => S?.roster.some(p => p.id === me);
     const T = () => S?.target || TARGETS[0];
     const myTaps = () => (tapRound === S?.round ? taps : 0);
 
     function onKey(e) {
-      if (isTyping(e) || e.code !== 'Space' || !S || !isPlayer()) return;
+      if (isTyping(e) || !S || !isPlayer()) return;
+      const add = e.code === 'Space';
+      if (!add && e.code !== 'Backspace') return;
       if (S.phase !== 'count' && S.phase !== 'show') return;
       e.preventDefault();
       if (e.repeat) return;
@@ -244,15 +288,12 @@ export default {
         tapRound = S.round;
         taps = 0;
       }
-      if (taps >= MAX_TAPS) return;
-      taps += 1;
-      api.send('tap', { round: S.round, t: Math.round(now - S.startAt) });
-      renderBar();
-      if (numEl) {
-        numEl.classList.remove('pop');
-        void numEl.offsetWidth; // 애니메이션을 처음부터 다시
-        numEl.classList.add('pop');
-      }
+      if (add ? taps >= MAX_TAPS : taps <= 0) return;
+      taps += add ? 1 : -1;
+      api.send(add ? 'tap' : 'untap', { round: S.round, t: Math.round(now - S.startAt) });
+      // 숫자는 네트워크를 안 기다리고 누른 그 순간 바로 바뀐다
+      numEl.textContent = String(taps);
+      numEl.animate?.([{ transform: 'scale(1.5)', color: add ? '#ff7a59' : '#7a8aa0' }, { transform: 'scale(1)' }], { duration: 140, easing: 'ease-out' });
     }
     window.addEventListener('keydown', onKey);
 
@@ -260,13 +301,19 @@ export default {
       const key = `${S.round}:${S.startAt}`;
       if (key === fieldKey) return;
       fieldKey = key;
+      const crowd = S.mode === 'crowd';
+      field.classList.toggle('cn-still', crowd);
+      field.classList.remove('cn-reveal');
+      bg.innerHTML = crowd ? GRASS : MEADOW;
       critters = (S.show?.list || []).map(c => {
-        const el = art(c.k, `cn-critter${c.dir < 0 ? ' flip' : ''}`);
-        el.style.top = `${c.y}%`;
-        el.style.zIndex = c.y; // 아래쪽(가까운) 동물이 위로
+        const el = art(c.k, `cn-critter${crowd && c.k === S.target.id ? ' tg' : ''}${!crowd && c.dir < 0 ? ' flip' : ''}`);
         el.style.display = 'none';
-        el.style.setProperty('--step', `${Math.max(90, Math.round(c.dur / 10))}ms`);
-        return { c, el };
+        el.style.zIndex = Math.round(c.y); // 아래쪽(가까운) 동물이 위로
+        if (!crowd) {
+          el.style.top = `${c.y}%`;
+          el.style.setProperty('--step', `${Math.max(70, Math.round(c.dur / 10))}ms`);
+        }
+        return { c, el, flip: false };
       });
       field.replaceChildren(...critters.map(x => x.el));
     }
@@ -276,13 +323,13 @@ export default {
       if (key === 'intro') {
         center.replaceChildren(h('div', { class: 'cn-card' },
           art(T().id, 'cn-hero'),
-          h('h2', { class: 'display' }, `이번 판은 ${name}!`),
-          h('p', {}, S.again ? '🔁 한 판 더!' : `${josa(name, '이', '가')} 지나갈 때마다 스페이스 한 번 · 누른 횟수가 내 답`)));
+          h('h2', { class: 'display' }, `1라운드: ${josa(name, '을', '를')} 세요!`),
+          h('p', {}, S.again ? '🔁 한 판 더!' : '지나갈 때마다 스페이스 · 갈수록 미친 듯이 몰려와요')));
       } else if (key[0] === 'n') {
         center.replaceChildren(h('div', { class: 'cn-card small' },
           h('div', { class: 'cn-num display' }, key.slice(1)),
-          art(T().id, 'cn-mini'),
-          h('p', {}, `${name}만 세요${S.show?.decoys ? ' · 다른 동물은 빼고' : ''}${S.round >= 4 ? ' · 떼로 확 지나가요' : ''}`)));
+          art(T().id, S.mode === 'crowd' ? 'cn-hero' : 'cn-mini'),
+          h('p', {}, S.mode === 'crowd' ? `2라운드: 화면에 쫙 깔린 동물 중 ${name}만 세요!` : `${name}만 세요 · 다른 동물은 빼고`)));
       } else if (key === 'end') {
         center.replaceChildren(h('div', { class: 'cn-card small' }, h('p', { class: 'cn-done display' }, '다 지나갔다!')));
       } else center.replaceChildren();
@@ -290,43 +337,61 @@ export default {
 
     function renderBar() {
       if (!S) return;
-      const live = S.phase === 'count' || S.phase === 'show';
-      const key = !isPlayer() ? 'spec' : `${live ? 'live' : 'off'}:${S.target?.id}:${myTaps()}`;
-      if (key === barKey) return;
-      barKey = key;
-      if (!isPlayer()) {
-        numEl = null;
-        bar.replaceChildren(h('span', { class: 'cn-keyhint' }, '👀 관전 중'));
-        return;
+      const key = `${isPlayer() ? 'p' : 's'}:${T().id}`;
+      if (key !== barKey) {
+        barKey = key;
+        miniSlot.replaceChildren(art(T().id, 'cn-mini'));
+        nameEl.textContent = `${T().name} ×`;
+        numEl.style.display = isPlayer() ? '' : 'none';
+        hintEl.style.display = isPlayer() ? '' : 'none';
+        if (!isPlayer()) nameEl.textContent = `👀 관전 중 · ${T().name} 세는 판`;
       }
-      numEl = h('b', { class: 'cn-count display' }, String(myTaps()));
-      bar.replaceChildren(
-        art(T().id, 'cn-mini'),
-        h('span', { class: 'cn-barname' }, `${T().name} ×`),
-        numEl,
-        h('span', { class: 'cn-keyhint' }, h('kbd', {}, '스페이스'), ' = 한 마리'));
+      numEl.textContent = String(myTaps());
     }
 
     function paint() {
       if (!S) return;
       const now = api.now();
       const live = S.phase === 'count' || S.phase === 'show';
+      const crowd = S.mode === 'crowd';
       const rel = now - S.startAt;
-      // 지나가는 동물: 서버 시각 기준이라 모두 같은 장면
-      for (const { c, el } of critters) {
-        const f = (rel - c.at) / c.dur;
-        if (!live || f < 0 || f > 1) {
+      main.classList.toggle('full', crowd && live); // 2라운드는 화면 전체로
+      // 동물 위치는 서버 시각의 함수라 모두 같은 장면
+      for (const it of critters) {
+        const { c, el } = it;
+        const on = live && (crowd ? rel >= 0 : rel >= c.at && rel <= c.at + c.dur);
+        if (!on) {
           if (el.style.display !== 'none') el.style.display = 'none';
           continue;
         }
         if (el.style.display === 'none') el.style.display = '';
-        const x = c.dir > 0 ? -9 + f * 118 : 109 - f * 118;
-        el.style.transform = `translate(calc(${x.toFixed(2)}cqw - 50%), -50%)`;
+        if (crowd) {
+          const u = 2 * Math.PI * (rel / c.px + c.p1);
+          const x = c.x + c.ax * Math.sin(u);
+          const y = c.y + c.ay * Math.sin(2 * Math.PI * (rel / c.py + c.p2)) - Math.abs(Math.sin(rel / 190 + c.p1 * 7)) * 0.5;
+          el.style.transform = `translate(calc(${x.toFixed(2)}cqw - 50%), calc(${y.toFixed(2)}cqh - 50%))`;
+          const back = Math.cos(u) < 0; // 가는 쪽을 보게
+          if (back !== it.flip) {
+            it.flip = back;
+            el.classList.toggle('flip', back);
+          }
+        } else {
+          const f = (rel - c.at) / c.dur;
+          const x = c.dir > 0 ? -9 + f * 118 : 109 - f * 118;
+          el.style.transform = `translate(calc(${x.toFixed(2)}cqw - 50%), -50%)`;
+        }
+      }
+      // 2라운드 끝: 정답 동물만 밝게
+      field.classList.toggle('cn-reveal', crowd && S.phase === 'show' && now >= S.showEnd);
+      const timer = crowd && S.phase === 'show' ? (now < S.showEnd ? `⏱ ${Math.ceil((S.showEnd - now) / 1000)}초` : '⏱ 끝!') : '';
+      if (timer !== timerText) {
+        timerText = timer;
+        timerEl.textContent = timer;
       }
       let key = 'off';
       if (S.phase === 'intro') key = 'intro';
       else if (live && now < S.startAt) key = `n${Math.max(1, Math.ceil((S.startAt - now) / 1000))}`;
-      else if (live && now >= S.showEnd) key = 'end';
+      else if (live && !crowd && now >= S.showEnd) key = 'end';
       if (key !== centerKey) {
         centerKey = key;
         renderCenter(key);
@@ -346,13 +411,13 @@ export default {
       const rows = [...S.roster].sort((a, b) => err(a.id) - err(b.id));
       return h('div', { class: 'rx-result' },
         h('div', { class: 'cn-answer' }, art(T().id, 'cn-mini'), h('h2', { class: 'display' }, `정답: ${T().name} ${truth}마리`)),
-        S.show.decoys ? h('p', { class: 'muted' }, `다른 동물은 ${S.show.decoys}마리 지나갔어요`) : null,
+        S.show.decoys ? h('p', { class: 'muted' }, `다른 동물은 ${S.show.decoys}마리 있었어요`) : null,
         h('ol', { class: 'rank-list' }, rows.map(p => {
           const n = counts[p.id] || 0;
           const d = deltas[p.id] || 0;
-          return h('li', { class: err(p.id) > 2 ? 'bad' : '' },
+          return h('li', { class: !d ? 'bad' : '' },
             nameTag(p, me),
-            h('span', { class: 'val' }, `${n}번 누름${n === truth ? ' 🎯' : ` (${n > truth ? '+' : ''}${n - truth})`}`),
+            h('span', { class: 'val' }, `${n}마리${n === truth ? ' 🎯' : ` (${n > truth ? '+' : ''}${n - truth})`}`),
             h('b', { class: `delta ${d > 0 ? 'up' : ''}` }, d ? `+${d}` : ''));
         })));
     }
@@ -382,12 +447,11 @@ export default {
           scoreboard(S.roster, S.scores, me, S.phase === 'result' ? S.deltas : null),
           h('h3', {}, '규칙'),
           h('ul', { class: 'rules' },
-            h('li', {}, `이번 판은 ${T().name}만 세요`),
-            h('li', {}, `${josa(T().name, '이', '가')} 지나갈 때마다 스페이스 한 번`),
-            h('li', {}, '다 지나가면 누른 횟수가 내 답'),
-            h('li', {}, '정확히 +3 · 1마리 차이 +2 · 2마리 차이 +1'),
-            h('li', {}, '3라운드부터 다른 동물이 섞이고, 4라운드부터 떼로 확 지나가요'),
-            h('li', {}, `${ROUNDS}라운드 합산`)));
+            h('li', {}, `지금은 ${T().name}만 세요`),
+            h('li', {}, '스페이스 = 한 마리, 백스페이스 = 하나 취소'),
+            h('li', {}, '1라운드: 지나가는 동물, 갈수록 기하급수로 몰려와요'),
+            h('li', {}, '2라운드: 화면에 쫙 깔린 동물 속에서 찾기'),
+            h('li', {}, '정답에 가까운 순 +5·+3·+2·+1, 정확히 맞히면 +2 더')));
         renderBar();
         paint();
       },
