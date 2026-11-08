@@ -20,6 +20,10 @@
 | 🧩 독박쌓기 | 2~8명 | 펜토미노 12종을 돌아가며 쌓기. 빨간 기준선이 차례마다 올라가요(처음엔 조금, 갈수록 많이). 내가 놓은 뒤 탑 꼭대기가 선보다 낮으면 독박(바닥이 넓어서 떨어지는 블록은 없음), 독박은 탑을 넘겨준 앞 사람 킬 |
 | ⌨️ 순발력 타자 | 2~8명 | 3·2·1 뒤에 뜨는 알파벳·자음·모음의 키를 제일 빨리 누르기. 알파벳은 그냥 그 키, 자음·모음은 두벌식 자리(ㄱ = R, ㅣ = L). 틀린 키는 -1, 8라운드. 흰 바탕에 검은 글씨라 뒤에서 봐도 티 안 나요 |
 | 🙋 눈치 게임 | 2~8명 | '시작!' 뒤에 아무 때나 스페이스 = 다음 숫자 외치기, 꺼진 전구가 하나씩 켜져요. 0.3초 안에 같이 외치면 💥 겹친 사람 다 독박, 끝까지 남아도 독박. ❤️ 2개, 마지막 1명 우승 |
+| 🐾 세어라 | 2~8명 | 판마다 정해진 동물이 지나갈 때마다 스페이스로 세기, 다 지나가면 누른 횟수가 내 답. 정확히 +3 · 1마리 차이 +2 · 2마리 차이 +1. 3라운드부터 다른 동물이 섞이고 4라운드부터 떼로 확 지나가요. 5라운드 |
+| 🎯 멈춰라 | 2~8명 | 왔다 갔다 하는 바늘을 스페이스 한 번으로 과녁 한가운데에. 가까운 순 +3·+2·+1, 정중앙 +1. 라운드마다 빨라지고 과녁이 작아지고 4라운드부터 바늘이 출렁여요. 6라운드 |
+| 🧠 외워라 | 2~8명 | 화살표가 켜지는 순서를 외워서 방향키(WASD)로 그대로 치기. 라운드마다 하나씩 길어지고 틀리면 탈락, 4라운드부터 가끔 거꾸로 |
+| 🎈 불어라 | 2~8명 | 스페이스로 풍선에 바람을 넣고 묶기. 안 터진 풍선 중 큰 순 +3·+2·+1, 풍선마다 숨은 한계를 넘으면 💥 0점. 5라운드 |
 
 기획과 앞으로 만들 게임은 [기획서.md](기획서.md)에 있어요.
 
@@ -122,8 +126,12 @@ js/
     stack.js       독박쌓기 (블록 그림·순서 가방은 tower.js 것을 같이 씀)
     quick.js       순발력 타자 (반응속도 대결 화면 스타일을 같이 씀)
     nunchi.js      눈치 게임
+    count.js       세어라 (+ count-art.js 색칠 동물·풀밭 그림)
+    stop.js        멈춰라
+    memory.js      외워라
+    balloon.js     불어라
   vendor/          planck.js 물리 엔진 (독박 타워·독박빼기·독박 시소·하늘끝까지·독박쌓기가 CDN 없이 씀)
-tests/             규칙 테스트: node --test tests/bumper.test.mjs tests/professor.test.mjs tests/seesaw.test.mjs tests/door.test.mjs tests/race.test.mjs tests/race-track.test.mjs tests/race-collision.test.mjs tests/race-network.test.mjs tests/race-prediction.test.mjs tests/kart-maps.test.mjs tests/stack.test.mjs tests/host.test.mjs tests/quick.test.mjs tests/nunchi.test.mjs
+tests/             규칙 테스트: node --test tests/bumper.test.mjs tests/professor.test.mjs tests/seesaw.test.mjs tests/door.test.mjs tests/race.test.mjs tests/race-track.test.mjs tests/race-collision.test.mjs tests/race-network.test.mjs tests/race-prediction.test.mjs tests/kart-maps.test.mjs tests/stack.test.mjs tests/host.test.mjs tests/quick.test.mjs tests/nunchi.test.mjs tests/count.test.mjs tests/stop.test.mjs tests/memory.test.mjs tests/balloon.test.mjs
 database.rules.json  Firebase 보안 규칙
 ```
 

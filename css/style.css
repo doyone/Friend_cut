@@ -340,6 +340,101 @@ button, input { font: inherit; color: inherit; }
 @keyframes nc-on { 0% { opacity: .35; } 20% { opacity: 1; } 35% { opacity: .45; } 55% { opacity: 1; } 100% { opacity: 1; } }
 @keyframes nc-flick { 0% { fill: #fff3bf; } 50% { fill: #e9ecef; } 75% { fill: #fff3bf; } 100% { fill: #e9ecef; } }
 
+/* ── 세어라 ── 귀여운 동물들이 풀밭을 가로질러 간다 */
+.cn-pad { cursor: default; height: min(74vh, 640px); }
+.cn-pad.board .cn-main { display: none; }
+.cn-main { align-self: stretch; justify-self: stretch; display: flex; flex-direction: column; min-height: 0; }
+.cn-stage { position: relative; flex: 1; min-height: 0; overflow: hidden; container-type: size; }
+.cn-bgwrap, .cn-field { position: absolute; inset: 0; }
+.cn-bg { display: block; width: 100%; height: 100%; }
+.cn-field { pointer-events: none; }
+.cn-critter { position: absolute; left: 0; width: clamp(58px, 18cqh, 140px); will-change: transform; }
+.cn-critter.flip svg { transform: scaleX(-1); }
+.cn-art { display: block; width: 100%; height: auto; overflow: visible; }
+.cn-art .lg { transform-box: view-box; animation: cn-step var(--step, 260ms) ease-in-out infinite alternate; }
+.cn-art .lg.b { animation-delay: calc(var(--step, 260ms) * -1); }
+.cn-art .hop { animation: cn-hop calc(var(--step, 260ms) * 2) ease-in-out infinite; }
+.cn-art .wad { transform-box: view-box; animation: cn-wad var(--step, 260ms) ease-in-out infinite alternate; }
+@keyframes cn-step { from { transform: rotate(20deg); } to { transform: rotate(-20deg); } }
+@keyframes cn-hop { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-14px); } }
+@keyframes cn-wad { from { transform: rotate(-8deg); } to { transform: rotate(8deg); } }
+.cn-center { position: absolute; inset: 0; z-index: 200; display: grid; place-items: center; pointer-events: none; }
+.cn-card { background: rgba(255, 255, 255, .93); border-radius: 24px; padding: 18px 34px 20px; text-align: center; box-shadow: 0 6px 0 rgba(91, 69, 55, .18); max-width: 88%; }
+.cn-card h2 { margin: 2px 0 4px; font-size: clamp(28px, 4vw, 46px); font-weight: 400; }
+.cn-card p { margin: 0; font-weight: 800; color: var(--muted-2); }
+.cn-card.small { padding: 12px 30px 14px; }
+.cn-hero { display: block; width: clamp(130px, 19vw, 210px); margin: 0 auto; }
+.cn-mini { display: inline-block; width: 52px; vertical-align: middle; flex: none; }
+.cn-num { font-size: clamp(56px, 8vw, 96px); line-height: 1; }
+.cn-done { font-size: clamp(26px, 3.6vw, 40px); color: var(--ink) !important; }
+.cn-bar { flex: none; display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 68px; padding: 6px 16px; background: #fffaf0; border-top: 3px solid #e8dcc6; }
+.cn-barname { font-weight: 800; font-size: 18px; color: var(--muted-2); }
+.cn-count { font-size: 44px; line-height: 1; min-width: 1.3em; text-align: center; font-weight: 400; }
+.cn-count.pop { animation: cn-pop .16s ease-out; }
+@keyframes cn-pop { 0% { transform: scale(1.5); color: #ff7a59; } 100% { transform: scale(1); } }
+.cn-keyhint { font-weight: 700; color: var(--muted); margin-left: 12px; }
+.cn-keyhint kbd { font: inherit; background: #fff; border: 2px solid #d8ccb6; border-bottom-width: 4px; border-radius: 8px; padding: 2px 10px; }
+.cn-answer { display: flex; align-items: center; justify-content: center; gap: 10px; }
+
+/* ── 멈춰라 ── 막대 위 바늘 + 과녁 */
+.sp-pad { cursor: default; }
+.sp-pad.board .sp-main { display: none; }
+.sp-main { display: grid; justify-items: center; gap: 46px; width: 100%; padding: 30px 16px; }
+.sp-status { font-family: var(--display); font-size: clamp(40px, 6vw, 72px); line-height: 1; min-height: 1em; }
+.sp-bar { position: relative; width: min(760px, 92%); height: 46px; border-radius: 23px; background: #f1f3f5; box-shadow: inset 0 0 0 2px var(--line); }
+.sp-zone { position: absolute; top: 0; bottom: 0; background: rgba(46, 204, 113, .22); border-left: 2px solid var(--green); border-right: 2px solid var(--green); }
+.sp-mid { position: absolute; left: 50%; top: -8px; bottom: -8px; width: 2px; margin-left: -1px; background: var(--green-ink); }
+.sp-needle { position: absolute; top: -12px; bottom: -12px; width: 4px; margin-left: -2px; border-radius: 2px; background: #111; }
+.sp-marks { position: absolute; inset: 0; }
+.sp-mark { position: absolute; top: -40px; transform: translateX(-50%); display: grid; justify-items: center; }
+.sp-mark::after { content: ''; width: 2px; height: 52px; background: rgba(44, 62, 80, .55); }
+.sp-mark .avatar { width: 26px; height: 26px; }
+.sp-mark.me .avatar { width: 32px; height: 32px; }
+.sp-mark.me::after { background: #111; width: 3px; }
+
+/* ── 외워라 ── 화살표 네 칸 (위·왼·오·아래) */
+.mm-pad { cursor: default; }
+.mm-pad.board .mm-main { display: none; }
+.mm-main { display: grid; justify-items: center; gap: 12px; width: 100%; padding: 16px; }
+.mm-status { font-family: var(--display); font-size: clamp(30px, 4.5vw, 52px); line-height: 1.1; min-height: 1.1em; }
+.mm-cross { display: grid; grid-template-columns: repeat(3, 80px); grid-template-rows: repeat(3, 80px); gap: 8px; }
+.mm-tile { display: grid; place-items: center; border-radius: 16px; font-size: 38px; font-weight: 900; background: #f1f3f5; color: #adb5bd; border: 3px solid var(--line); transition: background .08s, color .08s; }
+.mm-tile.on { color: #fff; }
+.mm-tile.on.mm-U { background: #ff8787; border-color: #e03131; }
+.mm-tile.on.mm-R { background: #4dabf7; border-color: #1c7ed6; }
+.mm-tile.on.mm-D { background: #69db7c; border-color: #2f9e44; }
+.mm-tile.on.mm-L { background: #ffd43b; border-color: #f08c00; color: #5c3c00; }
+.mm-tile.bad { background: #ffe3e3; border-color: var(--red); color: var(--red-ink); animation: nope .25s; }
+.mm-dots { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; min-height: 12px; max-width: 320px; }
+.mm-dots i { width: 11px; height: 11px; border-radius: 50%; background: var(--line); }
+.mm-dots i.on { background: var(--green); }
+.mm-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.mm-chip.ok { background: #e6f8ee; }
+.mm-chip.bad { background: #fdecea; color: var(--red-ink); }
+.mm-chip.out { opacity: .45; }
+.mm-chip.typing { box-shadow: inset 0 0 0 2px #fab005; }
+
+/* ── 불어라 ── 각자 풍선 (커질수록 떨림) */
+.bl-pad { cursor: default; }
+.bl-pad.board .bl-main { display: none; }
+.bl-main { display: grid; justify-items: center; gap: 12px; width: 100%; padding: 16px; }
+.bl-status { font-family: var(--display); font-size: clamp(34px, 5vw, 60px); line-height: 1.1; min-height: 1.1em; }
+.bl-row { display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-end; gap: 6px 10px; }
+.bl-one { position: relative; display: grid; justify-items: center; width: 96px; }
+.bl-one svg { width: 90px; height: 144px; overflow: visible; }
+.bl-b { transform-box: view-box; transform-origin: 50% 62.5%; transition: transform .15s ease-out; }
+.bl-one.w1 svg { animation: bl-wob .5s ease-in-out infinite; }
+.bl-one.w2 svg { animation: bl-wob .22s ease-in-out infinite; }
+.bl-one.pop .bl-string { opacity: .25; }
+.bl-mark { font-size: 40px; text-anchor: middle; dominant-baseline: central; }
+.bl-tag { display: flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 800; white-space: nowrap; }
+.bl-tag .avatar { width: 22px; height: 22px; }
+.bl-one.me .bl-tag { color: var(--ink); text-decoration: underline 2px var(--green); text-underline-offset: 3px; }
+.bl-one.tied .bl-tag::after { content: '✓'; color: var(--green-ink); }
+.bl-puff { position: absolute; top: 8px; left: 50%; font-style: normal; font-weight: 900; font-size: 18px; color: var(--green-ink); animation: bl-puff .45s ease-out forwards; }
+@keyframes bl-wob { 0%, 100% { transform: rotate(-2deg); } 50% { transform: rotate(2deg); } }
+@keyframes bl-puff { from { transform: translate(-50%, 0); opacity: 1; } to { transform: translate(-50%, -26px); opacity: 0; } }
+
 .podium { list-style: none; padding: 0; margin: 18px auto 12px; max-width: 480px; display: grid; gap: 8px; text-align: left; }
 .podium li { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-radius: 10px; background: var(--pill); font-weight: 800; }
 .podium li.r1 { background: #fff6d6; box-shadow: inset 0 0 0 2px var(--yellow); font-size: 20px; padding: 16px; }
