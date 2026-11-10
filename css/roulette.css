@@ -31,12 +31,17 @@
   box-shadow: inset 0 0 0 6px var(--blood); animation: rl-beat .62s steps(2) infinite;
 }
 .rl-table.danger::after { box-shadow: inset 0 0 0 12px var(--fire); animation-duration: .31s; }
+/* 남이 나를 겨누는 동안: 테두리만 붉게 천천히 뛴다 (방아쇠를 당기면 hush·danger로 더 세게) */
+.rl-table.aimme::after {
+  content: ''; position: absolute; inset: 0; z-index: 4; pointer-events: none;
+  box-shadow: inset 0 0 0 6px var(--fire); animation: rl-beat .9s steps(2) infinite;
+}
 .rl-fx { position: absolute; left: 0; top: 0; z-index: 3; pointer-events: none; image-rendering: pixelated; }
 .rl-flash { position: absolute; inset: 0; z-index: 8; pointer-events: none; opacity: 0; background: var(--paper); }
 .rl-flash.on { animation: rl-flash .32s steps(4); }
 
-/* 가운데: 탄창 줄 · 남은 개수 · 큰 글자 · 총 */
-.rl-center { position: absolute; left: 50%; top: 50%; z-index: 2; transform: translate(-50%, -50%); display: grid; justify-items: center; gap: 6px; }
+/* 가운데: 탄창 줄 · 남은 개수 · 큰 글자 (총은 쏘는 사람 앞을 오가며 이 밑으로 지나간다) */
+.rl-center { position: absolute; left: 50%; top: 50%; z-index: 3; transform: translate(-50%, -50%); display: grid; justify-items: center; gap: 6px; pointer-events: none; }
 .rl-mag { display: flex; align-items: flex-end; gap: 3px; height: 45px; }
 .rl-shell { position: relative; }
 .rl-shell.spent { opacity: .4; transform: translateY(6px); }
@@ -58,12 +63,21 @@
 .rl-banner.hush { color: var(--paper); animation: rl-blink .62s steps(2) infinite; }
 .rl-banner.again { color: var(--gold); animation: rl-pop .25s steps(3); }
 .rl-banner.skip { color: var(--mist); animation: rl-pop .25s steps(3); }
-.rl-gun { display: grid; place-items: center; height: 51px; }
-.rl-gun.flip .rl-spr { transform: scaleX(-1); }
+.rl-banner.aimme { color: var(--fire); animation: rl-pop .25s steps(3); }
+/* 총: 위에서 내려다본 총이 지금 쏘는 사람 앞(left·top은 화면에서 정함)에 놓여 겨눈 사람 쪽으로 돈다.
+   차례가 바뀌면 다음 사람 앞으로 칸칸이 미끄러진다. 각도마다 구운 그림(60×60 도트)을 바꿔 끼운다 */
+.rl-gun {
+  position: absolute; left: 50%; top: 50%; z-index: 2; transform: translate(-50%, -50%); display: grid; place-items: center; pointer-events: none;
+  transition: left .36s steps(6), top .36s steps(6);
+}
+.rl-gun > .rl-spr { grid-area: 1 / 1; }
+.rl-gun .rl-top.flip { transform: scaleX(-1); }
+.rl-gun .rl-front { display: none; }
+.rl-gun.front .rl-top { visibility: hidden; }
+.rl-gun.front .rl-front { display: block; }
 .rl-gun.kick { animation: rl-kick .3s steps(1); }
 /* 나를 겨눈 정면 총구: 총 자리에서 위로 자라서 큰 글자 칸까지 덮는다 (탄 개수는 그대로 보이게) */
-.rl-gun.front { align-content: end; }
-.rl-gun.front .rl-spr { transform-origin: 50% 100%; animation: rl-loom .9s steps(1) forwards, rl-tremble .16s steps(1) .9s infinite; }
+.rl-gun.front .rl-front { animation: rl-loom .9s steps(1) forwards, rl-tremble .16s steps(1) .9s infinite; }
 
 /* 자리: 얼굴 옆에 이름 · 하트 · 카드 */
 .rl-seat { position: absolute; z-index: 2; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 6px; }
@@ -151,7 +165,8 @@
 @keyframes rl-bob { from, to { transform: translateY(0); } 50% { transform: translateY(-3px); } }
 @keyframes rl-mix { from, to { transform: translateY(0); } 50% { transform: translateY(-6px); } }
 @keyframes rl-pop { from { transform: scale(2); } }
-@keyframes rl-kick { from { transform: translate(-9px, -3px); } 50% { transform: translate(-3px, 0); } to { transform: translate(0, 0); } }
+/* 쏘면 총구 반대쪽으로 밀렸다 돌아온다 (--kx, --ky는 총 방향에서) */
+@keyframes rl-kick { from { translate: var(--kx, -9px) var(--ky, 0px); } 50% { translate: calc(var(--kx, -9px) / 3) calc(var(--ky, 0px) / 3); } to { translate: 0 0; } }
 /* 도트가 뭉개지지 않게 1배 → 2배 → 3배로 딱딱 커진다 (steps(1): 사이값 없이 다음 칸에서 바뀜) */
 @keyframes rl-loom { from { transform: scale(.3333); } 33% { transform: scale(.6667); } 66%, to { transform: scale(1); } }
 @keyframes rl-tremble { from, to { transform: translate(0, 0); } 50% { transform: translate(3px, 0); } }

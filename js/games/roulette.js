@@ -244,7 +244,8 @@ function resolve(ctx, now) {
   }
   S.hp = hp;
 
-  const again = shot.self && !live && !shot.auto; // 나를 쏴서 공포탄: 한 번 더 (시간 초과로 나간 탄은 안 쳐 준다)
+  // 나를 쏴서 공포탄: 한 번 더. 시간이 끝나 나에게 나간 탄도 쳐 준다 (자리를 비운 사람만 빼고: 혼자 계속 쏘며 판을 끌지 않게)
+  const again = shot.self && !live && (!shot.auto || ctx.isOnline(shot.by));
   Object.assign(shot, { live, hits, blocked, mirrored, wasted, dead, again });
   let line = `${name(shot.by)} → ${shot.sc ? '모두' : shot.self ? '자신' : name(shot.to[0])}: ${live ? `🔴 실탄${shot.dbl ? ' ×2' : ''}` : '⚪ 공포탄'}`;
   if (blocked.length) line += ` · 🛡️ ${blocked.map(name).join(', ')}`;
@@ -435,9 +436,14 @@ function botTurn(ctx, id, mem, hand, now) {
 const ART = new URL('../../img/roulette/sprites/', import.meta.url).href;
 const PX = 3; // 도트 한 칸 = 화면 3px (그림도 효과도 전부 같은 크기)
 const SIZE = { // 그림 크기 (도트). 여기 없는 건 16×16
-  gun: [48, 17], gun_front: [64, 36], shell_live: [8, 13], shell_blank: [8, 13], shell_q: [8, 13], heart: [9, 9], heart_off: [9, 9],
+  gun_front: [63, 38], shell_live: [8, 13], shell_blank: [8, 13], shell_q: [8, 13], heart: [9, 9], heart_off: [9, 9],
   cardback: [7, 9], cross: [17, 17], skull: [9, 9], eye: [11, 7], c_steal: [16, 13], c_shield: [16, 15],
 };
+// 총: 위에서 내려다본 그림을 15도마다 구워 뒀다. gun_0(위) … gun_6(오른쪽) … gun_12(아래), 왼쪽은 좌우로 뒤집는다
+const GUN_STEP = 15;
+const MUZZLE = 27; // 그림 가운데에서 총구 끝까지 (도트)
+const GUN_PULL = 0.42; // 총 자리: 쏘는 사람 자리에서 테이블 가운데 쪽으로 이만큼 (그 사람 바로 앞)
+for (let k = 0; k <= 180 / GUN_STEP; k++) SIZE[`gun_${k}`] = [60, 60];
 function spr(name, cls = '', scale = PX) {
   const [w, hh] = SIZE[name] || [16, 16];
   return h('img', { class: `rl-spr ${cls}`, src: `${ART}${name}.png`, alt: '', draggable: 'false', width: w * scale, height: hh * scale });
@@ -586,9 +592,11 @@ export default {
     const mag = h('div', { class: 'rl-mag' });
     const count = h('div', { class: 'rl-count' });
     const banner = h('div', { class: 'rl-banner' });
-    const gun = h('div', { class: 'rl-gun' }, spr('gun'));
+    const gunImg = spr('gun_6', 'rl-top');
+    for (let k = 0; k <= 180 / GUN_STEP; k++) new Image().src = `${ART}gun_${k}.png`; // 처음 돌 때 그림이 늦게 뜨지 않게
+    const gun = h('div', { class: 'rl-gun' }, gunImg, spr('gun_front', 'rl-front'));
     const table = h('div', { class: 'rl-table' },
-      h('div', { class: 'rl-felt' }), h('div', { class: 'rl-center' }, mag, count, banner, gun), fx, flashEl);
+      h('div', { class: 'rl-felt' }), h('div', { class: 'rl-center' }, mag, count, banner), gun, fx, flashEl);
     const prompt = h('div', { class: 'rl-prompt' });
     const handEl = h('div', { class: 'rl-hand' });
     const timer = h('div', { class: 'rl-timer' });
@@ -613,6 +621,11 @@ export default {
     let seen = null;           // 이미 연출한 것 (중간에 들어와도 지난 장면을 다시 틀지 않게)
     let hint = null;           // 잠깐 띄우는 안내 { text, cls, until }
     let gunFront = false;
+    let pose = { k: 6, flip: false, deg: 0 }; // 지금 그린 총 방향 (deg = 총구가 향한 화면 각도)
+    let lastAimed = null;
+    let holder = null;                        // 총을 앞에 둔 사람 (지금 쏘는 사람)
+    let spot = { x: 50, y: 50 };              // 총 자리 (테이블의 %)
+    let wasAimMe = false;
     let bannerNo = 0;
     const keys = { head: '', mag: '', panel: '', timer: '', side: '' };
     const timers = new Set();
@@ -662,18 +675,29 @@ export default {
       return true;
     }
 
-    // 겨눌 수 있는 사람들: 내 자리부터 시계 방향 (화면에서 ← 가 다음 사람)
+    // 살아 있는 사람들: 내 자리부터 시계 방향 (유품 받을 사람 처음 고를 때)
     function ring() {
       const i = Math.max(0, S.order.indexOf(me));
       return [...S.order.slice(i), ...S.order.slice(0, i)].filter(alive);
     }
-    function stepFrom(list, cur, dir) {
-      if (!list.length) return null;
-      const i = list.indexOf(cur);
-      if (i >= 0) return list[(i + dir + list.length) % list.length];
-      const first = list[0] === me ? 1 : 0;
-      return dir > 0 ? list[Math.min(first, list.length - 1)] : list[list.length - 1];
+    // 내 자리(아래)에서 본 방향: 0 = 정면(맞은편), 음수 = 왼쪽, 양수 = 오른쪽
+    function sideAngle(id) {
+      const m = seats.get(me);
+      const s = seats.get(id);
+      return Math.atan2(s.x - m.x, m.y - s.y);
     }
+    const others = () => S.alive.filter(id => id !== me && seats.has(id)).sort((a, b) => sideAngle(a) - sideAngle(b));
+    // ← → : 내가 보는 방향 기준 왼쪽 · 오른쪽 사람으로 (끝에서는 멈춘다).
+    // 아직 안 겨눴거나 나를 겨누던 중이면 그쪽에 앉은 사람 중 정면에 가장 가까운 사람부터 (그쪽에 아무도 없으면 맞은편)
+    function stepSide(cur, dir) {
+      const list = others();
+      if (!list.length) return cur;
+      const i = list.indexOf(cur);
+      if (i >= 0) return list[Math.max(0, Math.min(list.length - 1, i + dir))];
+      const side = dir < 0 ? [...list].reverse().find(id => sideAngle(id) < -0.05) : list.find(id => sideAngle(id) > 0.05);
+      return side || opposite();
+    }
+    const opposite = () => [...others()].sort((a, b) => Math.abs(sideAngle(a)) - Math.abs(sideAngle(b)))[0] || null;
 
     function say(text, cls = 'hint', ms = 1800) {
       hint = { text, cls, until: performance.now() + ms };
@@ -751,7 +775,7 @@ export default {
       if (isTyping(e) || !S) return;
       const c = e.code;
       const d = digitOf(e);
-      const dir = c === 'ArrowLeft' || c === 'KeyA' ? 1 : c === 'ArrowRight' || c === 'KeyD' ? -1 : 0;
+      const dir = c === 'ArrowLeft' || c === 'KeyA' ? -1 : c === 'ArrowRight' || c === 'KeyD' ? 1 : 0;
       const down = c === 'ArrowDown' || c === 'KeyS';
       const up = c === 'ArrowUp' || c === 'KeyW';
       const space = c === 'Space';
@@ -768,17 +792,16 @@ export default {
       }
       if (mode === 'will') {
         if (dir) {
-          heir = stepFrom(ring(), heir, dir);
+          heir = stepSide(heir, dir);
           paint();
         }
         return;
       }
       if (space) return fireNow();
       if (S.scatter) return; // 산탄은 겨눌 필요가 없다
-      const list = ring();
-      if (dir) setAim(stepFrom(list, aimLocal, dir));
+      if (dir) setAim(stepSide(aimLocal, dir));
       else if (down) setAim(me);
-      else if (up) setAim(list[Math.round(list.length / 2)] || list[0]);
+      else if (up) setAim(opposite());
     }
     window.addEventListener('keydown', onKey);
 
@@ -797,6 +820,7 @@ export default {
       ch = fx.height = hh;
       fx.style.width = `${w * PX}px`;
       fx.style.height = `${hh * PX}px`;
+      setPose(lastAimed ? poseTo(lastAimed) : poseCenter());
     }
     // 화면 요소의 가운데 → 그림판 좌표
     function at(el, dx = 0) {
@@ -805,7 +829,12 @@ export default {
       return [Math.round((r.left + r.width / 2 - t.left) / PX + dx), Math.round((r.top + r.height / 2 - t.top) / PX)];
     }
     const seatPt = id => (seats.get(id) ? at(seats.get(id).face) : [cw >> 1, ch >> 1]);
-    const gunPt = () => at(gun, gunFront ? 0 : gun.classList.contains('flip') ? -22 : 22); // 총구 끝
+    const gunPt = () => { // 총구 끝 (정면 그림일 땐 가운데)
+      const [x, y] = at(gun);
+      if (gunFront) return [x, y];
+      const a = (pose.deg * Math.PI) / 180;
+      return [Math.round(x + Math.cos(a) * MUZZLE), Math.round(y + Math.sin(a) * MUZZLE)];
+    };
     function dots(a, b, color, gap = 1, off = 0, size = 1) {
       const n = Math.max(Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]));
       if (!n) return;
@@ -1057,19 +1086,74 @@ export default {
           h('span', { class: 'live' }, `실탄 ${S.left?.live || 0}`), h('span', { class: 'blank' }, `공포탄 ${S.left?.blank || 0}`),
         ] : []));
       }
-      // 총: 누가 나를 쐈으면 정면 총구, 아니면 옆모습이 겨눈 쪽을 본다 (좌우로만 뒤집는다)
+      // 총: 위에서 내려다본 총이 겨눈 사람 얼굴 쪽으로 돈다. 누가 나를 쏘면(결과 전) 정면 총구가 다가온다
       const front = S.phase === 'hush' && !shot.self && shot.to.includes(me) && alive(me);
       if (front !== gunFront) {
         gunFront = front;
-        gun.replaceChildren(spr(front ? 'gun_front' : 'gun'));
         gun.classList.toggle('front', front);
+      }
+      // 총은 쏘는 사람 앞에 놓인다: 차례가 시작되면(장전 중엔 다음 사람) 그 사람 앞으로 미끄러져 오고,
+      // 겨누기 전엔 테이블 가운데를 본다
+      const who = S.phase === 'turn' ? S.turn : (S.phase === 'hush' || S.phase === 'shot') ? shot?.by
+        : S.phase === 'load' ? S.after : holder || S.order?.[0];
+      if (who && who !== holder && seats.has(who)) {
+        holder = who;
+        const s = seats.get(who);
+        spot = { x: s.x + (50 - s.x) * GUN_PULL, y: s.y + (50 - s.y) * GUN_PULL };
+        gun.style.left = `${spot.x}%`;
+        gun.style.top = `${spot.y}%`;
+        lastAimed = null;
+        setPose(poseCenter());
       }
       const aimed = S.phase === 'turn' ? (S.turn === me ? aimLocal : S.aim)
         : (S.phase === 'hush' || S.phase === 'shot') && shot?.to.length === 1 ? shot.to[0] : null;
-      const x = seats.get(aimed)?.x;
-      if (x != null && Math.abs(x - 50) > 1) gun.classList.toggle('flip', x < 50);
+      if (aimed && seats.has(aimed)) {
+        lastAimed = aimed;
+        setPose(poseTo(aimed));
+      }
+      // 남이 나를 겨누면: 테이블 테두리가 붉게 뛰고, 총구가 나에게 올 때마다 짧게 알린다
+      const aimMe = S.phase === 'turn' && S.turn !== me && S.aim === me && alive(me);
+      if (aimMe && !wasAimMe) {
+        audio.aimed();
+        setBanner('나를 겨눔!', 'aimme', 900);
+      }
+      wasAimMe = aimMe;
+      table.classList.toggle('aimme', aimMe);
       table.classList.toggle('hush', S.phase === 'hush');
       table.classList.toggle('danger', front);
+    }
+
+    // 총 자리에서 그 지점(화면 px) 쪽 각도 → 15도 간격 그림 중 가까운 것 (왼쪽이면 오른쪽 그림을 좌우로 뒤집는다).
+    // 총이 미끄러지는 중이어도 도착할 자리에서 잰다
+    function poseAt(x, y) {
+      const t = table.getBoundingClientRect();
+      const gx = t.left + (t.width * spot.x) / 100;
+      const gy = t.top + (t.height * spot.y) / 100;
+      const deg = (Math.atan2(y - gy, x - gx) * 180) / Math.PI;
+      const flip = Math.abs(deg) > 90;
+      let d = flip ? 180 - deg : deg;
+      if (d > 180) d -= 360;
+      const k = Math.max(0, Math.min(180 / GUN_STEP, Math.round((d + 90) / GUN_STEP)));
+      const shown = -90 + k * GUN_STEP;
+      return { k, flip, deg: flip ? 180 - shown : shown };
+    }
+    const poseTo = id => {
+      const r = seats.get(id).face.getBoundingClientRect();
+      return poseAt(r.left + r.width / 2, r.top + r.height / 2);
+    };
+    const poseCenter = () => {
+      const t = table.getBoundingClientRect();
+      return poseAt(t.left + t.width / 2, t.top + t.height / 2);
+    };
+    function setPose(p) {
+      if (p.k === pose.k && p.flip === pose.flip) return;
+      pose = p;
+      gunImg.src = `${ART}gun_${p.k}.png`;
+      gunImg.classList.toggle('flip', p.flip);
+      // 쏠 때 총이 뒤로 밀리는 방향 (도트 한 칸 = 3px 단위)
+      const a = (p.deg * Math.PI) / 180;
+      gun.style.setProperty('--kx', `${-Math.round(Math.cos(a) * 3) * PX}px`);
+      gun.style.setProperty('--ky', `${-Math.round(Math.sin(a) * 3) * PX}px`);
     }
 
     function promptOf(mode) {
@@ -1178,7 +1262,7 @@ export default {
           spr(`c_${k}`, '', 2), h('span', {}, h('b', {}, c.name), ` ${c.tip}${c.when === 'react' ? ' (맞을 때)' : ''}`)))),
         h('h3', {}, '조작'),
         h('ul', { class: 'rules' },
-          h('li', {}, '← → = 겨누기 (↓ = 나), 총구는 모두에게 보여요'),
+          h('li', {}, '← = 내 왼쪽 사람 · → = 내 오른쪽 사람 겨누기 (↓ = 나, ↑ = 맞은편). 총구는 모두에게 보여요'),
           h('li', {}, '스페이스 = 발사'),
           h('li', {}, '숫자키 = 그 자리 카드 (수갑·훔치기는 겨눈 사람에게)'),
           h('li', {}, '누가 나를 쐈을 때: 숫자키 = 방패·거울, 스페이스 = 그냥 맞기')),

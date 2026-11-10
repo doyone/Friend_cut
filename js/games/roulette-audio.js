@@ -108,6 +108,7 @@ export function createRouletteAudio() {
     card() { tone(660, 0.07, 0.16, 'triangle', 1040); },
     turn() { tone(520, 0.08, 0.14, 'triangle', 780); tone(780, 0.1, 0.14, 'triangle', 1040, 0.09); },
     alarm() { tone(880, 0.09, 0.2, 'square', 880); tone(880, 0.09, 0.2, 'square', 880, 0.16); },
+    aimed() { tone(330, 0.07, 0.16, 'square', 262); tone(262, 0.1, 0.16, 'square', 196, 0.08); }, // 총구가 나에게 왔다 (어…)
     load() { for (let i = 0; i < 4; i++) { tone(1100 - i * 90, 0.03, 0.16, 'square', 600, i * 0.09); noise(0.03, 0.2, 3000, i * 0.09, 'highpass'); } },
     dead() { tone(420, 0.7, 0.28, 'sawtooth', 70); },
     win() { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.16, 0.16, 'triangle', f, i * 0.12)); },

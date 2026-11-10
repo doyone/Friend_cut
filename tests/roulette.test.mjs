@@ -315,22 +315,28 @@ test('산탄: 나 빼고 모두에게, 각자 받아치기. 거울은 쏜 사람
   assert.ok(g.S.titles[last].includes('🔫 최후의 1인'));
 });
 
-test('시간 초과: 총구가 향한 사람에게(없으면 나에게) 그대로 나가고, 그렇게 나간 공포탄으로는 한 번 더 못 한다. 자리 비우면 바로', () => {
+test('시간 초과: 총구가 향한 사람에게(없으면 나에게) 그대로 나간다. 나에게 나간 공포탄도 한 번 더, 자리 비운 사람은 기다리지 않고 한 번 더도 없음', () => {
   const g = newGame(3);
   const a = g.S.turn;
   const b = nextAlive(g.S, a);
   const c = nextAlive(g.S, b);
-  g.shells([0, 0, 1, 1, 1]);
+  g.shells([0, 0, 1, 0, 1, 1]);
   g.tick(TURN_TIME - 200);
   assert.equal(g.S.phase, 'turn');
   g.until(S => S.phase === 'hush');
   assert.deepEqual([g.S.shot.to, g.S.shot.self, g.S.shot.auto], [[a], true, true]);
   g.until(S => S.phase === 'turn');
-  assert.equal(g.S.turn, b, '시간 초과 공포탄은 차례가 넘어간다');
-  g.aim(c);
+  assert.deepEqual([g.S.turn, g.S.shot.again], [a, true], '시간이 끝나 나에게 나간 공포탄도 한 번 더');
+  g.aim(b);
   g.tick(TURN_TIME + 400);
   assert.equal(g.S.phase, 'hush');
-  assert.deepEqual(g.S.shot.to, [c]);
+  assert.deepEqual(g.S.shot.to, [b], '겨눠 둔 사람에게 나간다');
+  g.until(S => S.phase === 'turn');
+  assert.equal(g.S.turn, b);
+  g.aim(c);
+  g.tick(TURN_TIME + 400);
+  g.until(S => S.phase === 'shot');
+  assert.equal(g.S.hp[c], g.S.maxHp - 1);
   g.until(S => S.phase === 'turn');
   assert.equal(g.S.turn, c);
   g.offline.add(c);
@@ -338,7 +344,9 @@ test('시간 초과: 총구가 향한 사람에게(없으면 나에게) 그대�
   assert.equal(g.S.phase, 'hush', '자리 비운 사람은 기다리지 않는다');
   assert.deepEqual(g.S.shot.to, [c]);
   g.until(S => S.phase === 'shot');
-  assert.equal(g.S.hp[c], g.S.maxHp - 1);
+  assert.deepEqual([g.S.shot.live, g.S.shot.again], [0, false], '자리 비운 사람의 공포탄은 한 번 더가 없다 (혼자 판을 끌지 않게)');
+  g.until(S => S.phase === 'turn');
+  assert.equal(g.S.turn, a);
   assert.equal(g.said.length, 0);
 });
 

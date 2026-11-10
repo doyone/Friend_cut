@@ -103,7 +103,7 @@ python serve.py
 ```
 index.html
 css/style.css      공통 + 게임 화면 (교수님 몰래 게임하기는 css/professor.css, 독박 룰렛은 css/roulette.css)
-art/roulette.px.js 독박 룰렛 도트 그림 원본 (pxl). 고친 뒤 다시 굽기: node <pxl>/bin/pxl.js build art/roulette.px.js --out img/roulette --no-preview
+art/roulette.px.js 독박 룰렛 도트 그림 원본 (pxl 스킬: ~/.claude/skills/pxl-pixel-art). 고친 뒤 다시 굽기: node ~/.claude/skills/pxl-pixel-art/bin/pxl.js build art/roulette.px.js --out img/roulette --no-preview
 img/roulette/      구운 도트 그림 (sprites/*.png, 화면에서 3배로 키워 씀)
 js/
   config.js        ← Firebase 설정 붙여넣는 곳
