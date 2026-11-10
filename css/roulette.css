@@ -65,16 +65,13 @@
 .rl-banner.again { color: var(--gold); animation: rl-pop .25s steps(3); }
 .rl-banner.skip { color: var(--mist); animation: rl-pop .25s steps(3); }
 .rl-banner.aimme { color: var(--fire); animation: rl-pop .25s steps(3); }
-/* 증강 등급 · 운명 카드 · 배짱 · 막판 */
+/* 증강 등급 · 운명 카드 · 막판 */
 .rl-banner.tier { animation: rl-pop .25s steps(3); }
 .rl-banner.t1 { color: var(--mist); }
 .rl-banner.t2 { color: var(--gold); }
 .rl-banner.t3 { animation: rl-pop .25s steps(3), rl-prism-text .48s steps(1) infinite; }
 .rl-banner.fate { color: var(--ice); }
 .rl-banner.fate.land { color: var(--gold); animation: rl-pop .25s steps(3); }
-.rl-banner.brave { color: var(--gold); animation: rl-pop .25s steps(3); }
-.rl-banner.brave.b2 { color: var(--fire); }
-.rl-banner.brave.b3 { animation: rl-pop .25s steps(3), rl-prism-text .32s steps(1) infinite; }
 .rl-banner.final { color: var(--fire); animation: rl-pop .25s steps(3), rl-blink .5s steps(2) 3; }
 /* 🎰 룰렛판: 운명 카드를 쓰면 탄창 줄 자리에 떠서 돈다 (구운 띠를 칸칸이 넘긴다) · 위에 바늘 */
 .rl-wheel { display: none; place-items: center; }
@@ -234,5 +231,5 @@
   .rl { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .rl-box.shaking, .rl-flash.on, .rl-table.hush::after, .rl-aug.t3, .rl-card.aug.t3, .rl-card.fate.can, .rl-banner.t3, .rl-banner.b3 { animation: none; }
+  .rl-box.shaking, .rl-flash.on, .rl-table.hush::after, .rl-aug.t3, .rl-card.aug.t3, .rl-card.fate.can, .rl-banner.t3 { animation: none; }
 }

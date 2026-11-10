@@ -1,8 +1,8 @@
 // 독박 룰렛: 탄창에 실탄·공포탄이 몇 발씩인지만 알고 순서는 모른다 (벅샷룰렛). 내 차례에 카드를 쓰고 한 발을 누군가에게(나 포함) 쏜다.
-// 나를 쏴서 공포탄이면 🎲 배짱! 카드 1장 + 한 번 더. 실탄이면 하트 -1. 남을 쏘면 실탄일 때 그 사람 하트 -1, 어느 쪽이든 차례가 넘어간다.
+// 나를 쏴서 공포탄이면 한 번 더, 실탄이면 하트 -1. 남을 쏘면 실탄일 때 그 사람 하트 -1, 어느 쪽이든 차례가 넘어간다.
 // 손패는 나만 본다 (갓필드). 남이 나를 쏘면 결과가 나오기 전 3초 동안 🛡️ 방패(막기)·🪞 거울(되돌리기)로 받아칠 수 있다 → 공포탄이면 카드만 날린다.
 // 총구가 누구를 향하는지는 모두에게 보인다 (겨누는 척하기). 하트를 다 잃으면 탈락, 마지막 1명 우승.
-// 카드는 아껴서: 처음 3장(카드 2 + 🎰 운명 카드 1) · 탄창 2~3에 1장씩 · 탄창 4부터 막판(안 나오고 실탄이 확 는다). 대신 배짱과 처치로 번다.
+// 카드는 아껴서: 처음 3장(카드 2 + 🎰 운명 카드 1) · 탄창 2~3에 1장씩 · 탄창 4부터 막판(안 나오고 실탄이 확 는다). 남을 탈락시키면 1장.
 // 🎰 운명 카드: 한 판에 한 장. 쓰면 룰렛이 돌아 총 교체 · 전탄 실탄 · 모두 하트 -1 · … 중 하나가 바로 일어난다.
 // ✨ 증강: 시작할 때와 탄창 3을 넣기 전에 모두 동시에 3개 중 1개를 고른다. 등급(실버 · 골드 · 프리즘)은 그 회차에 모두 같고, 고른 증강은 모두에게 보인다.
 // 탈락하면 👻 유품: 남은 카드 중 1장을 살아 있는 한 명에게 물려줄 수 있다 (게임은 안 멈춘다).
@@ -22,7 +22,7 @@ const REACT_GRACE = 300;
 const REACT_SHOW = 900;       // 맞을 사람이 다 정한 뒤(카드를 내밀고) 결과가 나올 때까지
 const SELF_HUSH = 1300;       // 나에게 쏠 때(또는 아무도 못 막는 발) 두근거리는 시간
 const SHOW_TIME = 1700;       // 결과를 보여 주는 시간
-const BONUS_TIME = 2300;      // 배짱 · 증강이 터지면 조금 더
+const BONUS_TIME = 2300;      // 증강 · 한 발 더가 터지면 조금 더
 const DEATH_TIME = 2800;      // 탈락이 나오면 조금 더
 export const LOAD_TIME = 3200; // 장전: 앞 절반은 탄을 보여 주고 뒤 절반은 섞어서 숨긴다
 const SKIP_TIME = 1300;       // ⛓️ 쉬는 걸 보여 주는 시간
@@ -49,7 +49,6 @@ export const CARDS = {
 
 // ✨ 증강 19종. tier 1 실버 · 2 골드 · 3 프리즘. 그림은 a_<이름>
 export const AUGS = {
-  brave: { tier: 1, e: '🎲', name: '배짱꾼', tip: '배짱 보상 카드 1장 더' },
   keen: { tier: 1, e: '👀', name: '눈치 백단', tip: '장전할 때 첫 탄을 나만 봐요' },
   counter: { tier: 1, e: '🥊', name: '빈총 반격', tip: '나를 쏜 탄이 공포탄이면 쏜 사람 카드 1장 뺏기' },
   pouch: { tier: 1, e: '🎒', name: '큰 주머니', tip: '손패 최대 +1 · 바로 카드 1장' },
@@ -63,7 +62,6 @@ export const AUGS = {
   fuse: { tier: 2, e: '💣', name: '도화선', tip: '나를 탈락시킨 사람도 하트 -1' },
   dealer: { tier: 2, e: '🃏', name: '도박사', tip: '운명 카드 1장 더' },
   chain: { tier: 3, e: '💀', name: '연쇄 처치', tip: '내 실탄으로 탈락시키면 한 번 더 쏴요' },
-  allin: { tier: 3, e: '🪙', name: '올인', tip: '배짱마다 다음 발 피해 +1 (연속이면 쌓여요)' },
   phoenix: { tier: 3, e: '👑', name: '불사조', tip: '처음 탈락할 때 하트 1개로 부활' },
   prophet: { tier: 3, e: '🔮', name: '예언자', tip: '장전할 때 탄 순서를 전부 나만 봐요' },
   devil: { tier: 3, e: '😈', name: '악마의 거래', tip: '하트 1개를 바치고 프리즘 증강 하나 더' },
@@ -100,7 +98,7 @@ export function magOf(alive, no, rand = Math.random) {
   const live = Math.max(1, Math.min(n - 1, Math.round(n * ratio)));
   return { live, blank: n - live };
 }
-// 장전할 때 받는 카드: 첫 탄창 2장(+ 🎰 운명 카드 1장), 탄창 2~3은 1장, 막판은 없음 (배짱 · 처치로만 번다)
+// 장전할 때 받는 카드: 첫 탄창 2장(+ 🎰 운명 카드 1장), 탄창 2~3은 1장, 막판은 없음 (처치로만 번다)
 export const dealOf = (alive, no) => (no === 1 ? 2 : no < FINAL_MAG ? 1 : 0);
 // 카드 한 장 뽑기 (둘만 남으면 산탄은 그냥 한 발이라 안 나온다)
 export function drawCard(alive, rand = Math.random) {
@@ -327,7 +325,7 @@ function openTurn(ctx, now, id) {
 // fresh = false면 방금 쏜 사람이 이어서 하는 것 (나를 쏴서 공포탄 · 💀 연쇄 처치 · 🔫 쌍권총)
 function enter(ctx, now, id, fresh = true) {
   const S = ctx.state;
-  if (fresh) Object.assign(S, { streak: null, dualUsed: false });
+  if (fresh) S.dualUsed = false;
   if (fresh && S.cuffs?.[id]) {
     const cuffs = { ...S.cuffs };
     delete cuffs[id];
@@ -340,7 +338,7 @@ function enter(ctx, now, id, fresh = true) {
 }
 
 // 방아쇠: 결과는 바로 안 나온다. 남을 쐈으면 맞을 사람이 받아칠 시간을 준다.
-// 피해 = 1 (두 배 2 · 🔥 화력이면 3) + 쌓아 둔 피해(🪙 올인 · 🎰) + ⚡ 속사 + 🗡️ 복수심
+// 피해 = 1 (두 배 2 · 🔥 화력이면 3) + 쌓아 둔 피해(🎰 피해 +2) + ⚡ 속사 + 🗡️ 복수심
 function fire(ctx, now, to, auto = false) {
   const S = ctx.state;
   const by = S.turn;
@@ -384,7 +382,7 @@ function expireWills(ctx, now) {
 
 const FX_NOTE = { hunter: '🎯 관통', reflex: '💎 반사 신경', phoenix: '👑 부활', vamp: '🩸 흡혈', counter: '🥊 빈총 반격', fuse: '💣 도화선', kill: '🎁 처치' };
 
-// 결과: 지금 탄을 꺼내 보고, 받아치기 · 증강을 반영해서 하트를 깎는다. 배짱 · 처치 보상도 여기서
+// 결과: 지금 탄을 꺼내 보고, 받아치기 · 증강을 반영해서 하트를 깎는다. 처치 보상도 여기서
 function resolve(ctx, now) {
   const S = ctx.state;
   const shot = S.shot;
@@ -474,18 +472,6 @@ function resolve(ctx, now) {
   S.hp = hp;
   S.used = used;
 
-  // 🎲 배짱: 나를 쏴서 공포탄 → 카드 (연속이면 화면에서 더 크게). 시간이 끝나 저절로 나간 탄은 배짱이 아니다
-  const brave = shot.self && !live && !shot.auto;
-  if (brave) {
-    const n = S.streak?.by === by ? S.streak.n + 1 : 1;
-    S.streak = { by, n };
-    const got = give(ctx, by, hasAug(S, by, 'brave') ? 2 : 1);
-    const allin = hasAug(S, by, 'allin');
-    if (allin) S.power = { by, n }; // 🪙 올인: 배짱 n번째면 다음 발 +n
-    shot.brave = { n, got, power: allin ? n : 0 };
-    inc(S, 'braves', by);
-  } else S.streak = null;
-
   // 나를 쏴서 공포탄: 한 번 더. 시간이 끝나 나에게 나간 탄도 쳐 준다 (자리를 비운 사람만 빼고: 혼자 계속 쏘며 판을 끌지 않게).
   // 💀 연쇄 처치 · 🔫 쌍권총도 한 번 더 (more)
   const again = shot.self && !live && (!shot.auto || ctx.isOnline(by));
@@ -502,8 +488,7 @@ function resolve(ctx, now) {
   if (blocked.length) line += ` · 🛡️ ${blocked.map(name).join(', ')}`;
   if (mirrored.length) line += ` · 🪞 ${mirrored.map(name).join(', ')}`;
   if (wasted.length) line += ` · 😅 ${wasted.map(name).join(', ')} 헛카드`;
-  if (brave) line += ` · 🎲 배짱${shot.brave.n > 1 ? ` ×${shot.brave.n}` : ''}! 카드 +${shot.brave.got}`;
-  else if (again) line += ' · 한 번 더';
+  if (again) line += ' · 한 번 더';
   if (more) line += more === 'chain' ? ' · 💀 연쇄 처치' : ' · 🔫 한 발 더';
   for (const f of fx) line += ` · ${FX_NOTE[f.k]}`;
   note(ctx, line);
@@ -537,7 +522,7 @@ function resolve(ctx, now) {
     }
   }
   S.phase = 'shot';
-  S.phaseEndsAt = now + (dead.length ? DEATH_TIME : brave || more || fx.length ? BONUS_TIME : SHOW_TIME);
+  S.phaseEndsAt = now + (dead.length ? DEATH_TIME : more || fx.length ? BONUS_TIME : SHOW_TIME);
   return true;
 }
 
@@ -557,8 +542,8 @@ function finish(ctx) {
   if (m >= 1) add(mir, `🪞 반사왕 (${m}번)`);
   const [wall, b] = top(S.blocks);
   if (b >= 2) add(wall, `🛡️ 철벽 (실탄 ${b}번 막음)`);
-  const [brave, s] = top(S.braves);
-  if (s >= 2) add(brave, `🎲 배짱왕 (배짱 ${s}번)`);
+  const [bold, s] = top(S.selfs);
+  if (s >= 3) add(bold, `🎲 강심장 (나에게 ${s}번)`);
   const [oops, w] = top(S.wastes);
   if (w >= 2) add(oops, `😅 헛방패 (${w}번)`);
   if (S.boomer) add(S.boomer, '🤦 자폭 1호');
@@ -771,7 +756,7 @@ function botTurn(ctx, id, mem, hand, now) {
   }
   if (!mem.plan) {
     const p = known ?? S.left.live / Math.max(1, S.left.live + S.left.blank);
-    if (p < 0.5 && !(p > 0.34 && Math.random() < p)) mem.plan = { to: id }; // 공포탄일 것 같으면 나에게 (배짱)
+    if (p < 0.5 && !(p > 0.34 && Math.random() < p)) mem.plan = { to: id }; // 공포탄일 것 같으면 나에게 (한 번 더)
     else {
       const low = Math.min(...others.map(x => S.hp?.[x] || 0));
       const grudge = others.includes(mem.grudge) ? mem.grudge : null;
@@ -837,7 +822,7 @@ export default {
   emoji: '🔫',
   tag: '심리',
   color: '#d63031',
-  desc: '실탄·공포탄이 몇 발인지만 알아요. 카드를 쓰고 누군가에게(나에게도) 한 발! 나를 쏴서 공포탄이면 배짱 보상. 🎰 운명 카드와 ✨ 증강으로 판이 뒤집혀요',
+  desc: '실탄·공포탄이 몇 발인지만 알아요. 카드를 쓰고 누군가에게(나에게도) 한 발! 나를 쏴서 공포탄이면 한 번 더. 🎰 운명 카드와 ✨ 증강으로 판이 뒤집혀요',
   minPlayers: 2,
   maxPlayers: 8,
   tickMs: 50, // 받아치기 마감·결과가 제때 나오게 자주 본다 (보내는 건 바뀔 때만)
@@ -963,7 +948,7 @@ export default {
     return willed;
   },
 
-  // 봇: 실탄 확률이 높으면 남에게, 낮으면 나에게(배짱). 돋보기 먼저, 하트가 깎였으면 반창고, 총구를 한두 번 돌리다 쏜다.
+  // 봇: 실탄 확률이 높으면 남에게, 낮으면 나에게(한 번 더). 돋보기 먼저, 하트가 깎였으면 반창고, 총구를 한두 번 돌리다 쏜다.
   // 겨눠지면 확률(쏜 사람이 돋보기를 썼으면 높게 본다)에 따라 받아친다. 탈락하면 나를 죽인 사람만 빼고 아무에게나 유품.
   // 증강은 셋 중 아무거나, 운명 카드는 가끔(하트가 1개면 자주) 돌린다
   bot(ctx, id, mem) {
@@ -1088,7 +1073,7 @@ export default {
       if (S.phase === 'hush' && !shot.self && !shot.pierce && shot.to.includes(me) && !shot.react?.[me] && sent.react !== shot.no) return 'react';
       return null;
     }
-    // 내 차례에 걸어 둔 피해 (두 배 · 화력 · 올인 · 🎰 피해 +2). 속사 · 복수심은 쏠 때 붙는다
+    // 내 차례에 걸어 둔 피해 (두 배 · 화력 · 🎰 피해 +2). 속사 · 복수심은 쏠 때 붙는다
     const dmgOf = id => (S.double ? (hasAug(S, id, 'fire') ? 3 : 2) : 1) + (S.power?.by === id ? S.power.n : 0);
 
     function usable(card, mode) {
@@ -1422,7 +1407,7 @@ export default {
       audio.reveal();
       setBanner('증강 공개!', `tier t${S.pick.tier}`, 1700);
       for (const [id, list] of Object.entries(S.pick.got || {})) {
-        list.forEach((a, i) => later(150 + i * 650, () => floatAt(id, AUGS[a].name, `aug t${AUGS[a].tier}`, `a_${a}`)));
+        list.filter(a => AUGS[a]).forEach((a, i) => later(150 + i * 650, () => floatAt(id, AUGS[a].name, `aug t${AUGS[a].tier}`, `a_${a}`)));
       }
     }
 
@@ -1465,7 +1450,7 @@ export default {
       else if (f.k === 'reveal' && S.reveal) say(`탄 공개: 지금 탄은 ${S.reveal.live ? '실탄' : '공포탄'}!`, S.reveal.live ? 'warn' : 'hint', 3200);
       else if (f.k === 'myaug' || f.k === 'allaug') {
         for (const [id, list] of Object.entries(res.augs || {})) {
-          list.forEach((a, i) => later(i * 650, () => floatAt(id, AUGS[a].name, `aug t${AUGS[a].tier}`, `a_${a}`)));
+          list.filter(a => AUGS[a]).forEach((a, i) => later(i * 650, () => floatAt(id, AUGS[a].name, `aug t${AUGS[a].tier}`, `a_${a}`)));
         }
       }
     }
@@ -1533,16 +1518,6 @@ export default {
         if (f.k === 'fuse') later(900, () => { audio.bang(false); hitSeat(f.id); floatAt(f.id, '도화선! -1', 'hit'); });
         if (f.k === 'kill') later(1100, () => { audio.reward(); floatAt(f.id, f.got ? '처치! 카드 +1' : '처치!', 'gain'); });
       }
-      if (shot.brave) { // 🎲 배짱: 연속일수록 크게
-        const { n, got, power } = shot.brave;
-        later(420, () => {
-          audio.brave(n);
-          setBanner(n >= 3 ? `배짱 ×${n}!!!` : n === 2 ? '배짱 ×2!!' : '배짱!', `brave b${Math.min(n, 3)}`, 1700);
-          burst(seatPt(shot.by), ['#ffcd75', '#f4f4f4', '#ef7d57'], 10 + n * 6, 0.9);
-          floatAt(shot.by, got ? `카드 +${got}` : '손패 가득', 'gain');
-        });
-        if (power) later(1000, () => floatAt(shot.by, `다음 발 +${power}`, 'hit'));
-      }
       if (shot.more) later(shot.dead?.length ? 1300 : 900, () => setBanner(shot.more === 'chain' ? '연쇄 처치!' : '한 발 더!', 'again', 1300));
     }
 
@@ -1597,7 +1572,7 @@ export default {
         const hp = S.hp?.[id] || 0;
         const n = S.cards?.[id] || 0;
         const fates = alive(id) ? S.fates?.[id] || 0 : 0;
-        const augs = S.augs?.[id] || [];
+        const augs = (S.augs?.[id] || []).filter(a => AUGS[a]); // 모르는 증강(다른 버전 방장)은 건너뛴다
         const react = (hush || S.phase === 'shot') && shot && !shot.self ? shot.react?.[id] : null;
         const shown = react === 'shield' || react === 'mirror' ? react : '';
         const tags = [];
@@ -1742,7 +1717,7 @@ export default {
       if (hint && performance.now() < hint.until) return [hint.text, hint.cls];
       const shot = S.shot;
       if (mode === 'will') return [heir ? `유품: ${nameOf(heir)}에게 · 숫자키 = 물려줄 카드 (← → 다른 사람)` : '유품: ← → 받을 사람 · 숫자키 = 물려줄 카드', 'hint'];
-      if (S.phase === 'intro') return [S.again ? '한 판 더!' : '돌아가며 한 발! 실탄이면 하트 -1 · 나를 쏴서 공포탄이면 배짱 보상 + 한 번 더', ''];
+      if (S.phase === 'intro') return [S.again ? '한 판 더!' : '돌아가며 한 발! 실탄이면 하트 -1 · 나를 쏴서 공포탄이면 한 번 더', ''];
       if (S.phase === 'pick') {
         const P = S.pick;
         if (P?.got) return ['증강 공개! 자리 옆 그림에 마우스를 올리면 설명이 보여요', 'hint'];
@@ -1757,7 +1732,7 @@ export default {
       if (S.phase === 'load') {
         const shells = `실탄 ${S.mag.live} · 공포탄 ${S.mag.blank}`;
         if (S.swap) return [`총 교체! 남은 탄 ${S.dud}발을 버리고 새 탄창: ${shells}`, 'warn'];
-        if (S.magNo === FINAL_MAG) return [`막판! 이제 카드는 안 나와요 (배짱 · 처치로만) · ${shells}`, 'warn'];
+        if (S.magNo === FINAL_MAG) return [`막판! 이제 카드는 안 나와요 (처치로만) · ${shells}`, 'warn'];
         return [`${S.dud ? `남은 공포탄 ${S.dud}발은 버리고 ` : ''}새 탄창: ${shells}`, ''];
       }
       if (S.phase === 'skip') return [`${nameOf(S.skip)} 수갑 때문에 이번 차례 쉬어요`, 'calm'];
@@ -1768,7 +1743,7 @@ export default {
           const more = `${S.repeat ? '한 번 더! ' : ''}${quick}`;
           if (S.scatter) return [`${more}산탄! 스페이스 = 모두에게 발사`, 'mine'];
           if (!aimLocal) return [`${more || '내 차례! '}← → 겨누기 (↓ = 나) · 스페이스 = 발사 · 숫자키 = 카드`, 'mine'];
-          if (aimLocal === me) return [`${more}나에게: 공포탄이면 배짱 보상 + 한 번 더 · 스페이스 = 발사`, 'mine'];
+          if (aimLocal === me) return [`${more}나에게: 공포탄이면 한 번 더 · 스페이스 = 발사`, 'mine'];
           return [`${more}${nameOf(aimLocal)}에게 · 스페이스 = 발사 (← → 바꾸기)`, 'mine'];
         }
         const t = nameOf(S.turn);
@@ -1783,11 +1758,7 @@ export default {
         return ['두근…', 'calm'];
       }
       if (S.phase === 'shot') {
-        if (!shot.live) {
-          const b = shot.brave;
-          if (b) return [`배짱! ${b.got ? `카드 +${b.got}` : '손패 가득'}${b.power ? ` · 다음 발 피해 +${b.power}` : ''} · 한 번 더`, 'mine'];
-          return [shot.more === 'dual' ? '공포탄… 쌍권총! 한 발 더' : shot.again ? '공포탄! 한 번 더' : '공포탄…', 'calm'];
-        }
+        if (!shot.live) return [shot.more === 'dual' ? '공포탄… 쌍권총! 한 발 더' : shot.again ? '공포탄! 한 번 더' : '공포탄…', 'calm'];
         const lost = Object.entries(shot.hits || {}).map(([id, d]) => `${nameOf(id)} -${d}`).join(' · ');
         const extra = shot.more === 'chain' ? ' · 연쇄 처치! 한 번 더' : shot.more === 'dual' ? ' · 쌍권총! 한 발 더' : '';
         return [`${lost ? `실탄! ${lost}` : '실탄! 하지만 다 막았다'}${extra}`, 'warn'];
@@ -1824,7 +1795,7 @@ export default {
       const offers = S.phase === 'pick' && S.pick && !S.pick.got && alive(me) ? S.pick.offers?.[me] || [] : null;
       const chosen = myPick && myPick.round === S.pick?.round ? myPick.aug : null;
       const fates = alive(me) && !offers ? S.fates?.[me] || 0 : 0;
-      const idle = !inGame() ? '관전 중' : alive(me) ? '카드 없음 · 배짱 · 처치로 벌어요' : '탈락! 채팅(Enter)으로 훈수 두기';
+      const idle = !inGame() ? '관전 중' : alive(me) ? '카드 없음 · 장전 · 처치로 받아요' : '탈락! 채팅(Enter)으로 훈수 두기';
       const key = JSON.stringify([mode, hand, hand.map(c => usable(c, mode)), offers, chosen, fates, text, cls, idle]);
       if (key !== keys.panel) {
         keys.panel = key;
@@ -1882,8 +1853,9 @@ export default {
       const key = JSON.stringify([S.alive, out, S.dead, log, S.augs]);
       if (key === keys.side) return;
       keys.side = key;
-      const owners = S.order.filter(id => (S.augs?.[id] || []).length);
-      const inPlay = [...new Set(owners.flatMap(id => S.augs[id]))];
+      const augsOf = id => (S.augs?.[id] || []).filter(a => AUGS[a]);
+      const owners = S.order.filter(id => augsOf(id).length);
+      const inPlay = [...new Set(owners.flatMap(augsOf))];
       side.replaceChildren(...[
         h('h3', {}, `생존 ${S.alive.length}명`),
         h('div', { class: 'tc-alive' }, S.alive.map(id => h('span', { class: 'tc-alive-chip' }, avatar(who(id)), who(id).name))),
@@ -1896,7 +1868,7 @@ export default {
         log.length ? h('ol', { class: 'rl-log' }, log.map(t => h('li', {}, t))) : null,
         owners.length ? h('h3', {}, '증강') : null,
         owners.length ? h('ul', { class: 'rl-auglist' }, owners.map(id => h('li', {}, h('b', {}, who(id).name),
-          ...S.augs[id].map(a => h('span', { class: `t${AUGS[a].tier}` }, AUGS[a].name))))) : null,
+          ...augsOf(id).map(a => h('span', { class: `t${AUGS[a].tier}` }, AUGS[a].name))))) : null,
         inPlay.length ? h('ul', { class: 'rl-cardlist' }, inPlay.map(a => h('li', {},
           spr(`a_${a}`, '', 2), h('span', {}, h('b', {}, AUGS[a].name), ` ${AUGS[a].tip}`)))) : null,
         h('h3', {}, '카드'),
@@ -1915,7 +1887,7 @@ export default {
         h('h3', {}, '규칙'),
         h('ul', { class: 'rules' },
           h('li', {}, '탄이 몇 발씩인지만 알고 순서는 몰라요'),
-          h('li', {}, '🎲 배짱: 나를 쏴서 공포탄이면 카드 1장 + 한 번 더'),
+          h('li', {}, '나를 쏴서 공포탄이면 한 번 더'),
           h('li', {}, '🎁 남을 탈락시키면 카드 1장'),
           h('li', {}, `카드는 처음 2장, 탄창 2~3에 1장씩. 탄창 ${FINAL_MAG}부터 막판: 카드는 안 나오고 실탄이 확 늘어요`),
           h('li', {}, '✨ 증강: 시작할 때와 탄창 3 앞에서 모두 동시에 3개 중 하나 (모두에게 보여요)'),

@@ -131,8 +131,7 @@ test('나에게 쏘기: 공포탄이면 한 번 더, 실탄이면 하트 -1 하�
   assert.equal(g.fire(a), false, '결과가 나올 때까지 또 못 쏨');
   g.until(S => S.phase === 'shot');
   assert.deepEqual([g.S.shot.live, g.S.shot.again], [0, true]);
-  assert.deepEqual(g.S.shot.brave, { n: 1, got: 1, power: 0 }, '배짱: 카드 1장');
-  assert.equal(g.handOf(a).length, 1);
+  assert.equal(g.handOf(a).length, 0, '나를 쏴서 공포탄이어도 카드는 안 준다');
   assert.deepEqual(g.S.left, { live: 1, blank: 1 });
   assert.deepEqual(g.S.fired, [0]);
   g.until(S => S.phase === 'turn');
@@ -453,7 +452,7 @@ test('봇끼리 끝까지: 규칙 안에서만 움직이고, 탄 개수·손패 
 });
 
 test('증강 고르기: 모두 같은 등급에서 3개 중 하나 · 자리에 있는 사람이 다 고르면 바로 공개 · 안 고른 사람은 아무거나 · 탄창 3 앞에서 한 번 더(골드 이상)', () => {
-  assert.equal(Object.keys(AUGS).length, 19);
+  assert.equal(Object.keys(AUGS).length, 17);
   assert.deepEqual([tierOf(1, () => 0.49), tierOf(1, () => 0.5), tierOf(1, () => 0.9), tierOf(2, () => 0.59), tierOf(2, () => 0.6)], [1, 2, 3, 2, 3]);
   let clock = 1_000_000;
   const roster = [0, 1, 2].map(i => ({ id: `p${i}`, name: `P${i}` }));
@@ -523,25 +522,16 @@ test('바로 생기는 증강: 큰 주머니(손패 최대 +1 · 카드 1장) ·
   for (let i = 0; i < 40; i++) assert.ok(!offerOf(g.S, a, 3).includes('devil'), '바칠 하트가 없으면 안 나온다');
 });
 
-test('배짱: 나를 쏴서 공포탄이면 카드(배짱꾼 2장) + 한 번 더, 연속이면 n이 오른다 · 올인은 다음 발 +n · 처치하면 카드 1장 · 시간 초과로 나간 탄은 배짱이 아니다', () => {
+test('처치 보상: 남을 탈락시키면 카드 1장 (손패가 차면 못 받음) · 나를 쏴서 공포탄은 한 번 더뿐', () => {
   const g = newGame(3);
   const [a, b, c] = g.S.order;
-  g.shells([0, 0, 1, 0, 1, 1]);
+  g.shells([0, 1, 1, 0]);
   g.fire(a);
   g.until(S => S.phase === 'shot');
-  assert.deepEqual(g.S.shot.brave, { n: 1, got: 1, power: 0 });
+  assert.deepEqual([g.S.shot.again, g.handOf(a).length], [true, 0]);
   g.until(S => S.phase === 'turn');
-  g.augs(a, ['brave', 'allin']);
-  g.fire(a);
-  g.until(S => S.phase === 'shot');
-  assert.deepEqual(g.S.shot.brave, { n: 2, got: 2, power: 2 }, '배짱꾼 2장 · 올인 연속 2번째라 +2');
-  assert.equal(g.handOf(a).length, 3);
-  g.until(S => S.phase === 'turn');
-  g.hand(a, []);
-  assert.deepEqual([g.S.turn, g.S.power], [a, { by: a, n: 2 }]);
+  g.S.hp[b] = 1;
   g.fire(b);
-  assert.equal(g.S.shot.dmg, 3, '1 + 올인 2');
-  assert.equal(g.S.power, null, '쏘면 사라진다');
   g.react(b);
   g.until(S => S.phase === 'shot');
   assert.deepEqual(g.S.shot.dead, [b]);
@@ -549,9 +539,13 @@ test('배짱: 나를 쏴서 공포탄이면 카드(배짱꾼 2장) + 한 번 더
   assert.equal(g.handOf(a).length, 1, '처치 보상');
   g.until(S => S.phase === 'turn');
   assert.equal(g.S.turn, c);
-  g.tick(TURN_TIME + 400);
+  g.hand(c, ['peek', 'peek', 'peek']);
+  g.S.hp[a] = 1;
+  g.fire(a);
+  g.react(a);
   g.until(S => S.phase === 'shot');
-  assert.deepEqual([g.S.shot.auto, g.S.shot.again, g.S.shot.brave], [true, true, undefined], '저절로 나간 공포탄: 한 번 더는 있지만 배짱 보상은 없다');
+  assert.ok(g.S.shot.fx.some(f => f.k === 'kill' && f.id === c && f.got === 0), '손패가 가득이면 0장');
+  assert.equal(g.handOf(c).length, 3);
 });
 
 test('운명 카드: 한 판에 한 장, 쓰면 룰렛이 멈출 때까지 차례 시간이 멈췄다가 일어난다 (전탄 실탄 · 모두 하트 -1 · 내 하트 +1 · 손패 돌리기 · 방향 반대 · 피해 +2 · 탄 공개 · 모두 카드 · 증강 바꾸기 · 총 교체)', () => {
