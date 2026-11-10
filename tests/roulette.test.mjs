@@ -194,6 +194,37 @@ test('받아치기: 방패는 막고, 거울은 쏜 사람에게 되돌린다(�
   assert.deepEqual(g.handOf(c), []);
 });
 
+test('이어서 쏘면 총구는 방금 겨눈 곳 그대로 (시간이 끝나도 엉뚱하게 나에게 안 나감). 다음 사람 차례는 빈 총구', () => {
+  // 나를 쏴서 공포탄 → 한 번 더: 나를 겨눈 채
+  let g = newGame(3);
+  const a = g.S.turn;
+  const b = nextAlive(g.S, a);
+  g.shells([0, 1, 0, 1]);
+  g.aim(a);
+  g.fire(a);
+  g.until(S => S.phase === 'turn');
+  assert.deepEqual([g.S.turn, g.S.aim, g.S.repeat], [a, a, true]);
+  g.fire(b);
+  g.until(S => S.phase === 'turn');
+  assert.deepEqual([g.S.turn, g.S.aim, g.S.repeat], [b, null, false], '다음 사람은 새로 겨눈다');
+
+  // 2명: 수갑 찬 상대를 쏘면 상대를 겨눈 채 차례가 돌아오고, 시간이 끝나면 그 상대에게 나간다
+  g = newGame(2);
+  const x = g.S.turn;
+  const y = nextAlive(g.S, x);
+  g.shells([0, 0, 1, 1]);
+  g.hand(x, ['cuff']);
+  g.aim(y);
+  assert.equal(g.card('cuff', y), true);
+  g.fire(y);
+  g.until(S => S.phase === 'skip');
+  g.until(S => S.phase === 'turn');
+  assert.deepEqual([g.S.turn, g.S.aim, g.S.repeat], [x, y, true]);
+  g.tick(TURN_TIME + 400);
+  assert.equal(g.S.phase, 'hush');
+  assert.deepEqual(g.S.shot.to, [y], '나에게가 아니라 겨눠 둔 상대에게');
+});
+
 test('카드: 돋보기는 나만 봄 · 반창고 · 수갑(다음 차례 쉼) · 훔치기 · 두 배와 산탄은 같이 못 씀', () => {
   const g = newGame(3);
   const a = g.S.turn;

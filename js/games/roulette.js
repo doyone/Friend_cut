@@ -133,9 +133,13 @@ function load(ctx, now, nextId) {
 
 function openTurn(ctx, now, id) {
   const S = ctx.state;
+  // 같은 사람이 이어서 쏘면(나를 쏴서 공포탄 · 맞은 사람이 수갑이라 차례가 돌아옴) 총구는 방금 겨눈 곳 그대로.
+  // 차례가 돌아온 걸 못 알아채고 시간이 끝나도 엉뚱하게 나에게 나가지 않는다 (repeat = 화면에 '한 번 더')
+  const repeat = S.keepAim?.by === id;
+  const keep = repeat && S.alive.includes(S.keepAim.to) ? S.keepAim.to : null;
   Object.assign(S, {
     phase: 'turn', turn: id, turnNo: (S.turnNo || 0) + 1, turnEndsAt: now + TURN_TIME, turnCap: now + TURN_CAP,
-    aim: null, double: false, scatter: false, peeked: false,
+    aim: keep, repeat, keepAim: null, double: false, scatter: false, peeked: false,
   });
   return true;
 }
@@ -541,6 +545,7 @@ export default {
       if (now < S.phaseEndsAt) return willed;
       if (S.alive.length <= 1) return finish(ctx);
       const { by, again } = S.shot;
+      S.keepAim = { by, to: S.shot.self ? by : S.shot.to.length === 1 ? S.shot.to[0] : null };
       return again && S.alive.includes(by) ? enter(ctx, now, by, false) : enter(ctx, now, nextAlive(S, by));
     }
     return willed;
@@ -1077,10 +1082,11 @@ export default {
       if (S.phase === 'turn') {
         if (S.turn === me) {
           if (mode !== 'turn') return ['…', 'calm'];
+          const more = S.repeat ? '한 번 더! ' : '';
           if (S.scatter) return ['산탄! 스페이스 = 모두에게 발사', 'mine'];
-          if (!aimLocal) return ['내 차례! ← → 겨누기 (↓ = 나) · 스페이스 = 발사 · 숫자키 = 카드', 'mine'];
-          if (aimLocal === me) return ['나에게: 공포탄이면 한 번 더 · 스페이스 = 발사', 'mine'];
-          return [`${nameOf(aimLocal)}에게 · 스페이스 = 발사`, 'mine'];
+          if (!aimLocal) return [`${more || '내 차례! '}← → 겨누기 (↓ = 나) · 스페이스 = 발사 · 숫자키 = 카드`, 'mine'];
+          if (aimLocal === me) return [`${more}나에게: 공포탄이면 한 번 더 · 스페이스 = 발사`, 'mine'];
+          return [`${more}${nameOf(aimLocal)}에게 · 스페이스 = 발사 (← → 바꾸기)`, 'mine'];
         }
         const t = nameOf(S.turn);
         if (S.scatter) return [`${t} 산탄 장전! 모두 조심`, 'warn'];
@@ -1234,11 +1240,16 @@ export default {
           seen.ev = S.evNo || 0;
           onEvent(S.ev);
         }
+        if (S.phase === 'skip' && seen.skip !== `${S.turnNo}:${S.skip}`) {
+          seen.skip = `${S.turnNo}:${S.skip}`;
+          setBanner(`수갑! ${nameOf(S.skip)} 쉼`, 'skip', 1300); // 도트 글꼴엔 ⛓️ 그림이 없어서 글자로
+        }
         if (S.phase === 'turn' && S.turnNo !== seen.turn) {
           seen.turn = S.turnNo;
-          aimLocal = null;
+          aimLocal = S.turn === me ? S.aim || null : null;
           hint = null;
           if (S.turn === me) audio.turn();
+          if (S.repeat) setBanner(S.turn === me ? '한 번 더!' : `${nameOf(S.turn)} 한 번 더`, 'again', 1600);
         }
         const peek = myPeek();
         if (peek && peek.key !== seen.peek) { // 돋보기 결과는 나에게만

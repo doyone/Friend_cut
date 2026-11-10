@@ -56,6 +56,8 @@
 .rl-banner.live { color: var(--fire); animation: rl-pop .25s steps(3); }
 .rl-banner.blank { color: var(--mist); }
 .rl-banner.hush { color: var(--paper); animation: rl-blink .62s steps(2) infinite; }
+.rl-banner.again { color: var(--gold); animation: rl-pop .25s steps(3); }
+.rl-banner.skip { color: var(--mist); animation: rl-pop .25s steps(3); }
 .rl-gun { display: grid; place-items: center; height: 51px; }
 .rl-gun.flip .rl-spr { transform: scaleX(-1); }
 .rl-gun.kick { animation: rl-kick .3s steps(1); }
