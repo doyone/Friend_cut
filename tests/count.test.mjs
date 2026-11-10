@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import game, { makeRush, makeCrowd, scoreRound, TARGETS, alike, RUSH_TIME } from '../js/games/count.js';
+import game, { makeRush, makeCrowd, scoreRound, TARGETS, alike, RUSH_TIME, CROWD_TIME } from '../js/games/count.js';
 
-test('행렬: 1라운드는 처음엔 세는 동물만 천천히, 뒤로 갈수록 확 많아진다 / 2라운드는 화면에 쫙 깔린다', () => {
+test('행렬: 1라운드는 처음엔 세는 동물만 천천히, 뒤로 갈수록 확 많아지고 후반엔 지그재그 / 2라운드는 5초 동안 화면에 쫙 깔린다', () => {
+  assert.equal(CROWD_TIME, 5000);
   for (const { id } of TARGETS) {
     for (let k = 0; k < 5; k++) {
       const s = makeRush(id);
@@ -15,6 +16,9 @@ test('행렬: 1라운드는 처음엔 세는 동물만 천천히, 뒤로 갈수�
       const part = (a, b) => s.list.filter(c => c.at >= a * RUSH_TIME && c.at < b * RUSH_TIME);
       assert.ok(part(0, 0.2).length <= 8 && part(0, 0.2).every(c => c.k === id));
       assert.ok(part(0.75, 1).length > part(0.25, 0.5).length * 2);
+      assert.ok(part(0, 0.5).every(c => !c.zig), '전반엔 지그재그 없음');
+      assert.ok(part(0.5, 1).filter(c => c.zig).length >= part(0.5, 1).length * 0.4);
+      assert.ok(s.list.every(c => !c.zig || (c.y - c.zig >= 30 && c.y + c.zig <= 92)), '꺾여도 풀밭 안');
 
       const m = makeCrowd(id);
       assert.ok(m.count >= 14 && m.count <= 22);

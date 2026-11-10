@@ -2,19 +2,24 @@
 // 누구한테 던질지는 숫자키로 직접 고른다. 터지면 들고 있던 사람 탈락, 마지막으로 넘긴 사람이 킬.
 // 방금 나한테 준 사람한테는 바로 못 돌려준다 (판마다 반사 1번). 6명 이상이면 폭탄 2개.
 // 탈락자는 유령이 되어 폭탄 든 사람 콤보에 화살표를 2개 더 얹는다.
-import { h, isTyping, pick, AGAIN_INTRO } from '../util.js';
+// 한 사람이 너무 오래 들고 있으면 손에서 바로 터진다(자폭, 킬 없음) → 터지기 직전까지 쥐고 버티다 넘겨서 판이 늘어지는 걸 막는다.
+import { h, isTyping, pick, INTRO_TIME } from '../util.js';
 import { avatar, countdown, keyNav, podium } from '../ui.js';
 
-const INTRO_TIME = 6000;
 const FUSE_MIN = 12000;
 const FUSE_MAX = 28000;
 const RESPAWN = 2500;        // 터지고 다음 폭탄까지
 const HAUNT_COOLDOWN = 5000;
+// 버티기 제한: 폭탄을 받고 (기본 + 화살표 수 × 개당) 안에 못 넘기면 손에서 터진다 (화살표 4개 4.5초 ~ 9개 7초)
+const HOLD_BASE = 2500;
+const HOLD_PER = 500;
+const HOLD_GRACE = 300;      // 막대가 다 된 뒤 늦게 도착하는 '던지기' 신호를 기다린다
 const ARROW = { U: '↑', D: '↓', L: '←', R: '→' };
 const KEYMAP = { ArrowUp: 'U', KeyW: 'U', ArrowDown: 'D', KeyS: 'D', ArrowLeft: 'L', KeyA: 'L', ArrowRight: 'R', KeyD: 'R' };
 
 // 폭탄이 오래 돌수록 콤보가 길어진다 (4개 → 최대 9개)
 const comboLength = age => Math.min(9, 4 + Math.floor(age / 6000));
+export const holdLimit = len => HOLD_BASE + len * HOLD_PER;
 const wantBombs = n => (n >= 6 ? 2 : 1);
 const randomArrows = n => Array.from({ length: n }, () => pick(['U', 'D', 'L', 'R']));
 
@@ -27,12 +32,14 @@ function spawn(ctx, now) {
   if (!pool.length) return false;
   S.bombNo = (S.bombNo || 0) + 1;
   const id = `b${S.bombNo}`;
-  S.bombs = [...(S.bombs || []), { id, holder: pick(pool), born: now, heat: 0, seq: 0 }];
+  const len = comboLength(0);
+  S.bombs = [...(S.bombs || []), { id, holder: pick(pool), born: now, heat: 0, seq: 0, len, got: now, limit: holdLimit(len) }];
   ctx.secret.fuses = { ...(ctx.secret.fuses || {}), [id]: now + FUSE_MIN + Math.random() * (FUSE_MAX - FUSE_MIN) };
   return true;
 }
 
-function explode(ctx, b, now, away = false) {
+// why: 'away' = 자리 비움, 'late' = 너무 오래 들고 있음 (둘 다 넘긴 사람 킬이 아니다)
+function explode(ctx, b, now, why = null) {
   const S = ctx.state;
   const name = ctx.nameOf;
   const victim = b.holder;
@@ -43,13 +50,15 @@ function explode(ctx, b, now, away = false) {
   S.alive = S.alive.filter(id => id !== victim);
   S.outOrder = [...(S.outOrder || []), victim];
   S.booms = [...(S.booms || []), { pid: victim, at: now }].slice(-8);
-  const killer = !away && b.from && b.from !== victim ? b.from : null;
+  const killer = !why && b.from && b.from !== victim ? b.from : null;
   S.dead = { ...(S.dead || {}), [victim]: killer || '-' };
   if (killer) {
     ctx.kill(killer, victim, '💣 폭탄 배달');
     S.kills = { ...(S.kills || {}), [killer]: (S.kills?.[killer] || 0) + 1 };
   } else {
-    ctx.announce(away ? `💤 ${name(victim)} 자리 비움 → 폭사` : `💥 ${name(victim)} 손에서 폭탄이 터졌다!`);
+    ctx.announce(why === 'away' ? `💤 ${name(victim)} 자리 비움 → 폭사`
+      : why === 'late' ? `⏰ ${name(victim)} 너무 오래 들고 있다가 폭사!`
+        : `💥 ${name(victim)} 손에서 폭탄이 터졌다!`);
   }
   if (S.alive.length <= 1) {
     finish(ctx);
@@ -85,14 +94,14 @@ export default {
   emoji: '💣',
   tag: '우정파괴',
   color: '#e74c3c',
-  desc: '폭탄을 받으면 방향키 콤보를 쳐야 넘길 수 있어요. 누구한테 던질지는 숫자키로. 터지면 탈락, 넘긴 사람이 킬!',
+  desc: '폭탄을 받으면 방향키 콤보를 쳐야 넘길 수 있어요. 터지면 탈락, 넘긴 사람이 킬! 오래 들고 있으면 손에서 터져요',
   minPlayers: 3,
   maxPlayers: 8,
 
   setup(ctx, prev) {
     return {
       phase: 'intro',
-      phaseEndsAt: ctx.now() + (prev ? AGAIN_INTRO : INTRO_TIME),
+      phaseEndsAt: ctx.now() + INTRO_TIME,
       again: !!prev,
       alive: ctx.roster.map(p => p.id),
     };
@@ -101,6 +110,7 @@ export default {
   onInput(ctx, { pid, type, data }) {
     const S = ctx.state;
     if (S.phase !== 'play') return false;
+    const now = ctx.now();
     if (type === 'throw') {
       const b = S.bombs?.find(x => x.id === data.bomb);
       const t = data.target;
@@ -113,18 +123,20 @@ export default {
         S.reflectUsed = { ...(S.reflectUsed || {}), [pid]: true };
         reflect = true;
       }
-      S.bombs = S.bombs.map(x => (x.id === b.id ? { ...x, holder: t, from: pid, seq: x.seq + 1 } : x));
+      const len = comboLength(now - b.born);
+      S.bombs = S.bombs.map(x => (x.id === b.id ? { ...x, holder: t, from: pid, seq: x.seq + 1, len, got: now, limit: holdLimit(len) } : x));
       S.passes = { ...(S.passes || {}), [pid]: (S.passes?.[pid] || 0) + 1 };
       if (reflect) ctx.announce(`🔄 ${ctx.nameOf(pid)} 반사! 폭탄이 ${ctx.nameOf(t)}에게 되돌아감`);
       return true;
     }
     if (type === 'haunt') {
       const isGhost = S.roster.some(p => p.id === pid) && !S.alive.includes(pid);
-      const now = ctx.now();
       if (!isGhost || !S.bombs?.some(b => b.holder === data.target)) return false;
       if (now - (S.lastHaunt?.[pid] || 0) < HAUNT_COOLDOWN) return false;
       S.lastHaunt = { ...(S.lastHaunt || {}), [pid]: now };
       S.haunts = [...(S.haunts || []), { by: pid, to: data.target, at: now }].slice(-20);
+      // 화살표가 2개 늘어난 만큼 버틸 시간도 늘려 준다 (유령 혼자서 터뜨리지 못하게)
+      S.bombs = S.bombs.map(x => (x.holder === data.target ? { ...x, limit: x.limit + 2 * HOLD_PER } : x));
       return true;
     }
     return false;
@@ -145,10 +157,13 @@ export default {
       if (S.phase !== 'play') break;
       const at = ctx.secret.fuses?.[b.id] || now;
       if (!ctx.isOnline(b.holder)) {
-        explode(ctx, b, now, true);
+        explode(ctx, b, now, 'away');
         changed = true;
       } else if (now >= at) {
         explode(ctx, b, now);
+        changed = true;
+      } else if (now >= b.got + b.limit + HOLD_GRACE) {
+        explode(ctx, b, now, 'late');
         changed = true;
       } else {
         // 남은 시간은 안 알려주고, 얼마나 위험한지만 3단계로
@@ -177,7 +192,7 @@ export default {
       const key = `${b.id}:${b.seq}`;
       if (mem.key !== key) {
         mem.key = key;
-        mem.at = now + comboLength(now - b.born) * (220 + Math.random() * 260) + 300 + Math.random() * 1500;
+        mem.at = now + b.len * (220 + Math.random() * 260) + 300 + Math.random() * 1500; // 제일 늦어도 버티기 제한 안에 든다
       }
       if (now < mem.at) return null;
       const others = S.alive.filter(x => x !== id && !S.bombs.some(y => y.holder === x));
@@ -320,7 +335,7 @@ export default {
       }
       const key = `${b.id}:${b.seq}`;
       if (combo?.key === key) return;
-      combo = { key, bomb: b.id, seq: b.seq, arrows: randomArrows(comboLength(api.now() - b.born)), pos: 0, done: false, thrown: false };
+      combo = { key, bomb: b.id, seq: b.seq, arrows: randomArrows(b.len), pos: 0, done: false, thrown: false };
     }
 
     function onKey(e) {
@@ -346,12 +361,16 @@ export default {
     }
     window.addEventListener('keydown', onKey);
 
+    // 이 막대가 다 되도록 들고 있으면 손에서 터진다
+    const holdBar = b => (b?.limit ? countdown(b.got + b.limit, b.limit) : null);
+
     function comboView() {
       refs.arrows = combo.arrows.map((d, i) => h('span', { class: `bt-arrow${i < combo.pos ? ' done' : ''}${i === combo.pos ? ' next' : ''}` }, ARROW[d]));
       return h('div', { class: 'bt-act' },
         h('div', { class: 'bt-act-title hot' }, '💣 폭탄 받음! 빨리 쳐!'),
         h('div', { class: 'bt-arrows' }, refs.arrows),
-        h('p', { class: 'muted' }, '방향키 (또는 WASD) · 틀리면 처음부터'));
+        holdBar(myBomb()),
+        h('p', { class: 'muted' }, '방향키 (또는 WASD) · 틀리면 처음부터 · 막대가 끝나면 손에서 터져요'));
     }
 
     function aimView() {
@@ -379,6 +398,7 @@ export default {
       return h('div', { class: 'bt-act' },
         h('div', { class: 'bt-act-title hot' }, '누구한테 던질래? 🎯'),
         h('div', { class: 'vote-grid' }, btns),
+        holdBar(b),
         h('p', { class: 'muted' }, '숫자키로 바로 던지기'));
     }
 
@@ -401,13 +421,8 @@ export default {
       if (S.phase === 'intro') {
         return h('div', { class: 'bt-act' },
           h('div', { class: 'bt-act-title' }, '💣 폭탄 돌리기'),
-          S.again ? null : h('ul', { class: 'rules big' },
-            h('li', {}, '폭탄을 받으면 화면의 방향키 콤보를 끝까지 쳐야 넘길 수 있어요'),
-            h('li', {}, '넘길 사람은 숫자키로 직접 고르기. 방금 준 사람한테는 못 돌려줌 (반사 1번)'),
-            h('li', {}, '터지는 시간은 아무도 몰라요. 오래 돌수록 콤보가 길어짐'),
-            h('li', {}, `들고 있다 터지면 탈락, 넘긴 사람이 킬${S.alive.length >= 6 ? ' · 지금은 폭탄 2개!' : ''}`),
-            h('li', {}, '탈락하면 👻 유령: 폭탄 든 사람 콤보에 화살표 추가')),
-          countdown(S.phaseEndsAt, S.again ? AGAIN_INTRO : INTRO_TIME));
+          S.again ? null : h('p', { class: 'intro-line' }, `콤보 치고 폭탄 넘기기! 오래 들면 손에서 터져요${S.alive.length >= 6 ? ' · 폭탄 2개!' : ''}`),
+          countdown(S.phaseEndsAt, INTRO_TIME));
       }
       if (S.phase === 'final') {
         const winner = who(S.placement?.[0]);
@@ -423,6 +438,7 @@ export default {
         return h('div', { class: 'bt-act' },
           h('div', { class: 'bt-act-title' }, '😰 폭탄 피하는 중'),
           h('p', {}, holders ? `지금 ${holders} 손에 폭탄!` : '다음 폭탄 준비 중…'),
+          holdBar(S.bombs?.[0]),
           h('p', { class: 'muted' }, '받으면 바로 방향키! · Enter로 도발 가능'));
       }
       if (inRoster()) return ghostView();
@@ -433,7 +449,7 @@ export default {
       let key = S.phase;
       if (S.phase === 'play') {
         if (combo) key += `:c:${combo.key}:${combo.done}:${combo.thrown}:${combo.arrows.length}`;
-        else if (alive()) key += `:a:${(S.bombs || []).map(b => b.holder).join()}`;
+        else if (alive()) key += `:a:${(S.bombs || []).map(b => `${b.holder}@${b.got}`).join()}`;
         else if (inRoster()) {
           const ready = api.now() - (S.lastHaunt?.[me] || 0) >= HAUNT_COOLDOWN;
           key += `:g:${ready}:${(S.bombs || []).map(b => b.holder).join()}`;
@@ -477,6 +493,14 @@ export default {
         deadList.length ? h('ul', { class: 'rules' }, deadList) : null,
         killers.length ? h('h3', {}, '킬') : null,
         killers.length ? h('ul', { class: 'rules' }, killers.map(([id, n]) => h('li', {}, `${who(id).name} ${n}킬`))) : null,
+        h('h3', {}, '규칙'),
+        h('ul', { class: 'rules' },
+          h('li', {}, '폭탄을 받으면 콤보를 끝까지 쳐야 넘길 수 있어요 (틀리면 처음부터)'),
+          h('li', {}, '⏳ 막대가 끝나도록 들고 있으면 손에서 터져요 (자폭)'),
+          h('li', {}, '방금 준 사람한테는 못 돌려줌 (반사 1번)'),
+          h('li', {}, '터지는 시간은 아무도 몰라요. 오래 돌수록 콤보가 길어짐'),
+          h('li', {}, '터지면 탈락, 넘긴 사람이 킬'),
+          h('li', {}, '👻 탈락하면 폭탄 든 사람 콤보에 화살표 추가')),
         h('h3', {}, '조작'),
         h('ul', { class: 'rules' },
           h('li', {}, '콤보: 방향키 또는 WASD'),

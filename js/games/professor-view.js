@@ -188,13 +188,9 @@ export function mountProfessor(root, api) {
       overlay.append(h('div', { class: 'pr-rule-card' }, h('h2', {}, '교수님 몰래\n게임하기'), h('span', { class: 'pr-intro-count' }, '🔁 한 판 더! 곧 수업 시작')));
     } else if (S.phase === 'intro') {
       overlay.append(h('div', { class: 'pr-rule-card' },
-        h('small', {}, '30초 동안 · 눈치 싸움'),
         h('h2', {}, '교수님 몰래\n게임하기'),
-        h('p', {}, '교수님이 칠판을 보는 동안'),
-        h('strong', {}, 'SPACE 꾹 → 몰래 게임!'),
-        h('p', {}, '예고 없이 돌아볼 때 누르고 있으면'),
-        h('b', { class: 'pr-rule-grade' }, 'C+ 즉시 탈락'),
-        h('p', {}, '걸리면 🙋 고자질 한 번 (스페이스)'),
+        h('strong', {}, 'SPACE 꾹 = 몰래 게임!'),
+        h('p', {}, '교수님이 돌아볼 때 누르고 있으면 탈락'),
         h('span', { class: 'pr-intro-count' }, '곧 수업 시작')));
     }
     if (S.phase === 'result' || S.phase === 'final') {

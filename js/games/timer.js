@@ -1,10 +1,9 @@
 // 초세기 서바이벌: 1~12초 중 랜덤 목표 시간을 속으로 세다가 스페이스(NOW!).
 // 모두 누르거나 시간이 지나면 꼴찌부터 한 명씩 공개되고, 아래쪽은 한꺼번에 탈락.
 // 마지막 1명이 우승. 탈락자는 유령이 되어 숫자키로 생존자 화면을 방해한다.
-import { h, isTyping, pick, AGAIN_INTRO } from '../util.js';
+import { h, isTyping, pick, INTRO_TIME } from '../util.js';
 import { avatar, countdown, keyNav, podium } from '../ui.js';
 
-const INTRO_TIME = 4500;
 // 신호등: 목표 시간 1초 보여 준 뒤 빨강 1초 → 주황 1초 → 초록(= 시작). 초록불 켜지는 순간부터 센다.
 // 초록불은 누를 때까지 켜 둔다: 시작 뒤에 화면이 또 바뀌면(불이 꺼지거나 글씨가 바뀌면) 그게 시작 신호처럼 보여서 헷갈린다.
 const LIGHT = 1000;
@@ -141,7 +140,7 @@ export default {
   setup(ctx, prev) {
     return {
       phase: 'intro',
-      phaseEndsAt: ctx.now() + (prev ? AGAIN_INTRO : INTRO_TIME),
+      phaseEndsAt: ctx.now() + INTRO_TIME,
       again: !!prev,
       round: 0,
       alive: ctx.roster.map(p => p.id),
@@ -352,12 +351,8 @@ export default {
     function introStage() {
       return h('div', { class: 'tc-intro' },
         h('div', { class: 'tc-final-title' }, '⏱️ 초세기 서바이벌'),
-        S.again ? null : h('ul', { class: 'rules big' },
-          h('li', {}, '1~12초 중 목표 시간이 나와요. 🔴→🟠→🟢 신호등이 초록불이 되는 순간부터 속으로 세다가 스페이스 = NOW!'),
-          h('li', {}, '다 누르면 꼴찌부터 공개, 선 아래는 한 번에 탈락'),
-          h('li', {}, `${S.alive.length}명 → 이번 판은 ${keepCount(S.alive.length)}명만 살아남아요`),
-          h('li', {}, '탈락하면 👻 유령: 숫자키로 생존자 화면 방해')),
-        countdown(S.phaseEndsAt, S.again ? AGAIN_INTRO : INTRO_TIME));
+        S.again ? null : h('p', { class: 'intro-line' }, '초록불부터 속으로 세다가 목표 시간에 스페이스!'),
+        countdown(S.phaseEndsAt, INTRO_TIME));
     }
 
     function renderTop() {
@@ -397,7 +392,9 @@ export default {
         history.length ? h('ul', { class: 'rules' }, history) : null,
         h('h3', {}, '규칙'),
         h('ul', { class: 'rules' },
+          h('li', {}, '🔴→🟠→🟢 초록불이 되는 순간부터 속으로 세기'),
           h('li', {}, '스페이스 = NOW! (한 번만)'),
+          h('li', {}, '다 누르면 꼴찌부터 공개, 선 아래는 한 번에 탈락'),
           h('li', {}, '7명 이상 → 3명 생존, 4~6명 → 2명, 3명 이하 → 1명'),
           h('li', {}, '시간 초과는 무조건 탈락'),
           h('li', {}, `유령은 라운드마다 방해 ${HAUNTS}번 (숫자키)`)),

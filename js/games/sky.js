@@ -3,7 +3,7 @@
 // 짐은 모두 같은 순서(NEXT 2개가 보임). 3m 오를 때마다 😈 택배 1개: 숫자키로 친구의 다음 짐을 굴러가는/미끌한 짐으로.
 // 7m 위는 우주(중력 절반). 아래층은 굳어서 탑 전체가 무너지진 않는다(sky-core.js).
 // 각자 노트북이 자기 탑 물리를 계산해서 높이·모양을 방장에게 보내고, 방장은 시간·컷·택배·우승만 본다 (봇 탑은 방장이 계산).
-import { h, isTyping, pick, digitOf, AGAIN_INTRO } from '../util.js';
+import { h, isTyping, pick, digitOf, INTRO_TIME } from '../util.js';
 import { avatar, countdown } from '../ui.js';
 import { KINDS, objGroup, chuteGroup, extent } from './seesaw.js';
 import {
@@ -12,7 +12,6 @@ import {
 } from './sky-core.js';
 
 const PLANCK_URL = '../vendor/planck.mjs';
-const INTRO = 5000;
 const LIMIT = 90000;             // 1분 30초
 const CUTS = [30000, 60000];     // 컷 시각 (시작부터)
 const HOLD = 3000;               // 하늘 끝에서 이만큼 버티면 우승
@@ -263,7 +262,7 @@ export default {
     const now = ctx.now();
     return {
       phase: 'intro',
-      phaseEndsAt: now + (prev ? AGAIN_INTRO : INTRO),
+      phaseEndsAt: now + INTRO_TIME,
       again: !!prev,
       seq: makeSeq(160),
       alive: ctx.roster.map(p => p.id),
@@ -606,13 +605,8 @@ export default {
       if (S.phase === 'intro') {
         overlay.append(h('div', { class: 'sk-card' },
           h('h2', {}, '☁️ 하늘끝까지'),
-          S.again ? null : h('ul', { class: 'rules big' },
-            h('li', {}, '모두 동시에 각자 받침대에 물건을 쌓아요. 하늘 끝(10m)에 먼저 닿아 3초 버티면 우승!'),
-            h('li', {}, '← → 위치 · ↑ ↓ 돌리기 · 스페이스 떨구기 (바로 다음 짐이 나와요, NEXT 2개)'),
-            h('li', {}, '30초·60초에 제일 낮은 사람 컷! 1분 30초가 끝나면 제일 높은 사람 우승'),
-            h('li', {}, '3m 오를 때마다 😈 택배: 숫자키로 친구의 다음 짐을 볼링공·얼음 같은 걸로'),
-            h('li', {}, `🚀 ${SPACE_Y}m 위는 우주(중력 절반) · 아래층은 굳어서 꼭대기만 무너져요`)),
-          countdown(S.phaseEndsAt, S.again ? AGAIN_INTRO : INTRO)));
+          S.again ? null : h('p', { class: 'intro-line' }, '각자 쌓아서 하늘 끝(10m)에 먼저 닿아 3초 버티기!'),
+          countdown(S.phaseEndsAt, INTRO_TIME)));
       }
       if (S.phase === 'final') {
         const rows = (S.placement || []).map((id, i) => h('li', { class: id === me ? 'me' : '' },
@@ -672,6 +666,11 @@ export default {
             avatar(p), h('span', {}, p.name),
             h('em', {}, out ? '✂️ 탈락' : `${(S.h?.[p.id] || 0).toFixed(1)}m${S.parcels?.[p.id] ? ` · 📦${S.parcels[p.id]}` : ''}`));
         })),
+        h('h3', {}, '규칙'),
+        h('ul', { class: 'rules' },
+          h('li', {}, '하늘 끝(10m)에 먼저 닿아 3초 버티면 우승'),
+          h('li', {}, '30초·60초에 제일 낮은 사람 컷! 1분 30초가 끝나면 제일 높은 사람 우승'),
+          h('li', {}, `🚀 ${SPACE_Y}m 위는 우주(중력 절반) · 아래층은 굳어서 꼭대기만 무너져요`)),
         h('h3', {}, '😈 택배'),
         h('p', { class: 'muted small' }, canSend ? '숫자키로 친구를 고르면 그 친구 다음 짐이 볼링공·얼음·라바콘 같은 걸로 바뀌어요' : alive() ? '3m 오를 때마다 1개 생겨요' : '유령은 10초마다 보낼 수 있어요'),
         h('h3', {}, '조작'),

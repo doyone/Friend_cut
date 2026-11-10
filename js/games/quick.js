@@ -5,13 +5,12 @@
 // 누른 시간도 각자 노트북이 재서 보내고 방장은 그 시간으로 순위를 매긴다 → 와이파이가 느려도 공정 (반응속도 대결과 같은 방식).
 // 1등 +3 · 2등 +2 · 3등 +1, 틀린 키를 누르면 그 라운드는 끝 -1 (아무 키나 연타하는 걸 막는다). 8라운드 합산.
 // 화면은 수업 중 뒷사람 눈에 안 띄게 내내 흰 바탕에 검은 글씨 (css .qk-pad)
-import { h, isTyping, pick, AGAIN_INTRO } from '../util.js';
+import { h, isTyping, pick, INTRO_TIME } from '../util.js';
 import { nameTag, podium, scoreboard } from '../ui.js';
 
 const ROUNDS = 8;
 const POINTS = [3, 2, 1];
 const WRONG = -1;
-const INTRO_TIME = 5000;
 const COUNT_TIME = 3000;   // 3 · 2 · 1
 const ROUND_LIMIT = 3000;  // 글자가 뜬 뒤 이만큼 지나면 라운드 끝
 const GRACE = 300;         // 시간이 끝난 뒤에 도착하는 신호도 이만큼은 기다린다
@@ -115,7 +114,7 @@ export default {
   setup(ctx, prev) {
     return {
       phase: 'intro',
-      phaseEndsAt: ctx.now() + (prev ? AGAIN_INTRO : INTRO_TIME),
+      phaseEndsAt: ctx.now() + INTRO_TIME,
       again: !!prev,
       round: 0,
       totalRounds: ROUNDS,

@@ -8,12 +8,11 @@
 //    또는 ⬆️ 꼭대기에서(짐은 랜덤, 떨구는 높이 최대). 그걸로 독박 나면 내 킬.
 // 룰렛엔 가끔 레어(✨): 🪂 보급 상자(공중에서 낙하산) · 🎁 악마의 선물(놓고 살면 카드 +1).
 // 물리는 방장 컴퓨터만 계산한다(planck.js, js/vendor). 다른 사람은 위치만 받아서 그린다.
-import { h, isTyping, josa, pick, shuffle, digitOf, AGAIN_INTRO } from '../util.js';
+import { h, isTyping, josa, pick, shuffle, digitOf, INTRO_TIME } from '../util.js';
 import { avatar, countdown, podium } from '../ui.js';
 import { KINDS as JUNK } from './pullout-art.js';
 
 const PLANCK_URL = '../vendor/planck.mjs';
-const INTRO_TIME = 4000;
 const DECIDE_TIME = 5000;     // 내 짐이 멈춘 뒤 악마 카드 고민 시간 (고르면 바로 끝)
 const RESULT_TIME = 1000;
 const SPIN_TIME = 1300;       // 차례 시작할 때 룰렛 도는 시간
@@ -869,7 +868,7 @@ export default {
     ensurePlanck();
     return {
       phase: 'intro',
-      phaseEndsAt: ctx.now() + (prev ? AGAIN_INTRO : INTRO_TIME),
+      phaseEndsAt: ctx.now() + INTRO_TIME,
       again: !!prev,
       alive: ctx.roster.map(p => p.id),
       cards: Object.fromEntries(ctx.roster.map(p => [p.id, DEVIL_CARDS])),
@@ -1361,15 +1360,8 @@ export default {
       if (S.phase === 'intro') {
         return h('div', { class: 'bt-act' },
           h('div', { class: 'bt-act-title' }, '⚖️ 독박 시소'),
-          S.again ? null : h('ul', { class: 'rules big' },
-            h('li', {}, '돌아가며 용암 위 시소에 짐을 떨궈요. 짐은 🎰 룰렛으로 랜덤 (무게도 보여요)'),
-            h('li', {}, '무거운 쪽으로 기울어요. 반대쪽에 올려서 균형을 맞추세요'),
-            h('li', {}, '짐이 용암에 떨어지거나 판 끝이 용암에 닿으면 독박!'),
-            h('li', {}, '가운데 둥근 축 위에 놓으면 한쪽으로 굴러가요'),
-            h('li', {}, `😈 악마 카드 ${DEVIL_CARDS}장: 두 바퀴 종료 후, 3바퀴째 내 차례부터 숫자키 1~6으로 선택 (그걸로 죽으면 내 킬)`),
-            h('li', {}, '✨ 가끔 레어 짐: 🪂 보급 상자(낙하산) · 🎁 악마의 선물(놓고 살면 카드 +1)'),
-            h('li', {}, '← → 위치 · ↑ ↓ 돌리기 · 스페이스 떨구기')),
-          countdown(S.phaseEndsAt, S.again ? AGAIN_INTRO : INTRO_TIME));
+          S.again ? null : h('p', { class: 'intro-line' }, '시소에 짐 떨구기. 짐이나 판 끝이 용암에 닿으면 독박!'),
+          countdown(S.phaseEndsAt, INTRO_TIME));
       }
       if (S.phase === 'final') {
         return h('div', { class: 'bt-act' }, h('div', { class: 'bt-act-title' }, `👑 ${who(S.placement?.[0]).name} 균형의 신!`), podium(S.roster, S.standings, me));
@@ -1464,6 +1456,14 @@ export default {
           : h('div', { class: 'tc-alive' }, S.alive.map(id => h('span', { class: 'tc-alive-chip' }, avatar(who(id)), who(id).name))),
         deadList.length ? h('h3', {}, '독박 기록') : null,
         deadList.length ? h('ul', { class: 'rules' }, deadList) : null,
+        h('h3', {}, '규칙'),
+        h('ul', { class: 'rules' },
+          h('li', {}, '짐은 🎰 룰렛으로 랜덤 (무게도 보여요)'),
+          h('li', {}, '무거운 쪽으로 기울어요. 반대쪽에 올려서 균형 맞추기'),
+          h('li', {}, '짐이 용암에 떨어지거나 판 끝이 용암에 닿으면 독박'),
+          h('li', {}, '가운데 둥근 축 위에 놓으면 한쪽으로 굴러가요'),
+          h('li', {}, `😈 악마 카드 ${DEVIL_CARDS}장: 3바퀴째 내 차례부터 (그걸로 죽으면 내 킬)`),
+          h('li', {}, '✨ 가끔 레어 짐: 🪂 보급 상자 · 🎁 악마의 선물(놓고 살면 카드 +1)')),
         h('h3', {}, '조작'),
         h('ul', { class: 'rules' },
           h('li', {}, '← → (A D) 위치 · 톡 치면 미세 조정'),

@@ -4,10 +4,9 @@
 // 걸린 사람(유령)은 한 번 '🙋 고자질': 0.7초 뒤 교수님이 돌아본다. 말풍선이 떠서 눈치 빠르면 피할 수 있고, 그걸로 걸리면 고자질한 사람 킬.
 // 돌아보는 시각은 방장만 안다(ctx.secret). 손 뗀 시각은 누른 사람 화면 시계로 받아서(최대 0.3초 전까지 인정)
 // 와이파이가 느려도 '돌아보기 전에 뗐는데 걸림'이 없게 한다.
-import { AGAIN_INTRO } from '../util.js';
+import { INTRO_TIME } from '../util.js';
 import { mountProfessor } from './professor-view.js';
 
-const INTRO = 5000;
 const DURATION = 30000;
 const LEASE = 1200;          // 누르는 중이면 화면이 0.4초마다 다시 알려 준다. 끊긴 탭이 계속 기록을 쌓지 못하게
 const GRACE = 300;           // 손 뗀 신호가 늦게 와도 이만큼은 봐준다 (돌아본 순간보다 먼저 뗐으면 무사)
@@ -172,7 +171,7 @@ export default {
   setup(ctx, prev) {
     return {
       phase: 'intro',
-      introUntil: ctx.now() + (prev ? AGAIN_INTRO : INTRO),
+      introUntil: ctx.now() + INTRO_TIME,
       again: !!prev,
       look: 'board',
       alive: ctx.roster.map(p => p.id),

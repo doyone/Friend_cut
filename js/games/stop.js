@@ -2,11 +2,10 @@
 // 1등 +3 · 2등 +2 · 3등 +1, 정중앙(오차 1% 안)이면 +1 보너스. 6초 안에 안 멈추면 0점. 6라운드 합산.
 // 라운드마다 빨라지고 과녁은 작아지며, 4라운드부터는 바늘이 가다가 빨라졌다 느려졌다 한다.
 // 바늘 위치는 서버 시각의 함수라 모두 똑같이 보이고, 방장은 각자 노트북이 잰 '누른 시각'으로 위치를 다시 계산한다 → 공정.
-import { h, isTyping, AGAIN_INTRO } from '../util.js';
+import { h, isTyping, INTRO_TIME } from '../util.js';
 import { avatar, nameTag, podium, scoreboard } from '../ui.js';
 
 const ROUNDS = 6;
-const INTRO_TIME = 5000;
 const COUNT_TIME = 2500;
 const ROUND_TIME = 6000;     // 바늘이 도는 시간 (이 안에 한 번 멈춰야)
 const GRACE = 400;
@@ -92,7 +91,7 @@ export default {
   setup(ctx, prev) {
     return {
       phase: 'intro',
-      phaseEndsAt: ctx.now() + (prev ? AGAIN_INTRO : INTRO_TIME),
+      phaseEndsAt: ctx.now() + INTRO_TIME,
       again: !!prev,
       round: 0,
       totalRounds: ROUNDS,

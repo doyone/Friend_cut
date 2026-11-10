@@ -1080,13 +1080,7 @@ export default {
       if (S.phase === 'build' && !S.turnsPlayed && !S.again) {
         return h('div', { class: 'bt-act' },
           h('div', { class: 'bt-act-title' }, '🪑 독박빼기'),
-          h('ul', { class: 'rules big' },
-            h('li', {}, '돌아가며 탑에서 물건 하나를 쏙 빼요. 그게 없어도 버티면 성공, 뭐라도 바닥에 떨어지면 독박!'),
-            h('li', {}, '젠가처럼 위에 아무것도 안 얹힌 물건은 못 빼요'),
-            h('li', {}, '방향키로 고르고 스페이스 → 손 떨림 게이지 → 스페이스로 멈춤. 초록이면 살살, 빨강이면 덜컥'),
-            h('li', {}, '버티면 🎰 랜덤 물건을 맨 위에 올려요 (← → 자리 · ↑ ↓ 돌리기 · 스페이스). 올리다 떨어져도 독박'),
-            h('li', {}, '😈 악마 카드 1장 = 손 떨림 저주: 내 차례 끝나고 다음 사람 게이지를 2배 빠르게, 초록 칸 절반'),
-            h('li', {}, '3차례마다 어려워져요(시간↓ 게이지↑ 손 떨림↑). 독박 나면 새 탑')),
+          h('p', { class: 'intro-line' }, '탑에서 하나씩 쏙 빼기. 뭐라도 떨어지면 독박!'),
           h('p', { class: 'muted dots' }, '잡동사니 쌓는 중'));
       }
       if (S.phase === 'build') return h('div', { class: 'bt-act' }, h('div', { class: 'bt-act-title' }, '🏗️ 새 탑 와바바박 쌓는 중…'));
@@ -1174,6 +1168,13 @@ export default {
         order.length ? h('ol', { class: 'tw-bag' }, order) : null,
         deadList.length ? h('h3', {}, '독박 기록') : null,
         deadList.length ? h('ul', { class: 'rules' }, deadList) : null,
+        h('h3', {}, '규칙'),
+        h('ul', { class: 'rules' },
+          h('li', {}, '물건이 없어도 버티면 성공, 뭐라도 바닥에 떨어지면 독박'),
+          h('li', {}, '젠가처럼 위에 아무것도 안 얹힌 물건은 못 빼요'),
+          h('li', {}, '버티면 🎰 랜덤 물건을 맨 위에 올려요. 올리다 떨어져도 독박'),
+          h('li', {}, '😈 악마 카드 1장 = 손 떨림 저주 (다음 사람 게이지 2배 빠르게, 초록 칸 절반)'),
+          h('li', {}, '3차례마다 어려워져요. 독박 나면 새 탑')),
         h('h3', {}, '조작'),
         h('ul', { class: 'rules' },
           h('li', {}, '← ↑ ↓ → (WASD) 물건 고르기 (흐린 건 못 뺌)'),

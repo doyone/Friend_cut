@@ -108,14 +108,33 @@ test('❤️ 하트: 독박이면 하나만 잃고 남는다, 다 잃어야 탈�
   assert.equal(g.kills.length, 0);
 });
 
+test('2명만 남으면 끝: 하트가 많은 쪽 우승, 같으면 공동 우승, 3명부터 시작할 수 있다', () => {
+  assert.equal(game.minPlayers, 3);
+  for (const [lives, winners] of [[{ p0: 1, p1: 1, p2: 1 }, ['p0', 'p1']], [{ p0: 2, p1: 1, p2: 1 }, ['p0']]]) {
+    const g = newGame(3);
+    g.S.lives = lives;
+    g.toPlay();
+    g.at(1000); g.shout('p0', 1000);
+    g.at(2000); g.shout('p1', 2000);
+    g.until('result');
+    assert.deepEqual(g.S.last.why, { p2: 'coward' });
+    assert.deepEqual([...g.S.alive].sort(), ['p0', 'p1']);
+    g.until('final');
+    assert.ok(g.S.over);
+    assert.equal(g.S.round, 1);
+    assert.deepEqual([...g.S.winners].sort(), winners);
+    for (const id of winners) assert.ok(g.S.titles[id].some(t => t.includes('눈치 9단')));
+  }
+});
+
 test('남은 사람이 한꺼번에 다 탈락하게 되면 무효: 하트도 안 깎고 같은 라운드를 다시', () => {
-  const g = newGame(2, 1);
+  const g = newGame(3, 1);
   g.toPlay();
   const round = g.S.round;
-  g.at(1100); g.shout('p0', 1000); g.shout('p1', 1100);
+  g.at(1200); g.shout('p0', 1000); g.shout('p1', 1100); g.shout('p2', 1200);
   g.until('result');
   assert.equal(g.S.last.void, true);
-  assert.deepEqual([...g.S.alive].sort(), ['p0', 'p1']);
+  assert.deepEqual([...g.S.alive].sort(), ['p0', 'p1', 'p2']);
   g.until('ready');
   assert.equal(g.S.round, round);
   assert.equal(g.S.replay, true);
@@ -139,7 +158,7 @@ test('봇끼리 한 판: 끝까지 가고, 유령 깜빡임도 판정엔 영향 
   }
   const S = ctx.state;
   assert.ok(S.over);
-  assert.ok(S.alive.length <= 1);
+  assert.ok(S.alive.length <= 2);
   assert.equal(Object.keys(S.standings).length, 6);
   assert.ok(S.round >= 2);
   assert.ok(flicks >= 0);

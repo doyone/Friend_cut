@@ -4,13 +4,12 @@
 // 아이템: 🍄 거대화(크고 무거워짐) · 🌀 스프링(주변 차 튕겨냄) · 🛢️ 기름(나 빼고 다 미끌).
 // 탈락하면 👻 유령: 방향키로 떠다니다 스페이스로 🍌 바나나를 깐다. 밟은 차는 빙글 돌며 미끄러진다.
 // 물리는 방장 컴퓨터만 계산한다(원끼리 부딪히는 것뿐이라 직접 계산). 다른 사람은 위치만 받아서 그린다.
-import { h, isTyping, josa, shuffle, AGAIN_INTRO } from '../util.js';
+import { h, isTyping, josa, shuffle, INTRO_TIME } from '../util.js';
 import { avatar, countdown, podium } from '../ui.js';
 import { createBumperAudio } from './bumper-audio.js';
 
 const TICK = 50;              // 방장이 상태를 보내는 주기(ms). 움직임이 많아서 다른 게임(100ms)의 두 배로
 const STEP = 1000 / 60;       // 물리 한 걸음
-const INTRO_TIME = 4000;
 const ARENA_R = 9;            // 경기장 반지름 (m)
 const MIN_R = 2.2;            // 다 줄어든 크기
 const SHRINK_AT = 30000;      // 시작하고 이때부터 줄어든다
@@ -494,7 +493,7 @@ export default {
 
   setup(ctx, prev) {
     const now = ctx.now();
-    const intro = prev ? AGAIN_INTRO : INTRO_TIME;
+    const intro = INTRO_TIME;
     const ids = shuffle(ctx.roster.map(p => p.id));
     // 경기장 가운데를 보고 둥글게 선다
     const cars = ids.map((id, i) => {
@@ -976,7 +975,7 @@ export default {
       if (key === topKey) return;
       topKey = key;
       top.replaceChildren(...bits.map(([text, cls]) => h('span', { class: cls }, text)),
-        ...(S.phase === 'intro' ? [countdown(S.phaseEndsAt, S.again ? AGAIN_INTRO : INTRO_TIME)] : []));
+        ...(S.phase === 'intro' ? [countdown(S.phaseEndsAt, INTRO_TIME)] : []));
     }
 
     function panelView() {
@@ -984,12 +983,7 @@ export default {
       if (S.phase === 'intro') {
         return h('div', { class: 'bt-act' },
           h('div', { class: 'bt-act-title' }, '🚗 범퍼카 난투'),
-          S.again ? null : h('ul', { class: 'rules big' },
-            h('li', {}, '방향키·WASD로 밀기 · 스페이스를 꾹 눌렀다 떼면 돌진 (오래 모을수록 셈)'),
-            h('li', {}, '경기장 밖으로 떨어지면 탈락. 3초 안에 마지막으로 박은 사람이 킬, 아니면 자폭'),
-            h('li', {}, '🍄 거대화 · 🌀 스프링 · 🛢️ 기름. 30초부터 축소, 마지막 두 명은 3초 예고 후 결투!'),
-            h('li', {}, '차지 방향을 읽고 피하세요. 풀차지끼리 정면충돌하면 둘 다 크게 튕겨요!'),
-            h('li', {}, '떨어지면 👻 유령: 방향키로 떠다니다 스페이스로 🍌 바나나 깔기')));
+          S.again ? null : h('p', { class: 'intro-line' }, '들이받아서 밖으로 떨구기! 스페이스 꾹 = 돌진'));
       }
       if (S.phase === 'final') {
         const winner = who(S.placement?.[0]);
@@ -1029,6 +1023,12 @@ export default {
         h('ol', { class: 'bc-list' }, rows),
         dead.length ? h('h3', {}, '탈락 (👻 유령)') : null,
         dead.length ? h('ol', { class: 'bc-list' }, dead) : null,
+        h('h3', {}, '규칙'),
+        h('ul', { class: 'rules' },
+          h('li', {}, '밖으로 떨어지면 탈락. 3초 안에 마지막으로 박은 사람이 킬, 아니면 자폭'),
+          h('li', {}, '🍄 거대화 · 🌀 스프링 · 🛢️ 기름'),
+          h('li', {}, '30초부터 경기장 축소, 마지막 두 명은 3초 예고 후 결투'),
+          h('li', {}, '풀차지끼리 정면충돌하면 둘 다 크게 튕겨요')),
         h('h3', {}, '조작'),
         h('ul', { class: 'rules' },
           h('li', {}, '← → ↑ ↓ / WASD 밀기 (8방향)'),

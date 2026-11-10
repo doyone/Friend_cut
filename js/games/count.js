@@ -1,20 +1,19 @@
 // 세어라 (2라운드): 정해진 동물만 스페이스로 센다. 스페이스 = +1, 백스페이스 = -1, 끝났을 때 숫자가 내 답.
 // 1라운드: 동물들이 풀밭을 가로질러 지나간다. 처음엔 한 마리씩 천천히 오다가, 간격·빠르기가 기하급수로 세지고
-//          다른 동물이 섞이고, 뒤로 갈수록 떼가 점점 자주 몰려와서 끝엔 감당이 안 된다.
-// 2라운드: 화면 전체에 동물이 쫙 깔려서 제자리 근처를 조금씩 어슬렁거린다. 그중 정해진 동물을 15초 안에 센다.
+//          다른 동물이 섞이고, 뒤로 갈수록 떼가 점점 자주 몰려와서 끝엔 감당이 안 된다. 후반엔 지그재그로 달리는 동물도 섞인다.
+// 2라운드: 화면 전체에 동물이 쫙 깔려서 제자리 근처를 조금씩 어슬렁거린다. 그중 정해진 동물을 5초 안에 센다.
 // 점수: 정답에 제일 가까운 순으로 +5·+3·+2·+1, 정확히 맞히면 +2 더. 한 번도 안 누르면 0점.
 // 동물 행렬은 방장이 정해 state에 적고, 모두의 화면이 서버 시각에 맞춰 똑같이 그린다.
 // 누른 횟수는 라운드가 끝날 때까지 방장만 안다(secret) → 남의 숫자를 볼 수 없고, 누를 때마다 상태를 안 보내서 렉도 없다.
-import { h, isTyping, josa, pick, shuffle, AGAIN_INTRO } from '../util.js';
+import { h, isTyping, josa, pick, shuffle, INTRO_TIME } from '../util.js';
 import { nameTag, podium, scoreboard } from '../ui.js';
 import { ANIMALS, GRASS, MEADOW, artSvg } from './count-art.js';
 
 const ROUNDS = 2;
-const INTRO_TIME = 6000;
 const COUNT_TIME = 3000;       // 1라운드 3·2·1
-const CROWD_READY = 5000;      // 2라운드는 방식이 바뀌니 조금 더 길게 알려 준다
+const CROWD_READY = 3000;      // 2라운드도 3·2·1
 export const RUSH_TIME = 25000;  // 1라운드 길이
-export const CROWD_TIME = 15000; // 2라운드 길이
+export const CROWD_TIME = 5000;  // 2라운드에 동물을 보는 시간
 const LATE = 300;              // 끝난 직후 이만큼은 눌러도 인정
 const GRACE = 900;             // 그다음 늦게 도착하는 신호를 기다린다
 const REVEAL = 2600;           // 2라운드 끝나고 정답 동물만 밝게 보여 주는 시간 (그동안 늦은 신호도 받는다)
@@ -39,6 +38,15 @@ const expo = ([a, b], f) => a * (b / a) ** Math.min(1, f);
 const targetShare = f => (f < 0.2 ? 1 : 0.38 + 0.62 * (1 - (f - 0.2) / 0.8) ** 2);
 // 섞이는 동물 종류: 뒤로 갈수록 많아진다
 const kindsAt = f => (f < 0.35 ? 1 : f < 0.5 ? 2 : f < 0.65 ? 3 : f < 0.8 ? 5 : 99);
+// 후반(진행률 50%~)엔 위아래로 꺾으며 달리는 동물이 섞인다: 갈수록 많아지고(절반 → 전부) 크게 꺾인다(폭 5 → 10%)
+const ZIG_FROM = 0.5;
+const ZIG_TOP = 30;            // 위아래로 꺾여도 풀밭 안에 있게
+const ZIG_BOTTOM = 92;
+function zigOf(f, y) {
+  if (f < ZIG_FROM || Math.random() > 0.5 + (f - ZIG_FROM)) return { y };
+  const zig = Math.round(5 + ((f - ZIG_FROM) / (1 - ZIG_FROM)) * 5);
+  return { y: Math.max(ZIG_TOP + zig, Math.min(ZIG_BOTTOM - zig, y)), zig, zc: Math.round((1.5 + Math.random() * 1.5) * 100) / 100, zp: Math.round(Math.random() * 100) / 100 };
+}
 
 export function makeRush(targetId) {
   const pool = shuffle(ANIMALS.filter(a => !alike(a.id, targetId))).map(a => a.id);
@@ -54,7 +62,7 @@ export function makeRush(targetId) {
     const order = LANES.map((_, i) => i).sort((a, b) => used[a] - used[b]);
     const li = order[Math.random() < 0.7 ? 0 : 1];
     used[li] = t;
-    list.push({ k: Math.random() < targetShare(f) ? targetId : others(f), at: Math.round(t), dur, y: LANES[li], dir: Math.random() < 0.5 ? 1 : -1 });
+    list.push({ k: Math.random() < targetShare(f) ? targetId : others(f), at: Math.round(t), dur, dir: Math.random() < 0.5 ? 1 : -1, ...zigOf(f, LANES[li]) });
     t += expo(GAP, f) * (0.75 + Math.random() * 0.5);
   }
   // 떼: 다섯 줄을 한꺼번에 같은 쪽으로 (세는 동물이 1~2마리 숨어 있다)
@@ -63,7 +71,7 @@ export function makeRush(targetId) {
     const dur = Math.round(expo(DUR, f) * 0.7);
     const dir = Math.random() < 0.5 ? 1 : -1;
     const hidden = 1 + Math.floor(Math.random() * 2);
-    shuffle(LANES).forEach((y, i) => list.push({ k: i < hidden ? targetId : others(f), at: at + Math.round(Math.random() * 200), dur, y, dir, wave: 1 }));
+    shuffle(LANES).forEach((y, i) => list.push({ k: i < hidden ? targetId : others(f), at: at + Math.round(Math.random() * 200), dur, dir, wave: 1, ...zigOf(f, y) }));
   }
   list.sort((a, b) => a.at - b.at);
   const count = list.filter(c => c.k === targetId).length;
@@ -159,6 +167,8 @@ function finish(ctx) {
 }
 
 const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) / 0.5;
+// 삼각파 -1 ~ 1: 부드러운 물결이 아니라 뾰족하게 꺾이는 지그재그
+const tri = u => 1 - 4 * Math.abs((((u % 1) + 1) % 1) - 0.5);
 
 export default {
   id: 'count',
@@ -173,7 +183,7 @@ export default {
   setup(ctx, prev) {
     return {
       phase: 'intro',
-      phaseEndsAt: ctx.now() + (prev ? AGAIN_INTRO : INTRO_TIME),
+      phaseEndsAt: ctx.now() + INTRO_TIME,
       again: !!prev,
       round: 0,
       totalRounds: ROUNDS,
@@ -221,9 +231,9 @@ export default {
       mem.round = S.round;
       mem.taps = [];
       if (S.mode === 'crowd') {
-        const n = Math.max(1, S.show.count + Math.round(gauss() * 2));
-        const from = 2000 + Math.random() * 1500;
-        const step = (CROWD_TIME - 1500 - from) / n;
+        const n = Math.max(1, S.show.count + Math.round(gauss() * 4)); // 5초뿐이라 어림으로
+        const from = 700 + Math.random() * 600;
+        const step = (CROWD_TIME - 300 - from) / n;
         for (let i = 0; i < n; i++) mem.taps.push(S.startAt + from + i * step);
       } else {
         for (const c of S.show.list) {
@@ -378,7 +388,8 @@ export default {
         } else {
           const f = (rel - c.at) / c.dur;
           const x = c.dir > 0 ? -9 + f * 118 : 109 - f * 118;
-          el.style.transform = `translate(calc(${x.toFixed(2)}cqw - 50%), -50%)`;
+          const dy = c.zig ? c.zig * tri(f * c.zc + c.zp) : 0; // 후반 지그재그
+          el.style.transform = `translate(calc(${x.toFixed(2)}cqw - 50%), calc(${dy.toFixed(2)}cqh - 50%))`;
         }
       }
       // 2라운드 끝: 정답 동물만 밝게
@@ -449,8 +460,8 @@ export default {
           h('ul', { class: 'rules' },
             h('li', {}, `지금은 ${T().name}만 세요`),
             h('li', {}, '스페이스 = 한 마리, 백스페이스 = 하나 취소'),
-            h('li', {}, '1라운드: 지나가는 동물, 갈수록 기하급수로 몰려와요'),
-            h('li', {}, '2라운드: 화면에 쫙 깔린 동물 속에서 찾기'),
+            h('li', {}, '1라운드: 지나가는 동물, 갈수록 몰려오고 후반엔 지그재그'),
+            h('li', {}, `2라운드: 화면에 쫙 깔린 동물 속에서 ${CROWD_TIME / 1000}초 안에 찾기`),
             h('li', {}, '정답에 가까운 순 +5·+3·+2·+1, 정확히 맞히면 +2 더')));
         renderBar();
         paint();

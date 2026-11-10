@@ -18,8 +18,9 @@ export function h(tag, props, ...children) {
 
 export const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
-// R(한 판 더)로 다시 시작하면(setup의 prev가 있으면) 규칙 안내 없이 이만큼만 '곧 시작'을 보여 준다
-export const AGAIN_INTRO = 2000;
+// 게임 시작 전 안내 화면: 모든 게임 2초. 안내는 한 줄만 보여 주고 자세한 규칙은 옆 칸에 둔다.
+// R(한 판 더)로 다시 시작하면(S.again) 그 한 줄도 빼고 '곧 시작'만 보여 준다
+export const INTRO_TIME = 2000;
 
 // 채팅창·힌트 칸처럼 글자를 치는 중이면 게임 단축키는 무시해야 한다.
 export const isTyping = e => !!e.target?.closest?.('input, textarea, select, [contenteditable="true"]');

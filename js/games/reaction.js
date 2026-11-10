@@ -1,4 +1,4 @@
-import { h, pick, AGAIN_INTRO } from '../util.js';
+import { h, pick, INTRO_TIME } from '../util.js';
 import { nameTag, podium, scoreboard } from '../ui.js';
 
 const ROUNDS = 5;
@@ -70,7 +70,7 @@ export default {
   setup(ctx, prev) {
     const scores = {};
     for (const p of ctx.roster) scores[p.id] = 0;
-    return { round: 0, totalRounds: ROUNDS, phase: 'intro', phaseEndsAt: ctx.now() + (prev ? AGAIN_INTRO : 4000), again: !!prev, scores };
+    return { round: 0, totalRounds: ROUNDS, phase: 'intro', phaseEndsAt: ctx.now() + INTRO_TIME, again: !!prev, scores };
   },
 
   onInput(ctx, { pid, type, data }) {

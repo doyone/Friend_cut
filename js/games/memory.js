@@ -3,10 +3,9 @@
 // 끝까지 남은 사람이 이긴다. 같은 라운드에 다 틀리면 그 라운드에서 더 멀리 맞힌 사람이 위.
 // 4라운드부터 보여 주는 속도가 빨라지고, 가끔 '🔄 거꾸로!' 라운드(본 순서의 반대로 쳐야 함)가 섞인다.
 // 입력은 각자 화면에서 바로 판정하고 다 치거나 틀리는 순간 한 번만 보낸다 (방장이 친 순서를 다시 확인) → 렉 없음.
-import { h, isTyping, pick, AGAIN_INTRO } from '../util.js';
+import { h, isTyping, pick, INTRO_TIME } from '../util.js';
 import { avatar, podium } from '../ui.js';
 
-const INTRO_TIME = 5000;
 const COUNT_TIME = 2000;
 const RESULT_TIME = 2800;
 const GRACE = 400;
@@ -87,7 +86,7 @@ export default {
   setup(ctx, prev) {
     return {
       phase: 'intro',
-      phaseEndsAt: ctx.now() + (prev ? AGAIN_INTRO : INTRO_TIME),
+      phaseEndsAt: ctx.now() + INTRO_TIME,
       again: !!prev,
       alive: ctx.roster.map(p => p.id),
       round: 0,
@@ -126,6 +125,7 @@ export default {
       return (allIn || now >= S.inputEnd + GRACE) && finishRound(ctx, now);
     }
     if (S.phase === 'result' && now >= S.phaseEndsAt) {
+      S.alive ||= []; // 방장이 바뀌어 다시 읽었을 때
       if (S.alive.length <= 1 || S.seq.length >= MAX_LEN) return finish(ctx);
       return startRound(S, now);
     }
@@ -216,7 +216,8 @@ export default {
       for (const a of ARROWS) {
         const f = flashUntil[a];
         const flash = f && f.until > t;
-        tiles[a].classList.toggle('on', lit === a || (flash && f.right));
+        // 둘째 값이 undefined면 toggle이 '켜고 끄기'로 동작해서 매 프레임 깜빡인다 → 꼭 true/false로
+        tiles[a].classList.toggle('on', lit === a || !!(flash && f.right));
         tiles[a].classList.toggle('bad', !!(flash && !f.right));
       }
       let text = '';
@@ -285,6 +286,7 @@ export default {
     return {
       update({ state }) {
         S = state;
+        S.alive ||= []; // 다 같이 탈락하면 빈 배열이라 Firebase에서 사라진다
         head.replaceChildren(
           h('span', {}, S.round ? `라운드 ${S.round} · ${S.seq.length}개 · 생존 ${S.alive.length}명` : '곧 시작해요'),
           h('span', {}, alive() ? '순서대로 외우기!' : S.roster.some(p => p.id === me) ? '👻 구경 중' : '👀 관전 중'));

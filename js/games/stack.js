@@ -7,12 +7,11 @@
 // 앞 사람은 다음 사람 블록을 보고, 그 블록으로는 올라가기 힘든 꼭대기를 남길 수 있다.
 // 독박 = 탑을 넘겨준 바로 앞 차례 사람의 킬(그 사람이 통과하고 넘겼을 때만). 악마 카드는 아직 없다.
 // 물리는 방장 컴퓨터만 계산하고, 다른 사람은 위치만 받아서 그린다. 블록 그림은 독박 타워와 같이 쓴다.
-import { h, isTyping, josa, shuffle, AGAIN_INTRO } from '../util.js';
+import { h, isTyping, josa, shuffle, INTRO_TIME } from '../util.js';
 import { avatar, countdown, podium } from '../ui.js';
 import { cells, pieceGroup, newBag, nextInBag } from './tower.js';
 
 const PLANCK_URL = '../vendor/planck.mjs';
-const INTRO_TIME = 5000;
 const RESULT_TIME = 1400;     // 통과·독박 결과를 잠깐 보여 주고 다음 차례 (그사이 기준선이 올라가는 게 보임)
 const SETTLE_MAX = 5000;      // 떨군 뒤 이만큼 지나면 거의 멈춘 건 그 자리에 세우고 판정
 const SETTLE_HARD = 9000;     // 아직 날아다니는 게 있어도 이때는 무조건 판정
@@ -445,7 +444,7 @@ export default {
     ensurePlanck();
     return {
       phase: 'intro',
-      phaseEndsAt: ctx.now() + (prev ? AGAIN_INTRO : INTRO_TIME),
+      phaseEndsAt: ctx.now() + INTRO_TIME,
       again: !!prev,
       alive: ctx.roster.map(p => p.id),
       top: 0,
@@ -791,14 +790,8 @@ export default {
       if (S.phase === 'intro') {
         return h('div', { class: 'bt-act' },
           h('div', { class: 'bt-act-title' }, '🧩 독박쌓기'),
-          S.again ? null : h('ul', { class: 'rules big' },
-            h('li', {}, '돌아가며 바닥 위에 펜토미노(5칸 블록)를 하나씩 떨궈요. 12종이 한 바퀴씩 섞여 나오고 NEXT에 다음 사람 블록이 보여요'),
-            h('li', {}, '빨간 기준선이 차례마다 올라가요. 내가 놓은 뒤 탑 꼭대기가 기준선보다 낮으면 독박!'),
-            h('li', {}, '바닥이 넓어서 떨어질 데는 없지만, 탑이 무너지면 꼭대기가 낮아져서 기준선에 걸려요 · 독박 나면 기준선은 남은 탑 높이로 다시 맞춰져요'),
-            h('li', {}, '기준선은 처음엔 조금씩, 갈수록 많이 올라가요'),
-            h('li', {}, '독박은 탑을 넘겨준 앞 사람의 킬 (다음 사람 블록을 보고 꼭대기를 괴롭게 남겨 보세요)'),
-            h('li', {}, '← → 이동 · ↑ ↓ 90° 돌리기 · Shift 뒤집기 · 스페이스 떨구기')),
-          countdown(S.phaseEndsAt, S.again ? AGAIN_INTRO : INTRO_TIME));
+          S.again ? null : h('p', { class: 'intro-line' }, '돌아가며 쌓기. 탑이 빨간 선보다 낮으면 독박!'),
+          countdown(S.phaseEndsAt, INTRO_TIME));
       }
       if (S.phase === 'final') {
         return h('div', { class: 'bt-act' }, h('div', { class: 'bt-act-title' }, `👑 ${who(S.placement?.[0]).name} 퍼즐 장인!`), podium(S.roster, S.standings, me));
@@ -862,6 +855,12 @@ export default {
         S.rise ? h('p', { class: 'muted small' }, `기준선: 지금 차례마다 +${m2(S.rise)} (갈수록 커짐)`) : null,
         deadList.length ? h('h3', {}, '독박 기록') : null,
         deadList.length ? h('ul', { class: 'rules' }, deadList) : null,
+        h('h3', {}, '규칙'),
+        h('ul', { class: 'rules' },
+          h('li', {}, '내가 놓은 뒤 탑 꼭대기가 기준선보다 낮으면 독박'),
+          h('li', {}, '12종이 한 바퀴씩 섞여 나오고 NEXT에 다음 사람 블록이 보여요'),
+          h('li', {}, '독박 나면 기준선은 남은 탑 높이로 다시 맞춰져요'),
+          h('li', {}, '독박은 탑을 넘겨준 앞 사람의 킬')),
         h('h3', {}, '조작'),
         h('ul', { class: 'rules' },
           h('li', {}, '← → (A D) 이동 · 톡 치면 미세 조정'),

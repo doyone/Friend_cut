@@ -422,26 +422,64 @@ button, input { font: inherit; color: inherit; }
 .mm-chip.out { opacity: .45; }
 .mm-chip.typing { box-shadow: inset 0 0 0 2px #fab005; }
 
-/* ── 불어라 ── 각자 풍선 (커질수록 떨림) */
-.bl-pad { cursor: default; }
+/* ── 콜라 불어라 ── 콜라병 위 풍선을 돌아가며 부풀린다 (빨간 구간부터 터질 수 있음) */
+.bl-pad { position: relative; cursor: default; height: min(74vh, 640px); transition: background .3s; }
+.bl-pad.red { background: #fff1ee; }
+.bl-pad.hot { background: #ffd9d2; animation: bl-throb .45s ease-in-out infinite alternate; }
+.bl-pad.board { background: #fff; animation: none; }
 .bl-pad.board .bl-main { display: none; }
-.bl-main { display: grid; justify-items: center; gap: 12px; width: 100%; padding: 16px; }
-.bl-status { font-family: var(--display); font-size: clamp(34px, 5vw, 60px); line-height: 1.1; min-height: 1.1em; }
-.bl-row { display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-end; gap: 6px 10px; }
-.bl-one { position: relative; display: grid; justify-items: center; width: 96px; }
-.bl-one svg { width: 90px; height: 144px; overflow: visible; }
-.bl-b { transform-box: view-box; transform-origin: 50% 62.5%; transition: transform .15s ease-out; }
-.bl-one.w1 svg { animation: bl-wob .5s ease-in-out infinite; }
-.bl-one.w2 svg { animation: bl-wob .22s ease-in-out infinite; }
-.bl-one.pop .bl-string { opacity: .25; }
-.bl-mark { font-size: 40px; text-anchor: middle; dominant-baseline: central; }
-.bl-tag { display: flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 800; white-space: nowrap; }
-.bl-tag .avatar { width: 22px; height: 22px; }
-.bl-one.me .bl-tag { color: var(--ink); text-decoration: underline 2px var(--green); text-underline-offset: 3px; }
-.bl-one.tied .bl-tag::after { content: '✓'; color: var(--green-ink); }
-.bl-puff { position: absolute; top: 8px; left: 50%; font-style: normal; font-weight: 900; font-size: 18px; color: var(--green-ink); animation: bl-puff .45s ease-out forwards; }
+.bl-pad.shaking { animation: shake .1s linear 5; }
+.bl-main { display: grid; justify-items: center; gap: 8px; width: 100%; padding: 14px 16px; }
+.bl-status { font-family: var(--display); font-size: clamp(34px, 5vw, 56px); line-height: 1.05; min-height: 1.05em; }
+.bl-banner { font-family: var(--display); font-size: 26px; line-height: 1.2; min-height: 1.2em; }
+.bl-banner.spin { color: var(--muted-2); }
+.bl-banner.hot { color: var(--red); animation: nope .3s; }
+.bl-banner.calm { color: var(--green-ink); }
+.bl-gauge { position: relative; width: min(340px, 90%); height: 12px; border-radius: 999px; background: #e6f8ee; box-shadow: inset 0 0 0 1px var(--line); overflow: hidden; }
+.bl-gauge i { position: absolute; top: 0; bottom: 0; }
+.bl-gauge-red { right: 0; background: repeating-linear-gradient(45deg, #ffc9c9 0 6px, #ffa8a8 6px 12px); }
+.bl-gauge-fill { left: 0; background: #7f4a25; opacity: .85; transition: width .12s; }
+.bl-big { position: relative; display: grid; justify-items: center; }
+.bl-big svg { width: 122px; height: 205px; overflow: visible; }
+.bl-b { transform-box: view-box; transform-origin: 0px -20px; transition: transform .15s ease-out; } /* 병 입구(0,-20) 기준으로 커진다. view-box의 %는 viewBox 왼쪽 위가 아니라 (0,0)부터 재서 px로 쓴다 */
+.bl-skin { fill: var(--c, #ff6b9d); stroke: #2c3e50; stroke-width: 3; transition: fill .2s; }
+.bl-shine { fill: #fff; opacity: .45; }
+.bl-bottle { fill: #4a2511; stroke: #2c3e50; stroke-width: 3; }
+.bl-foam { fill: #f7e7ce; transform-box: fill-box; transform-origin: 50% 100%; transition: transform .15s; }
+.bl-fizzes { opacity: var(--fizz, .25); transition: opacity .2s; }
+.bl-fizz { fill: #e8c9a0; transform-box: fill-box; animation: bl-fizz 1s linear infinite; }
+.bl-big.w1 .bl-fizz { animation-duration: .55s; }
+.bl-big.w2 .bl-fizz { animation-duration: .3s; }
+.bl-label { fill: #d62828; }
+.bl-label-text { fill: #fff; font-size: 15px; font-weight: 900; text-anchor: middle; dominant-baseline: central; }
+.bl-glass { fill: #fff; opacity: .16; }
+.bl-big.w1 svg { animation: bl-wob .5s ease-in-out infinite; }
+.bl-big.w2 svg { animation: bl-wob .2s ease-in-out infinite; }
+.bl-big.tense svg { animation: bl-wob .07s linear infinite; }
+.bl-mark { font-size: 86px; text-anchor: middle; dominant-baseline: central; }
+.bl-pips { display: flex; gap: 8px; min-height: 16px; flex-wrap: wrap; justify-content: center; }
+.bl-pips i { width: 16px; height: 16px; border-radius: 50%; background: var(--line); }
+.bl-pips i.must { background: #ffc9c9; }
+.bl-pips i.on { background: #7f4a25; }
+.bl-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 8px; }
+.bl-chip.now { background: #fff3bf; box-shadow: inset 0 0 0 2px #fab005; }
+.bl-chip.next { box-shadow: inset 0 0 0 2px #adb5bd; }
+.bl-chip.out { opacity: .45; text-decoration: line-through; }
+.bl-card { font-style: normal; font-size: 11px; letter-spacing: -2px; }
+.bl-timer { width: min(360px, 90%); min-height: 20px; }
+.bl-float { position: absolute; top: 30%; left: 50%; font-family: var(--display); font-style: normal; font-size: 26px; white-space: nowrap; color: var(--green-ink); pointer-events: none; animation: bl-float .8s ease-out forwards; }
+.bl-float.plus { top: 8px; font-size: 20px; color: #7f4a25; }
+.bl-float.gain { top: 14%; color: var(--blue, #1c7ed6); }
+.bl-drop { position: absolute; top: 34%; left: 50%; width: 16px; height: 16px; border-radius: 50%; background: #5b2c10; pointer-events: none; animation: bl-drop .85s ease-out forwards; }
+.bl-splash { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; background: radial-gradient(circle at 50% 42%, rgba(74, 37, 17, .85), rgba(74, 37, 17, .45) 48%, transparent 78%); animation: bl-splash 1.3s ease-out forwards; }
+.bl-splash.me { background: rgba(74, 37, 17, .88); animation-duration: 2.6s; }
+.bl-splash b { font-family: var(--display); font-weight: 400; font-size: clamp(44px, 8vw, 84px); color: #fff; }
 @keyframes bl-wob { 0%, 100% { transform: rotate(-2deg); } 50% { transform: rotate(2deg); } }
-@keyframes bl-puff { from { transform: translate(-50%, 0); opacity: 1; } to { transform: translate(-50%, -26px); opacity: 0; } }
+@keyframes bl-throb { from { box-shadow: 0 4px 0 var(--line), inset 0 0 0 rgba(231, 76, 60, 0); } to { box-shadow: 0 4px 0 var(--line), inset 0 0 44px rgba(231, 76, 60, .6); } }
+@keyframes bl-fizz { from { transform: translateY(0); opacity: 1; } to { transform: translateY(-50px); opacity: 0; } }
+@keyframes bl-float { from { transform: translate(-50%, 0); opacity: 1; } to { transform: translate(-50%, -40px); opacity: 0; } }
+@keyframes bl-drop { from { transform: translate(-50%, 0) scale(var(--s, 1)); opacity: 1; } to { transform: translate(calc(-50% + var(--dx)), var(--dy)) scale(var(--s, 1)); opacity: 0; } }
+@keyframes bl-splash { 0% { opacity: 1; } 55% { opacity: .9; } 100% { opacity: 0; } }
 
 .podium { list-style: none; padding: 0; margin: 18px auto 12px; max-width: 480px; display: grid; gap: 8px; text-align: left; }
 .podium li { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-radius: 10px; background: var(--pill); font-weight: 800; }
@@ -561,6 +599,7 @@ button, input { font: inherit; color: inherit; }
 .tc-intro, .tc-final { display: grid; gap: 16px; justify-items: center; }
 .tc-final-title { font-family: var(--display); font-size: 44px; line-height: 1.1; }
 .rules.big { font-size: 16px; color: var(--ink); text-align: left; }
+.intro-line { margin: 0; font-size: 20px; font-weight: 800; color: var(--ink); text-align: center; } /* 시작 전 안내는 2초라 한 줄만 */
 .tc-reveal { width: min(600px, 100%); }
 .tc-reveal-head { font-family: var(--display); font-size: 30px; }
 .tc-list { list-style: none; padding: 0; margin: 16px 0 0; display: grid; gap: 6px; }
@@ -857,6 +896,57 @@ button, input { font: inherit; color: inherit; }
 .bc-list li.dead { opacity: .55; }
 .bc-list li.dead span { text-decoration: line-through; }
 .bc-list li.dead .avatar { filter: grayscale(1); }
+
+/* ── 인간대포 컬링 ── 틀과 글자는 범퍼카(.bc-*)를 같이 쓴다 (SVG 안 단위 = m) */
+.hc .bt-act { gap: 6px; }
+.hc .bt-act-title { font-size: 26px; }
+.hc-water { fill: #1f6f8b; }
+.hc-edge { fill: #8a5a2b; }
+.hc-a { fill: #fff8ec; }
+.hc-b { fill: #f08a7b; }
+.hc-bull { fill: #f1c40f; stroke: #b7950b; stroke-width: .06; }
+.hc-dock { fill: #b08457; stroke: #7a5230; stroke-width: .08; }
+.hc-aim { stroke: #2c3e50; stroke-width: .09; stroke-dasharray: .35 .3; stroke-linecap: round; opacity: .8; }
+.hc-wind { position: absolute; top: 10px; right: 12px; display: flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px; background: #18304de0; color: #fff; font-weight: 800; font-size: 15px; pointer-events: none; }
+.hc-wind-arrow { display: inline-block; font-style: normal; font-size: 18px; color: #ffd43b; transition: transform .2s; }
+.hc-ring { fill: #34495e; stroke: #1b2631; stroke-width: .08; }
+.hc-body.mine .hc-ring { stroke: var(--yellow); stroke-width: .16; }
+.hc-body.danger .hc-ring { stroke: var(--red); stroke-width: .2; animation: hc-blink .6s steps(2) infinite; }
+.hc-body.loser .hc-ring { stroke: var(--red); stroke-width: .26; fill: var(--red); }
+.hc-shadow { fill: rgba(0, 0, 0, .3); }
+.hc-tube { fill: #2f3640; stroke: #11151a; stroke-width: .08; }
+.hc-band { fill: #e1b12c; }
+.hc-mouth { fill: #1e2329; stroke: #e1b12c; stroke-width: .06; }
+.hc-wheel { fill: #7a5230; stroke: #4e3420; stroke-width: .08; }
+.hc-big { font-size: 1.6px; }
+.hc-rock { fill: #7f8c8d; stroke: #4d5656; stroke-width: .16; }
+.hc-bomb { fill: #1b2631; stroke: #e74c3c; stroke-width: .16; }
+.hc-ice { fill: #a5d8ff; stroke: #4dabf7; stroke-width: .16; }
+.hc-balloon { fill: #ffc9de; stroke: #f783ac; stroke-width: .16; }
+.hc-giant { fill: #b197fc; stroke: #7048e8; stroke-width: .2; }
+.hc-kind { font-size: .8px; text-anchor: middle; dominant-baseline: central; }
+.hc-tag { font-size: .85px; text-anchor: middle; dominant-baseline: central; animation: bc-bob .3s ease-in-out infinite alternate; }
+.hc-cry { font-family: var(--display); font-size: .78px; text-anchor: middle; fill: #fff; stroke: #2c3e50; stroke-width: .14px; paint-order: stroke fill; }
+.hc-comic { font-family: var(--display); font-size: 1.3px; text-anchor: middle; dominant-baseline: central; fill: #ffd43b; stroke: #2c3e50; stroke-width: .14px; paint-order: stroke fill; transform-box: fill-box; transform-origin: center; animation: hc-comic .68s ease-out forwards; }
+.hc-comic.big { font-size: 2.5px; stroke-width: .2px; }
+.hc-puff { fill: #dfe6e9; opacity: .8; transform-box: fill-box; transform-origin: center; animation: hc-puff .5s ease-out forwards; }
+.hc-fins { transform-box: view-box; transform-origin: 0px 0px; animation: hc-orbit 24s linear infinite; }
+.hc-fin { font-size: 1.15px; text-anchor: middle; dominant-baseline: central; }
+.hc-white { position: absolute; inset: 0; pointer-events: none; background: #fff; animation: hc-white .3s ease-out forwards; }
+.hc-last { box-shadow: inset 0 0 0 5px var(--red); }
+.hc-last .hc-svg { animation: hc-last 1s ease-in-out infinite alternate; }
+.hc-reel { font-family: var(--display); font-size: 22px; line-height: 1.2; min-height: 1.2em; color: var(--muted-2); }
+.hc-reel.done { color: var(--ink); animation: nope .3s; }
+.bc-flash.stamp { background: var(--red); color: #fff; font-family: var(--display); font-size: clamp(34px, 6vw, 60px); transform: rotate(-6deg); }
+@keyframes hc-comic { 0% { transform: scale(.3) rotate(-8deg); opacity: 1; } 35% { transform: scale(1.15) rotate(3deg); opacity: 1; } 100% { transform: scale(1) rotate(0); opacity: 0; } }
+@keyframes hc-puff { from { transform: scale(.5); opacity: .8; } to { transform: scale(2.2); opacity: 0; } }
+@keyframes hc-orbit { to { transform: rotate(360deg); } }
+@keyframes hc-white { from { opacity: .75; } to { opacity: 0; } }
+@keyframes hc-last { from { filter: none; } to { filter: saturate(1.35) brightness(1.06); } }
+.hc-gauge { width: min(340px, 90%); height: 14px; border-radius: 999px; background: var(--pill); box-shadow: inset 0 0 0 1px var(--line); overflow: hidden; }
+.hc-gauge i { display: block; height: 100%; background: linear-gradient(90deg, #2ecc71, #f1c40f 55%, #e74c3c); transform: scaleX(0); transform-origin: left; }
+.hc-gauge.full { box-shadow: inset 0 0 0 2px var(--red); animation: nope .3s; }
+@keyframes hc-blink { 50% { stroke-opacity: .25; } }
 
 /* ── 독박빼기 ── (SVG 안 글자 크기 px = m) */
 .po { display: grid; grid-template-columns: 1fr 300px; gap: 18px; }

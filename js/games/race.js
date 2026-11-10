@@ -2,7 +2,7 @@
 // 맵마다 보이는 갈래길과 미니맵에 없는 숨은 지름길(좁고 위험, 실패하면 손해)이 있다 (kart-maps.js).
 // 방장이 모든 카트의 이동·충돌을 함께 계산한다. 내 화면은 입력을 즉시 예측하고 방장 상태로 보정한다.
 // SPACE 드리프트를 놓으면 충전에 비례한 부스트. 같은 층의 카트끼리 부딪혀 밀려난다.
-import { h, isTyping, shuffle, AGAIN_INTRO } from '../util.js';
+import { h, isTyping, shuffle, INTRO_TIME } from '../util.js';
 import { avatar, nameTag } from '../ui.js';
 import { createRacePrediction } from './race-prediction.js';
 import { createBumperAudio } from './bumper-audio.js';
@@ -46,7 +46,6 @@ const mapName = spec => {
 };
 const sectionNames = () => T.sections || LEGACY_NAMES;
 useTrack('wide');
-const INTRO = 4500;
 const LIGHT = 1000;               // 신호등 한 칸
 const READY = LIGHT * 2;          // 빨강 → 주황 → 초록이 켜지는 순간 출발
 const FINISH_WAIT = 10000;       // 첫 완주 뒤 이 안에 들어와야 완주
@@ -353,7 +352,7 @@ export default {
     useTrack(maps[0]);
     return {
       phase: 'intro', round: 1, maps, points: Object.fromEntries(ctx.roster.map(p => [p.id, 0])), roundResults: [],
-      introUntil: now + (prev ? AGAIN_INTRO : INTRO),
+      introUntil: now + INTRO_TIME,
       again: !!prev,
       cars: gridCars(ctx.roster), fx: [], fxNo: 0,
     };
@@ -1588,15 +1587,7 @@ export default {
         overlay.append(h('div', { class: 'rc-card' },
           h('h2', {}, `🏎️ 카트 그랑프리 · ${mapName(specOf(S))}`),
           h('p', {}, `이번 판 맵: ${(S.maps || []).map(mapName).join(' → ')}`),
-          S.again ? null : h('ul', { class: 'rules big' },
-            h('li', {}, '맵 3개를 두 바퀴씩, 3경기 합산 점수로 승부! 맵은 판마다 바뀌어요'),
-            h('li', {}, '갈래길은 장단점이 있는 선택지 · 미니맵에 없는 숨은 지름길도 있어요 🤫 (좁고 위험!)'),
-            h('li', {}, 'W / ↑ = 가속 · S / ↓ = 제동 후 후진 · A D / ← → = 핸들'),
-            h('li', {}, '좌우는 짧게 눌러 미세 조정 · 떼면 바로 직진으로 안정돼요'),
-            h('li', {}, '코너에서 Shift / Space 꾹 = 드리프트 · 놓으면 부스트!'),
-            h('li', {}, '파란 불꽃은 짧게, 주황 불꽃은 길게 가속!'),
-            h('li', {}, '길에 벽이 없어요! 밖으로 나가면 추락 → 조금 뒤에서 다시 출발'),
-            h('li', {}, '초록불이 켜지는 순간 출발! 가속 키를 미리 눌러 둬도 돼요'))));
+          S.again ? null : h('p', { class: 'intro-line' }, '맵 3개 합산! 벽이 없어서 밖으로 나가면 추락')));
       }
       if (lampsOn()) {
         overlay.append(h('div', { class: 'tc-light rc-light' }, h('i', { class: 'lamp red' }), h('i', { class: 'lamp amber' }), h('i', { class: 'lamp green' })));
@@ -1635,6 +1626,11 @@ export default {
           return h('li', { class: id === me ? 'now' : '' }, avatar(p), h('span', {}, p.name),
             h('em', {}, c.fin ? `🏁 ${fmt(c.fin)}` : `${S.points?.[id] || 0}점 · ${sectionNames()[c.cp] || ''}`));
         })),
+        h('h3', {}, '규칙'),
+        h('ul', { class: 'rules' },
+          h('li', {}, '맵 3개를 두 바퀴씩, 3경기 합산 점수로 승부'),
+          h('li', {}, '길에 벽이 없어요! 밖으로 나가면 추락 → 조금 뒤에서 다시 출발'),
+          h('li', {}, '초록불이 켜지는 순간 출발! 가속 키를 미리 눌러 둬도 돼요')),
         h('h3', {}, '조작'),
         h('ul', { class: 'rules' },
           h('li', {}, 'W / ↑ = 앞으로 가속 · S / ↓ 꾹 = 멈춘 뒤 후진'),
