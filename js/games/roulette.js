@@ -436,7 +436,7 @@ function botTurn(ctx, id, mem, hand, now) {
 const ART = new URL('../../img/roulette/sprites/', import.meta.url).href;
 const PX = 3; // 도트 한 칸 = 화면 3px (그림도 효과도 전부 같은 크기)
 const SIZE = { // 그림 크기 (도트). 여기 없는 건 16×16
-  gun_front: [63, 38], shell_live: [8, 13], shell_blank: [8, 13], shell_q: [8, 13], heart: [9, 9], heart_off: [9, 9],
+  gun_aim_l: [78, 58], gun_aim_c: [78, 58], gun_aim_r: [78, 58], shell_live: [8, 13], shell_blank: [8, 13], shell_q: [8, 13], heart: [9, 9], heart_off: [9, 9],
   cardback: [7, 9], cross: [17, 17], skull: [9, 9], eye: [11, 7], c_steal: [16, 13], c_shield: [16, 15],
 };
 // 총: 위에서 내려다본 그림을 15도마다 구워 뒀다. gun_0(위) … gun_6(오른쪽) … gun_12(아래), 왼쪽은 좌우로 뒤집는다
@@ -593,8 +593,12 @@ export default {
     const count = h('div', { class: 'rl-count' });
     const banner = h('div', { class: 'rl-banner' });
     const gunImg = spr('gun_6', 'rl-top');
-    for (let k = 0; k <= 180 / GUN_STEP; k++) new Image().src = `${ART}gun_${k}.png`; // 처음 돌 때 그림이 늦게 뜨지 않게
-    const gun = h('div', { class: 'rl-gun' }, gunImg, spr('gun_front', 'rl-front'));
+    for (const name of [...Array.from({ length: 180 / GUN_STEP + 1 }, (_, k) => `gun_${k}`), 'gun_aim_l', 'gun_aim_c', 'gun_aim_r']) {
+      new Image().src = `${ART}${name}.png`; // 처음 쓸 때 그림이 늦게 뜨지 않게
+    }
+    // 누가 나를 쏘면(결과 전) 다가오는 총: 쏘는 사람이 앉은 쪽(내 왼쪽 · 맞은편 · 내 오른쪽)에 맞춘 원근 그림
+    const frontImg = spr('gun_aim_c', 'rl-front');
+    const gun = h('div', { class: 'rl-gun' }, gunImg, frontImg);
     const table = h('div', { class: 'rl-table' },
       h('div', { class: 'rl-felt' }), h('div', { class: 'rl-center' }, mag, count, banner), gun, fx, flashEl);
     const prompt = h('div', { class: 'rl-prompt' });
@@ -1090,6 +1094,10 @@ export default {
       const front = S.phase === 'hush' && !shot.self && shot.to.includes(me) && alive(me);
       if (front !== gunFront) {
         gunFront = front;
+        if (front) {
+          const a = sideAngle(shot.by);
+          frontImg.src = `${ART}gun_aim_${a < -0.35 ? 'l' : a > 0.35 ? 'r' : 'c'}.png`;
+        }
         gun.classList.toggle('front', front);
       }
       // 총은 쏘는 사람 앞에 놓인다: 차례가 시작되면(장전 중엔 다음 사람) 그 사람 앞으로 미끄러져 오고,

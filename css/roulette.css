@@ -77,7 +77,9 @@
 .rl-gun.front .rl-front { display: block; }
 .rl-gun.kick { animation: rl-kick .3s steps(1); }
 /* 나를 겨눈 정면 총구: 총 자리에서 위로 자라서 큰 글자 칸까지 덮는다 (탄 개수는 그대로 보이게) */
-.rl-gun.front .rl-front { animation: rl-loom .9s steps(1) forwards, rl-tremble .16s steps(1) .9s infinite; }
+.rl-gun.front .rl-front { animation: rl-loom .9s steps(1) forwards, rl-tremble .16s steps(1) infinite; }
+/* 남이 나를 겨누는 동안 위에서 본 총도 바들바들 (뒤집힌 그림이어도 translate라 그대로 떨린다) */
+.rl-table.aimme .rl-gun .rl-top { animation: rl-tremble .24s steps(1) infinite; }
 
 /* 자리: 얼굴 옆에 이름 · 하트 · 카드 */
 .rl-seat { position: absolute; z-index: 2; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 6px; }
@@ -169,7 +171,8 @@
 @keyframes rl-kick { from { translate: var(--kx, -9px) var(--ky, 0px); } 50% { translate: calc(var(--kx, -9px) / 3) calc(var(--ky, 0px) / 3); } to { translate: 0 0; } }
 /* 도트가 뭉개지지 않게 1배 → 2배 → 3배로 딱딱 커진다 (steps(1): 사이값 없이 다음 칸에서 바뀜) */
 @keyframes rl-loom { from { transform: scale(.3333); } 33% { transform: scale(.6667); } 66%, to { transform: scale(1); } }
-@keyframes rl-tremble { from, to { transform: translate(0, 0); } 50% { transform: translate(3px, 0); } }
+/* 떨림: 도트 한 칸(3px)씩 오른쪽 · 아래 · 왼쪽으로. transform이 아니라 translate라 커지는 연출·좌우 뒤집기와 같이 돈다 */
+@keyframes rl-tremble { from, to { translate: 0 0; } 25% { translate: 3px 0; } 50% { translate: 0 3px; } 75% { translate: -3px 0; } }
 @keyframes rl-flash { 0% { opacity: .9; } 50% { opacity: .5; background: var(--fire); } 100% { opacity: 0; } }
 @keyframes rl-float { from { opacity: 1; margin-top: -36px; } 70% { opacity: 1; } to { opacity: 0; margin-top: -72px; } }
 

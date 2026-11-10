@@ -118,23 +118,142 @@ for (const k of [1, 2, 3, 4, 5, 7, 8, 9, 10, 11]) {
   sprite(`gun_${k}`, { w: GUN_BOX, h: GUN_BOX, outline: "k" }, (c) => drawGunAt(c, -90 + k * 15));
 }
 
-// ───────── 총: 정면
-// 좌우 쌍대: 시커먼 구멍 둘이 나를 본다 (누가 나를 쏘면 결과가 나오기 전까지 이게 1배 → 2배 → 3배로 다가온다)
-sprite("gun_front", { w: 61, h: 36, outline: "k" },
-  // 아래 앞손잡이 (나무, 체커링)
-  ellipse(30, 27, 30, 8, "V"), ellipse(30, 26, 29, 7, "D"), ellipse(30, 24, 28, 5, "W"), hline(6, 21, 49, "U"),
-  ...[10, 16, 22, 28, 34, 40, 46, 52].map((x) => px(x, 27, "V")),
-  // 두 총열 사이 리브
-  rect(26, 4, 9, 22, "m"), vline(26, 4, 22, "s"), vline(34, 4, 22, "d"),
-  // 총열 둘: 쇠 테두리 → 어두운 턱 → 시커먼 구멍 (빛은 왼쪽 위에서)
-  ...[17, 43].flatMap((cx) => [
-    circ(cx, 15, 12, "m"), ring(cx, 15, 12, "d"),
-    circ(cx, 15, 9, "d"), circ(cx, 15, 8, "k"), ring(cx, 15, 6, "n"), ring(cx, 15, 3, "n"),
-    line(cx - 10, 12, cx - 5, 6, "s"), px(cx - 9, 9, "w"), px(cx - 7, 7, "w"), line(cx + 6, 22, cx + 9, 18, "d"),
-  ]),
-  // 리브 위 금빛 가늠쇠
-  circ(30, 2, 2, "y"), px(29, 1, "w"),
-)
+// ───────── 총: 나를 겨눈 모습 (원근). 총구 둘은 크게 나를 보고, 총열 · 앞손잡이 · 기관부 · 개머리판은 위로(쏘는 사람 쪽으로) 멀어진다.
+// 누가 나를 쏘면 결과가 나오기 전까지 이게 1배 → 2배 → 3배로 다가오고 떨린다. 쏘는 사람이 앉은 쪽에 따라 세 장:
+// gun_aim_l(내 왼쪽에서) · gun_aim_c(맞은편에서) · gun_aim_r(내 오른쪽에서). 같은 빛(왼쪽 위)으로 따로 그린다.
+// 간단한 3D: 총 축을 따라 부품(상자 · 원통)을 놓고 카메라(원점, +z를 봄)로 원근 투영. 상자는 다각형, 총열 · 총구는 칸마다 시선을 쏴서 칠한다
+const AIM_W = 76;
+const AIM_H = 56;
+
+const aimedGun = (dir) => (c) => {
+  const norm = (v) => { const l = Math.hypot(...v); return v.map((x) => x / l); };
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const add = (...vs) => vs.reduce((a, b) => a.map((x, i) => x + b[i]));
+  const mul = (v, k) => v.map((x) => x * k);
+
+  const fwd = norm([0.42 * dir, 0.3, 1]);        // 총구 → 개머리판: 멀어지며 위로 (dir 쪽으로 비스듬히)
+  const side = norm(cross([0, 1, 0], fwd));      // 총의 옆
+  const up = norm(cross(fwd, side));             // 총의 위
+  const P0 = [-1.05 * dir, -0.62, 4.6];          // 총구 가운데 (카메라 바로 앞, 총몸 반대쪽으로 조금)
+  const light = norm([-0.55, 0.8, -0.35]);       // 왼쪽 위 앞에서 오는 빛
+  const F = 92;                                  // 원근 세기 (클수록 크게)
+  const R = 0.45;                                // 총열 반지름
+  const at = (u, s, h) => add(P0, mul(fwd, u), mul(side, s), mul(up, h));
+  let ox = 0;
+  let oy = 0;
+  const proj = (p) => [ox + (F * p[0]) / p[2], oy - (F * p[1]) / p[2]];
+
+  // 부품: 상자 = [u0, u1, s0, s1, [h0, h1] at u0, [h0, h1] at u1, 재질]
+  const boxes = [
+    [11.5, 17.6, -0.36, 0.36, [-0.55, 0.32], [-1.65, 0.12], "wood"],  // 개머리판 (끝으로 갈수록 처지고 두꺼워짐)
+    [9, 11.6, -0.62, 0.62, [-0.78, 0.5], [-0.78, 0.5], "metal"],       // 기관부
+    [10.5, 11.3, -0.62, -0.3, [0.5, 0.95], [0.5, 0.82], "metal"],      // 공이치기 (왼쪽)
+    [10.5, 11.3, 0.3, 0.62, [0.5, 0.95], [0.5, 0.82], "metal"],        // 공이치기 (오른쪽)
+    [1.4, 7.6, -0.62, 0.62, [-0.98, -0.35], [-0.98, -0.35], "wood"],  // 앞손잡이
+  ];
+  const corners = ([u0, u1, s0, s1, ha, hb]) => {
+    const pts = [];
+    for (const [u, [lo, hi]] of [[u0, ha], [u1, hb]]) for (const s of [s0, s1]) for (const h of [lo, hi]) pts.push(at(u, s, h));
+    return pts; // 번호 = (u쪽 << 2) | (s쪽 << 1) | h쪽
+  };
+  const barrelRing = (s0, u, r = R, n = 28) => Array.from({ length: n }, (_, k) => {
+    const t = (k / n) * Math.PI * 2;
+    return at(u, s0 + r * Math.cos(t), r * Math.sin(t));
+  });
+
+  // 화면에 맞추기: 다 투영해 보고 가운데로
+  const all = [...boxes.flatMap(corners), ...[-0.47, 0.47].flatMap((s) => [...barrelRing(s, 0), ...barrelRing(s, 9)])].map(proj);
+  const xs = all.map((p) => p[0]);
+  const ys = all.map((p) => p[1]);
+  ox = Math.round((AIM_W - (Math.max(...xs) + Math.min(...xs))) / 2);
+  oy = Math.round((AIM_H - (Math.max(...ys) + Math.min(...ys))) / 2);
+
+  const shadeOf = (n, mat) => {
+    const b = dot(n, light);
+    if (mat === "wood") return b > 0.45 ? "U" : b > 0 ? "W" : b > -0.4 ? "D" : "V";
+    return b > 0.45 ? "s" : b > 0 ? "m" : b > -0.4 ? "d" : "n";
+  };
+  const flat = (pts) => pts.flatMap((p) => proj(p).map((v) => Math.round(v * 2) / 2));
+
+  // 상자: 카메라를 보는 면만, 먼 면부터
+  function drawBox(b) {
+    const P = corners(b);
+    const faces = [
+      [[0, 2, 3, 1], mul(fwd, -1)], [[4, 5, 7, 6], fwd],
+      [[0, 1, 5, 4], mul(side, -1)], [[2, 6, 7, 3], side],
+      [[0, 4, 6, 2], mul(up, -1)], [[1, 3, 7, 5], up],
+    ];
+    faces
+      .map(([idx, n]) => ({ idx, n, mid: mul(add(...idx.map((i) => P[i])), 1 / 4) }))
+      .filter((f) => dot(f.n, mul(f.mid, -1)) > 0)
+      .sort((a, b) => Math.hypot(...b.mid) - Math.hypot(...a.mid))
+      .forEach((f) => c.poly(flat(f.idx.map((i) => P[i])), shadeOf(f.n, b[6])));
+  }
+
+  // 총열 둘 · 총구: 칸마다 카메라에서 시선을 쏴서, 맞은 곳(총열 겉면 · 끝면 · 구멍 안벽)의 방향으로 음영을 정한다
+  const sub = (a, b) => a.map((x, i) => x - b[i]);
+  const flatten = (v) => sub(v, mul(fwd, dot(v, fwd)));            // 총 축에 수직인 부분
+  function hitCyl(D, A, r, far) {
+    const Dp = flatten(D);
+    const wp = flatten(mul(A, -1));
+    const a = dot(Dp, Dp);
+    const b = dot(wp, Dp);
+    const disc = b * b - a * (dot(wp, wp) - r * r);
+    if (disc < 0) return null;
+    const t = (-b + (far ? 1 : -1) * Math.sqrt(disc)) / a;
+    if (t <= 0) return null;
+    const H = mul(D, t);
+    const u = dot(sub(H, A), fwd);
+    return { t, u, n: norm(flatten(sub(H, A))) };
+  }
+  const angleOf = (n) => Math.atan2(dot(n, up), dot(n, side));
+  const tb = Math.atan2(dot(light, up), dot(light, side));         // 빛을 정면으로 받는 둘레 방향
+  const BORE = 0.74;                                                 // 구멍 반지름 / 총열 반지름
+  function barrelPixel(D, s0) {
+    const A = at(0, s0, 0);
+    const out = hitCyl(D, A, R, false);
+    const tf = dot(A, fwd) / dot(D, fwd);                            // 끝면(u = 0) 평면
+    const rf = Math.hypot(...flatten(sub(mul(D, tf), A)));
+    if (tf > 0 && rf <= R && (!out || out.u < 0 || tf <= out.t)) {   // 끝면이 보인다
+      const n = norm(flatten(sub(mul(D, tf), A)));
+      if (rf > R * BORE) {                                           // 크라운: 밝은 고리, 오른쪽 아래는 그늘
+        const b = dot(n, light);
+        return { t: tf, k: b > 0.6 && rf > R * 0.9 ? "w" : b > -0.3 ? "s" : "m" };
+      }
+      const wall = hitCyl(D, A, R * BORE, true);                     // 구멍 안: 건너편 안벽
+      if (!wall || wall.u > 3) return { t: tf, k: "k" };
+      const lit = -dot(wall.n, light);                               // 안벽은 안쪽을 본다
+      const groove = ((((angleOf(wall.n) - 0.55 * wall.u) / (Math.PI * 2)) * 8) % 1 + 1) % 1 < 0.38; // 강선: 깊이 들어갈수록 비틀린다
+      if (wall.u > 1.9 || lit < 0.15) return { t: tf, k: "k" };
+      if (groove) return { t: tf, k: lit > 0.55 && wall.u < 0.9 ? "n" : "k" };
+      return { t: tf, k: lit > 0.55 && wall.u < 0.9 ? "d" : "n" };
+    }
+    if (!out || out.u < 0 || out.u > 9) return null;
+    const b = dot(out.n, light);
+    const shine = Math.abs(angleOf(out.n) - tb) < 0.22 && out.u > 0.4 && out.u < 4.5;
+    return { t: out.t, k: shine ? "w" : b > 0.75 ? "s" : b > 0.3 ? "m" : b > -0.25 ? "d" : "n" };
+  }
+
+  boxes.forEach(drawBox);                                            // 개머리판 · 기관부 · 공이치기 · 앞손잡이
+  for (let Y = 0; Y < AIM_H; Y++) {
+    for (let X = 0; X < AIM_W; X++) {
+      const D = norm([(X + 0.5 - ox) / F, -(Y + 0.5 - oy) / F, 1]);
+      const hits = [-0.47, 0.47].map((s0) => barrelPixel(D, s0)).filter(Boolean).sort((a, b) => a.t - b.t);
+      if (hits.length) c.px(X, Y, hits[0].k);
+    }
+  }
+  // 두 총열 사이 위 리브 · 금빛 가늠쇠
+  const [rx0, ry0] = proj(at(0.3, 0, R * 0.98));
+  const [rx1, ry1] = proj(at(9, 0, R * 0.98));
+  c.line(Math.round(rx0), Math.round(ry0), Math.round(rx1), Math.round(ry1), "s");
+  const [bx, by] = proj(at(0.35, 0, R + 0.18));
+  c.circ(Math.round(bx), Math.round(by), 1, "y");
+};
+
+for (const [name, dir] of [["gun_aim_l", -1], ["gun_aim_c", 0], ["gun_aim_r", 1]]) {
+  sprite(name, { w: AIM_W, h: AIM_H, outline: "k" }, aimedGun(dir));
+}
 
 // ───────── 탄: 실탄(빨강) · 공포탄(파랑) · 아직 모르는 탄(?)
 sprite("shell_live", { outline: "k" }, `
