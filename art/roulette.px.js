@@ -368,3 +368,409 @@ sprite("c_mirror", { w: 14, h: 14, outline: "k" },
   rect(6, 9, 2, 5, "Y"), vline(6, 9, 5, "y"),
   ellipse(7, 5, 5, 5, "y"), ellipse(7, 5, 4, 4, "c"), ring(7, 5, 5, "Y"),
   line(5, 6, 8, 3, "w"), px(6, 7, "w"), px(9, 4, "B"), px(9, 6, "B"), px(8, 7, "B"))
+
+// ───────── 금빛 하트: 가득을 넘친 칸 (🎰 내 하트 +1)
+sprite("heart_gold", { base: "heart", swap: { r: "y", o: "w", p: "Y" } })
+
+// ───────── 🎰 운명 카드 · 룰렛판
+// 칸 11개는 FATE_ORDER 순서 (js/games/roulette.js): 시계 방향, 0번 칸이 처음에 맨 위.
+// 칸마다 [바깥 색, 안쪽 색, 칸 그림]. 이웃한 칸끼리 색이 겹치지 않게
+const TAU = Math.PI * 2;
+const SEGS = [
+  ["r", "p", "alllive"], // 전탄 실탄
+  ["B", "b", "rotate"],  // 손패 돌리기
+  ["o", "r", "power"],   // 이번 발 피해 +2
+  ["c", "B", "myaug"],   // 내 증강 바꾸기
+  ["p", "n", "bleed"],   // 모두 하트 -1
+  ["l", "g", "heal"],    // 내 하트 +1
+  ["y", "Y", "reveal"],  // 탄 공개
+  ["b", "n", "reverse"], // 방향 반대
+  ["s", "m", "swap"],    // 총 교체
+  ["t", "n", "allaug"],  // 모두 증강 바꾸기
+  ["g", "t", "gift"],    // 모두 카드 +1
+];
+// 칸 그림 (작게, 검은 테두리): 판이 돌아도 그림은 똑바로 선 채 칸을 따라간다
+const FI = {
+  alllive: `
+    .w.
+    www
+    www
+    yyy
+    yyy`,
+  rotate: `
+    ...w.
+    wwwww
+    ...w.
+    .w...
+    wwwww
+    .w...`,
+  power: `
+    ....www
+    .w....w
+    www.www
+    .w..w..
+    ....www`,
+  myaug: `
+    ..w..
+    .www.
+    wwwww
+    .www.
+    .w.w.`,
+  bleed: `
+    ww.ww
+    wwkww
+    .wkw.
+    ..w..`,
+  heal: `
+    rr.rr
+    rwrrr
+    .rrr.
+    ..r..`,
+  reveal: `
+    .www.
+    wwkww
+    .www.`,
+  reverse: `
+    .ww..
+    w..w.
+    w..w.
+    w.www
+    ...w.`,
+  swap: `
+    .www.
+    wkwkw
+    wwkww
+    wkwkw
+    .www.`,
+  allaug: `
+    .w...w.
+    www.www
+    .w...w.`,
+  gift: `
+    wwww
+    wrrw
+    wrrw
+    wwww`,
+};
+const fiSize = (k) => {
+  const rows = FI[k].trim().split("\n").map((r) => r.trim());
+  return [Math.max(...rows.map((r) => r.length)) + 2, rows.length + 2];
+};
+for (const [k, g] of Object.entries(FI)) sprite(`_fi_${k}`, { outline: "k" }, g);
+
+// 판 그리기: 칸마다 각도로 색을 정한다 (돌린 그림을 다시 찍는 게 아니라 각도마다 새로 칠해서 칸 경계가 안 뭉개진다).
+// theta = 시계 방향으로 돌린 각도. 금테(왼쪽 위가 밝게) · 칸 사이 살 · 가운데 축 · 테의 전구 · 칸 그림
+function drawWheel(c, theta, o = {}) {
+  const { cx = c.w / 2, cy = c.h / 2, R = Math.min(c.w, c.h) / 2, rim = 0, hub = 0, segs = SEGS, spokes = true, icons = false, bulbs = 0 } = o;
+  const N = segs.length;
+  const seg = TAU / N;
+  for (let y = 0; y < c.h; y++) {
+    for (let x = 0; x < c.w; x++) {
+      const dx = x + 0.5 - cx;
+      const dy = y + 0.5 - cy;
+      const r = Math.hypot(dx, dy);
+      if (r > R) continue;
+      const lit = r ? (-dx - dy) / (r * Math.SQRT2) : 1;
+      if (rim && r > R - rim) { c.px(x, y, lit > 0.25 ? "y" : lit > -0.5 ? "Y" : "D"); continue; }
+      if (rim && r > R - rim - 1) { c.px(x, y, "k"); continue; }
+      if (hub && r < hub) { c.px(x, y, r < hub * 0.4 ? "k" : lit > 0 ? "y" : "Y"); continue; }
+      let a = (Math.atan2(dx, -dy) - theta) % TAU;
+      if (a < 0) a += TAU;
+      const u = a / seg;
+      const i = Math.round(u) % N;
+      if (spokes && (0.5 - Math.abs(u - Math.round(u))) * seg * r < 0.5) { c.px(x, y, "k"); continue; }
+      const [hi, lo] = segs[i];
+      c.px(x, y, lo && r < (R - rim) * 0.42 ? lo : hi);
+    }
+  }
+  for (let j = 0; j < bulbs; j++) { // 테의 전구: 흰 것 · 주황 것 번갈아
+    const ang = theta + ((j + 0.5) / bulbs) * TAU;
+    const rr = R - rim / 2;
+    c.px(Math.floor(cx + rr * Math.sin(ang)), Math.floor(cy - rr * Math.cos(ang)), j % 2 ? "w" : "o");
+  }
+  if (icons) {
+    for (let i = 0; i < N; i++) {
+      const ang = theta + i * seg;
+      const rr = (R - rim) * 0.66;
+      const [w, h] = fiSize(segs[i][2]);
+      c.stamp(`_fi_${segs[i][2]}`, Math.round(cx + rr * Math.sin(ang) - w / 2), Math.round(cy - rr * Math.cos(ang) - h / 2));
+    }
+  }
+}
+
+// 룰렛판: 시계 방향 한 바퀴 44장 (칸마다 4장) → anims/wheel.png 가로 띠. 화면에서 띠를 칸칸이 넘겨 돌린다
+anim("wheel", { w: 62, h: 62, frames: 44, fps: 22, outline: "k" }, (c) =>
+  drawWheel(c, c.phase * TAU, { R: 31, rim: 3, hub: 5, icons: true, bulbs: 22 }))
+
+// 바늘: 판 위에서 멈춘 칸을 가리킨다
+sprite("wheel_pin", { outline: "k" }, `
+  yyyyyyyyy
+  ywwyyyyYy
+  .yyrrryY.
+  ..yrrrY..
+  ...yrY...
+  ....Y....`)
+
+// 운명 카드 그림 (손패) · 자리 옆에 붙는 작은 운명 카드 표시
+const MINI = [["r"], ["y"], ["B"], ["l"], ["r"], ["y"], ["B"], ["l"]];
+sprite("c_fate", { w: 14, h: 14, outline: "k" },
+  (c) => drawWheel(c, TAU / 16, { cx: 7, cy: 8, R: 6, rim: 1, hub: 1.5, segs: MINI }),
+  poly([4, 0, 10, 0, 7, 4], "y"), px(6, 0, "w"), px(7, 1, "r"))
+sprite("fate_mark", { w: 7, h: 7, outline: "k" },
+  (c) => drawWheel(c, TAU / 8, { R: 3.5, hub: 1, segs: [["r"], ["y"], ["B"], ["l"]], spokes: false }))
+
+// ───────── ✨ 증강 그림 19종 (14×14 + 테두리 = 16×16)
+// 실버
+sprite("a_brave", { w: 14, h: 14, outline: "k" }, `
+  ..............
+  ..wwwwwwwwww..
+  .wwwwwwwwwwws.
+  .wwrrwwwwwwws.
+  .wwrrwwwwwwws.
+  .wwwwwwwwwwws.
+  .wwwwwrrwwwws.
+  .wwwwwrrwwwws.
+  .wwwwwwwwwwws.
+  .wwwwwwwwrrws.
+  .wwwwwwwwrrws.
+  .wwwwwwwwwwws.
+  ..ssssssssss..
+  ..............`)
+sprite("a_keen", { w: 14, h: 14, outline: "k" }, `
+  ..............
+  ..............
+  ...mmmmmmmm...
+  ..m........m..
+  ....wwwwww....
+  ..wwwBBBBwww..
+  .wwwBnnnnBwww.
+  wwwBnnkwnnBwww
+  .wwwBnnnnBwww.
+  ..wwwBBBBwww..
+  ....wwwwww....
+  ..............
+  ..............
+  ..............`)
+sprite("a_counter", { w: 14, h: 14, outline: "k" }, `
+  ..............
+  .....rrrrr....
+  ...rrorrrrrr..
+  ..rorrrrrrrrr.
+  ..rorrrrrrrrr.
+  ..rrrrrrrrrrr.
+  ..rrrrrrrrrrp.
+  ..prrrrrrrrp..
+  ...pprrrrpp...
+  ....wwwwww....
+  ....wwwwww....
+  ....ssssss....
+  ..............
+  ..............`)
+sprite("a_pouch", { w: 14, h: 14, outline: "k" }, `
+  ..............
+  .....DWWD.....
+  ......WW......
+  .....yYYy.....
+  ....WUUWWW....
+  ...WUUWWWWW...
+  ..WUUWWWWWWD..
+  ..WUWWyWWWWD..
+  ..WWWyyyWWWD..
+  ..WWWWyWWWDD..
+  ...WWWWWWDD...
+  ....DDDDDD....
+  ..............
+  ..............`)
+sprite("a_revenge", { w: 14, h: 14, outline: "k" }, `
+  ..............
+  ......yy......
+  ......WD......
+  ......WD......
+  ....yyyyyy....
+  .....YYYY.....
+  ......ws......
+  ......ws......
+  ......ws......
+  ......ws......
+  ......ws......
+  .......w......
+  .......r......
+  .......r......`)
+sprite("a_hunter", { w: 14, h: 14, outline: "k" },
+  circ(6, 7, 6, "r"), circ(6, 7, 4, "w"), circ(6, 7, 2, "r"), px(6, 7, "w"),
+  line(7, 6, 12, 1, "W"), line(11, 0, 13, 2, "o"), px(10, 1, "o"), px(12, 3, "o"))
+// 골드
+sprite("a_vamp", { w: 14, h: 14, outline: "k" }, `
+  ..............
+  ......r.......
+  ......rr......
+  .....rrr......
+  .....rrrr.....
+  ....rorrrr....
+  ...rorrrrrr...
+  ...rwrrrrrr...
+  ..rorrrrrrrr..
+  ..rrrrrrrrrp..
+  ..rrrrrrrrrp..
+  ...rrrrrrrp...
+  ....pppppp....
+  ..............`)
+sprite("a_quick", { w: 14, h: 14, outline: "k" }, `
+  ..............
+  .......yyyyw..
+  ......yyyyw...
+  .....yyyyw....
+  ....yyyyw.....
+  ...yyyyyyyyy..
+  .......yyyy...
+  ......yyyy....
+  .....yyyy.....
+  ....yyy.......
+  ...yyY........
+  ...yY.........
+  ...Y..........
+  ..............`)
+sprite("a_fire", { w: 14, h: 14, outline: "k" }, `
+  ..............
+  ......o.......
+  .....oo.......
+  .....ooo...o..
+  ....oooo..oo..
+  ...ooyooo.oo..
+  ...oyyyooooo..
+  ..ooyyyyoooo..
+  ..oyyywyyooo..
+  ..oyywwwyyoo..
+  ..ooywwwyyoo..
+  ...ooyyyyoo...
+  ....rooooor...
+  ..............`)
+sprite("a_reflex", { w: 14, h: 14, outline: "k" }, `
+  ..............
+  ......cc......
+  .....cwcc.....
+  ....cwcccc....
+  ...cwccccBc...
+  ..cwccccccBc..
+  ..ccccccccBB..
+  ...cccccccB...
+  ....cccccB....
+  .....cccB.....
+  ......cB......
+  ..............
+  ..............
+  ..............`)
+sprite("a_sniper", { w: 14, h: 14, outline: "k" }, `
+  ..............
+  .....ssss.....
+  ...ss.ll.ss...
+  ..s...ll...s..
+  ..s........s..
+  .s..........s.
+  .sll..rr..lls.
+  .s..........s.
+  ..s........s..
+  ..s...ll...s..
+  ...ss.ll.ss...
+  .....ssss.....
+  ..............
+  ..............`)
+sprite("a_fuse", { w: 14, h: 14, outline: "k" }, `
+  ..............
+  ..........y...
+  .........yoy..
+  ........W.y...
+  .......W......
+  ....ddWd......
+  ...dddddd.....
+  ..dsdddddd....
+  ..dmdddddd....
+  ..dddddddd....
+  ..dddddddd....
+  ...dddddd.....
+  ....dddd......
+  ..............`)
+// 도박사: 운명 카드가 한 장 더 → 겹친 카드 두 장 (뒤 카드는 기울게)
+sprite("a_dealer", { w: 14, h: 14, outline: "k" },
+  poly([1, 3, 7, 1, 10, 11, 4, 13], "p"), poly([2, 4, 6, 3, 8, 10, 4, 11], "r"),
+  rect(5, 1, 8, 12, "y"), rect(6, 2, 6, 10, "Y"), rect(7, 3, 4, 8, "p"),
+  px(8, 5, "y"), px(9, 6, "y"), px(8, 7, "y"), px(9, 8, "y"), px(5, 1, "w"), px(6, 1, "w"))
+// 프리즘
+sprite("a_chain", { w: 14, h: 14, mx: true, outline: "k" }, `
+  .......
+  ....www
+  ...wwww
+  ..wwwww
+  ..wwwww
+  ..wwrrw
+  ..wwrrw
+  ..wwwww
+  ...wwwk
+  ....www
+  ....wkw
+  ....www
+  .......
+  .......`)
+sprite("a_allin", { w: 14, h: 14, outline: "k" }, `
+  ..............
+  ....yyyyyy....
+  ...yYYYYYYy...
+  ...ywyyyyyy...
+  ...YyyyyyyY...
+  ....yyyyyy....
+  ...yYYYYYYy...
+  ...ywyyyyyy...
+  ...YyyyyyyY...
+  ....yyyyyy....
+  ...yYYYYYYy...
+  ...ywyyyyyy...
+  ...YYYYYYYY...
+  ..............`)
+sprite("a_phoenix", { w: 14, h: 14, mx: true, outline: "k" }, `
+  .......
+  .......
+  o......
+  oy.....
+  oyy.rr.
+  .oyrrrr
+  .oyrwrr
+  ..yrrrr
+  ...yrrr
+  ....rrr
+  .....rr
+  ......r
+  .......
+  .......`)
+sprite("a_prophet", { w: 14, h: 14, outline: "k" },
+  circ(7, 6, 5, "p"), circ(7, 6, 4, "b"), circ(6, 5, 2, "B"), px(5, 4, "c"), px(5, 3, "w"), px(9, 8, "n"), px(10, 7, "n"),
+  rect(3, 11, 8, 3, "Y"), hline(4, 11, 6, "y"))
+sprite("a_devil", { w: 14, h: 14, mx: true, outline: "k" }, `
+  .......
+  .r.....
+  .rr....
+  ..rrrrr
+  ..rrrrr
+  .rrrrrr
+  .rryyrr
+  .rrkyrr
+  .rrrrrr
+  .rrkrrr
+  ..rrkkk
+  ...rrrr
+  .......
+  .......`)
+sprite("a_dual", { w: 14, h: 14, outline: "k" }, `
+  ..............
+  ...oo....oo...
+  ..oooo..oooo..
+  ..oyoo..oyoo..
+  ..yyyy..yyyy..
+  ..ywyy..ywyy..
+  ..ywyy..ywyy..
+  ..yyyy..yyyy..
+  ..yyyy..yyyy..
+  ..YYYY..YYYY..
+  ..YyyY..YyyY..
+  ..YYYY..YYYY..
+  ..............
+  ..............`)

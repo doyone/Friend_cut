@@ -47,6 +47,7 @@
 .rl-shell.spent { opacity: .4; transform: translateY(6px); }
 .rl-shell.spent.now { opacity: 1; animation: rl-pop .3s steps(3); }
 .rl-shell.cur { transform: translateY(-6px); }
+.rl-shell.seen { opacity: .8; } /* 🔮 예언자로 본 탄 (나만) */
 .rl-shell.cur::after { content: ''; position: absolute; left: 9px; bottom: -9px; width: 6px; height: 6px; background: var(--gold); animation: rl-blink .6s steps(2) infinite; }
 .rl-shell .rl-eye { position: absolute; left: -4px; top: -24px; }
 .rl-mag.mix .rl-shell { animation: rl-mix .18s steps(1) infinite; }
@@ -64,6 +65,24 @@
 .rl-banner.again { color: var(--gold); animation: rl-pop .25s steps(3); }
 .rl-banner.skip { color: var(--mist); animation: rl-pop .25s steps(3); }
 .rl-banner.aimme { color: var(--fire); animation: rl-pop .25s steps(3); }
+/* 증강 등급 · 운명 카드 · 배짱 · 막판 */
+.rl-banner.tier { animation: rl-pop .25s steps(3); }
+.rl-banner.t1 { color: var(--mist); }
+.rl-banner.t2 { color: var(--gold); }
+.rl-banner.t3 { animation: rl-pop .25s steps(3), rl-prism-text .48s steps(1) infinite; }
+.rl-banner.fate { color: var(--ice); }
+.rl-banner.fate.land { color: var(--gold); animation: rl-pop .25s steps(3); }
+.rl-banner.brave { color: var(--gold); animation: rl-pop .25s steps(3); }
+.rl-banner.brave.b2 { color: var(--fire); }
+.rl-banner.brave.b3 { animation: rl-pop .25s steps(3), rl-prism-text .32s steps(1) infinite; }
+.rl-banner.final { color: var(--fire); animation: rl-pop .25s steps(3), rl-blink .5s steps(2) 3; }
+/* 🎰 룰렛판: 운명 카드를 쓰면 탄창 줄 자리에 떠서 돈다 (구운 띠를 칸칸이 넘긴다) · 위에 바늘 */
+.rl-wheel { display: none; place-items: center; }
+.rl-center.spin .rl-wheel { display: grid; }
+.rl-center.spin .rl-mag, .rl-center.spin .rl-count { display: none; }
+.rl-disc { grid-area: 1 / 1; image-rendering: pixelated; background-repeat: no-repeat; }
+.rl-pin { grid-area: 1 / 1; align-self: start; z-index: 1; margin-top: -12px; }
+.rl-wheel.land .rl-disc { animation: rl-land .2s steps(1) 4; }
 /* 총: 위에서 내려다본 총이 지금 쏘는 사람 앞(left·top은 화면에서 정함)에 놓여 겨눈 사람 쪽으로 돈다.
    차례가 바뀌면 다음 사람 앞으로 칸칸이 미끄러진다. 각도마다 구운 그림(60×60 도트)을 바꿔 끼운다 */
 .rl-gun {
@@ -100,7 +119,15 @@
 .rl-seat.me .rl-name { box-shadow: 0 3px 0 var(--sky); }
 .rl-seat.turn .rl-name { background: var(--gold); }
 .rl-hearts, .rl-cards { display: flex; min-height: 27px; }
-.rl-cards { gap: 3px; }
+.rl-cards { gap: 3px; align-items: flex-end; }
+/* 카드 줄 옆에 증강 그림 (2배, 등급 테두리). 마우스를 올리면 설명 */
+.rl-row { display: flex; align-items: center; gap: 6px; }
+.rl-augs { display: flex; gap: 4px; }
+.rl-augs:empty { display: none; }
+.rl-aug { background: var(--ink); box-shadow: 0 0 0 2px var(--mist); pointer-events: auto; }
+.rl-aug.t2 { box-shadow: 0 0 0 2px var(--gold); }
+.rl-aug.t3 { animation: rl-prism 1.2s steps(1) infinite; }
+.rl-seat.picked .rl-name { background: var(--leaf); }
 .rl-tags { position: absolute; left: 0; bottom: 100%; display: flex; gap: 3px; margin-bottom: 3px; font-family: 'Galmuri9', var(--display); font-size: 18px; line-height: 1; white-space: nowrap; }
 .rl-tags span { display: flex; align-items: center; gap: 3px; padding: 3px 6px; background: var(--slate); color: var(--gold); }
 .rl-show { position: absolute; left: 25px; top: 25px; z-index: 3; transform: translate(-50%, -50%); display: grid; justify-items: center; gap: 3px; pointer-events: none; }
@@ -118,6 +145,10 @@
 .rl-float.block, .rl-float.mirror { color: var(--ice); box-shadow: 0 0 0 3px var(--ice); }
 .rl-float.safe, .rl-float.gain { color: var(--leaf); box-shadow: 0 0 0 3px var(--leaf); }
 .rl-float.bad { color: var(--gold); box-shadow: 0 0 0 3px var(--gold); }
+.rl-float.fate { color: var(--gold); box-shadow: 0 0 0 3px var(--gold); }
+.rl-float.aug.t1 { color: var(--mist); box-shadow: 0 0 0 3px var(--mist); }
+.rl-float.aug.t2 { color: var(--gold); box-shadow: 0 0 0 3px var(--gold); }
+.rl-float.aug.t3 { color: var(--ice); animation: rl-float 1.4s steps(7) forwards, rl-prism .3s steps(1) infinite; }
 
 /* 아래: 안내 한 줄 · 내 손패 · 남은 시간 */
 .rl-panel { flex: none; display: grid; justify-items: center; gap: 9px; padding: 12px 15px 12px; border-top: 3px solid var(--slate); }
@@ -139,6 +170,20 @@
 .rl-ctext { display: grid; gap: 3px; min-width: 0; }
 .rl-cname { line-height: 1.1; }
 .rl-card.rare .rl-cname { color: var(--gold); }
+/* ✨ 증강 고르기 카드: 등급 테두리 (실버 · 골드 · 프리즘은 색이 돈다) */
+.rl-card.aug { flex-basis: 260px; }
+.rl-card.aug.t1 { box-shadow: 0 0 0 3px var(--mist); }
+.rl-card.aug.t2 { box-shadow: 0 0 0 3px var(--gold); }
+.rl-card.aug.t2 .rl-cname { color: var(--gold); }
+.rl-card.aug.t3 { animation: rl-prism 1.2s steps(1) infinite; }
+.rl-card.aug.t3 .rl-cname { color: var(--ice); }
+.rl-card.aug.can { transform: translateY(-6px); }
+.rl-card.aug.chosen { transform: translateY(-9px); outline: 3px solid var(--leaf); outline-offset: 3px; }
+.rl-card.aug.chosen .rl-key { background: var(--leaf); }
+/* 🎰 운명 카드: 금빛, 내 차례엔 테두리 색이 돈다 */
+.rl-card.fate { box-shadow: 0 0 0 3px var(--fire); }
+.rl-card.fate .rl-cname { color: var(--gold); }
+.rl-card.fate.can { transform: translateY(-6px); animation: rl-prism 1.2s steps(1) infinite; }
 .rl-ctip { font-family: 'Galmuri9', var(--display); font-size: 18px; line-height: 1.15; color: var(--mist); }
 .rl-empty { align-self: center; color: var(--steel); font-family: 'Galmuri9', var(--display); font-size: 18px; }
 .rl-timer { width: min(420px, 90%); min-height: 18px; }
@@ -158,6 +203,11 @@
 .rl-cardlist, .rl-log { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; color: var(--muted-2); font-size: 13px; font-weight: 600; }
 .rl-cardlist li { display: flex; align-items: center; gap: 8px; line-height: 1.35; }
 .rl-cardlist img { flex: none; image-rendering: pixelated; }
+.rl-auglist { list-style: none; margin: 0 0 6px; padding: 0; display: grid; gap: 4px; font-size: 13px; font-weight: 600; color: var(--muted-2); }
+.rl-auglist b { color: var(--ink); margin-right: 4px; }
+.rl-auglist span { display: inline-block; margin: 0 3px 2px 0; padding: 0 5px; border: 2px solid #94b0c2; border-radius: 3px; color: #333c57; }
+.rl-auglist span.t2 { border-color: #ffcd75; background: #fff6df; }
+.rl-auglist span.t3 { border-color: #73eff7; background: #e9fdff; }
 .rl-cardlist b { color: var(--ink); }
 .rl-log li:last-child { color: var(--ink); }
 
@@ -173,6 +223,10 @@
 @keyframes rl-loom { from { transform: scale(.3333); } 33% { transform: scale(.6667); } 66%, to { transform: scale(1); } }
 /* 떨림: 도트 한 칸(3px)씩 오른쪽 · 아래 · 왼쪽으로. transform이 아니라 translate라 커지는 연출·좌우 뒤집기와 같이 돈다 */
 @keyframes rl-tremble { from, to { translate: 0 0; } 25% { translate: 3px 0; } 50% { translate: 0 3px; } 75% { translate: -3px 0; } }
+/* 프리즘: 테두리(글자) 색이 칸칸이 돈다 */
+@keyframes rl-prism { 0% { box-shadow: 0 0 0 3px var(--ice); } 25% { box-shadow: 0 0 0 3px var(--gold); } 50% { box-shadow: 0 0 0 3px var(--leaf); } 75% { box-shadow: 0 0 0 3px var(--fire); } }
+@keyframes rl-prism-text { 0% { color: var(--ice); } 25% { color: var(--gold); } 50% { color: var(--leaf); } 75% { color: var(--fire); } }
+@keyframes rl-land { 50% { filter: brightness(1.5); } }
 @keyframes rl-flash { 0% { opacity: .9; } 50% { opacity: .5; background: var(--fire); } 100% { opacity: 0; } }
 @keyframes rl-float { from { opacity: 1; margin-top: -36px; } 70% { opacity: 1; } to { opacity: 0; margin-top: -72px; } }
 
@@ -180,5 +234,5 @@
   .rl { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .rl-box.shaking, .rl-flash.on, .rl-table.hush::after { animation: none; }
+  .rl-box.shaking, .rl-flash.on, .rl-table.hush::after, .rl-aug.t3, .rl-card.aug.t3, .rl-card.fate.can, .rl-banner.t3, .rl-banner.b3 { animation: none; }
 }

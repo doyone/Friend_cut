@@ -1,0 +1,3 @@
+# pxl이 움직이는 그림(anim)을 구울 때 같이 만드는 미리보기 · 설명 파일 (게임은 가로 띠 png만 씀)
+img/*/anims/*.gif
+img/*/anims/*.json

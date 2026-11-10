@@ -109,6 +109,31 @@ export function createRouletteAudio() {
     turn() { tone(520, 0.08, 0.14, 'triangle', 780); tone(780, 0.1, 0.14, 'triangle', 1040, 0.09); },
     alarm() { tone(880, 0.09, 0.2, 'square', 880); tone(880, 0.09, 0.2, 'square', 880, 0.16); },
     aimed() { tone(330, 0.07, 0.16, 'square', 262); tone(262, 0.1, 0.16, 'square', 196, 0.08); }, // 총구가 나에게 왔다 (어…)
+    // ✨ 증강: 등급이 높을수록 높고 반짝이게 · 공개
+    pick(tier = 1) {
+      const top = [784, 988, 1319][tier - 1] || 784;
+      [523, 659, top].forEach((f, i) => tone(f, 0.12, 0.14, 'triangle', f, i * 0.09));
+      if (tier === 3) [1568, 2093, 2637].forEach((f, i) => tone(f, 0.1, 0.08, 'sine', f, 0.32 + i * 0.06));
+    },
+    reveal() { tone(660, 0.1, 0.14, 'triangle', 990); tone(990, 0.16, 0.14, 'triangle', 1320, 0.1); },
+    // 🎲 배짱: 연속일수록 높이 올라가는 동전 소리
+    brave(n = 1) {
+      const k = 1 + (Math.min(n, 4) - 1) * 0.12;
+      for (let i = 0; i < 2 + Math.min(n, 4); i++) {
+        const f = 660 * k * 2 ** (i / 4);
+        tone(f, 0.07, 0.15, 'square', f, i * 0.06);
+      }
+    },
+    // 🎰 운명 카드: 시작 · 칸이 바늘을 지날 때 딸깍(느려질수록 낮게) · 멈춤
+    fate() { [392, 523, 659].forEach((f, i) => tone(f, 0.08, 0.12, 'triangle', f * 1.5, i * 0.05)); },
+    tick(k = 0) { tone(1800 - k * 700, 0.02, 0.12, 'square', 1100); },
+    land() {
+      [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.22, 0.14, 'triangle', f, i * 0.06));
+      noise(0.2, 0.15, 5000, 0, 'highpass');
+    },
+    reward() { [784, 1047].forEach((f, i) => tone(f, 0.12, 0.15, 'triangle', f, i * 0.08)); },
+    revive() { tone(330, 0.5, 0.18, 'sine', 990); tone(495, 0.5, 0.12, 'triangle', 1485, 0.05); },
+    final() { tone(196, 0.5, 0.25, 'sawtooth', 98); tone(147, 0.6, 0.2, 'square', 73, 0.12); },
     load() { for (let i = 0; i < 4; i++) { tone(1100 - i * 90, 0.03, 0.16, 'square', 600, i * 0.09); noise(0.03, 0.2, 3000, i * 0.09, 'highpass'); } },
     dead() { tone(420, 0.7, 0.28, 'sawtooth', 70); },
     win() { [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.16, 0.16, 'triangle', f, i * 0.12)); },
