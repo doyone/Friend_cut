@@ -110,7 +110,7 @@ test('장전: 탄 개수만 공개, 순서와 손패는 상태에 없다. 처음
     const augs = S.augs[p.id];
     assert.ok(augs.length >= 1);
     assert.equal(S.cards[p.id], 2 + (augs.includes('pouch') ? 1 : 0) + (augs.includes('fire') ? 1 : 0), '큰 주머니 · 화력이면 1장 더');
-    assert.equal(S.fates[p.id], 1 + (augs.includes('dealer') ? 1 : 0));
+    assert.equal(S.fates[p.id], augs.includes('dealer') || augs.includes('addict') ? 2 : 1, '도박사 · 룰렛 중독이면 2장');
     assert.equal(priv[p.id].hand.length, S.cards[p.id]);
     assert.deepEqual(priv[p.id].hand, ctx.secret.hands[p.id]);
   }
@@ -174,7 +174,7 @@ test('남에게 쏘기: 실탄이면 하트 -1, 공포탄이면 아무 일 없�
   assert.equal(g.S.turn, c);
 });
 
-test('받아치기: 방패는 막고, 거울은 쏜 사람에게 되돌린다(두 배면 2칸). 공포탄이면 카드만 날린다', () => {
+test('받아치기: 방패는 막고, 거울은 쏜 사람에게 1칸 되돌린다(두 배여도 1칸). 공포탄이면 카드만 날린다', () => {
   const g = newGame(3);
   const a = g.S.turn;
   const b = nextAlive(g.S, a);
@@ -194,7 +194,7 @@ test('받아치기: 방패는 막고, 거울은 쏜 사람에게 되돌린다(�
   assert.equal(g.S.blocks[b], 1);
   g.until(S => S.phase === 'turn' && S.turn === b);
 
-  // b가 두 배를 걸고 c를 쐈는데 거울 → b가 2칸
+  // b가 두 배를 걸고 c를 쐈는데 거울 → b는 1칸만 (거울이 너무 세서 되돌리는 건 늘 1칸)
   g.S.hp[b] = 2;
   assert.equal(g.card('shield'), false, '받아치기 카드는 내 차례에 못 씀');
   assert.equal(g.card('double'), true);
@@ -204,10 +204,18 @@ test('받아치기: 방패는 막고, 거울은 쏜 사람에게 되돌린다(�
   g.react(c, 'mirror');
   g.until(S => S.phase === 'shot');
   assert.equal(g.S.hp[c], g.S.maxHp);
-  assert.equal(g.S.hp[b], 0);
-  assert.deepEqual(g.S.shot.dead, [b]);
+  assert.equal(g.S.hp[b], 1, '두 배여도 되돌아가는 건 1칸');
+  assert.deepEqual(g.S.shot.dead, []);
+  g.until(S => S.phase === 'turn' && S.turn === c);
+  g.turnOf(b);
+  g.shells([1, 0, 1]);
+  g.hand(c, ['mirror', 'shield']);
+  g.fire(c);
+  g.react(c, 'mirror');
+  g.until(S => S.phase === 'shot');
+  assert.deepEqual(g.S.shot.dead, [b], '하트 1개면 거울 1칸에 탈락');
   assert.deepEqual(g.kills, [`${c}>${b}`], '거울로 탈락시키면 거울 쓴 사람 킬');
-  assert.equal(g.S.mirrors[c], 1);
+  assert.equal(g.S.mirrors[c], 2);
   assert.ok(!g.S.alive.includes(b));
 
   // 공포탄에 방패: 헛방패
@@ -452,7 +460,9 @@ test('봇끼리 끝까지: 규칙 안에서만 움직이고, 탄 개수·손패 
 });
 
 test('증강 고르기: 모두 같은 등급에서 3개 중 하나 · 자리에 있는 사람이 다 고르면 바로 공개 · 안 고른 사람은 아무거나 · 탄창 3 앞에서 한 번 더(골드 이상)', () => {
-  assert.equal(Object.keys(AUGS).length, 17);
+  assert.equal(Object.keys(AUGS).length, 30);
+  assert.deepEqual([1, 2, 3].map(t => Object.values(AUGS).filter(a => a.tier === t).length), [10, 10, 10]);
+  assert.equal(FATE_ORDER.length, 16);
   assert.deepEqual([tierOf(1, () => 0.49), tierOf(1, () => 0.5), tierOf(1, () => 0.9), tierOf(2, () => 0.59), tierOf(2, () => 0.6)], [1, 2, 3, 2, 3]);
   let clock = 1_000_000;
   const roster = [0, 1, 2].map(i => ({ id: `p${i}`, name: `P${i}` }));
@@ -744,4 +754,156 @@ test('증강: 눈치 백단은 장전 때 첫 탄을, 예언자는 탄창 순서
   assert.equal(g.priv[c].vision, null);
   assert.ok(g.handOf(b).includes('double'));
   assert.ok(!JSON.stringify(g.S).includes('vision'), '본 건 상태에 없다');
+});
+
+test('새 증강: 탐정(돋보기로 2발) · 감시자(남이 본 탄을 나도) · 소매치기(2장) · 그림자(못 훔침)', () => {
+  const g = newGame(3);
+  const [a, b, c] = g.S.order;
+  g.shells([1, 0, 1]);
+  g.augs(a, ['sleuth', 'thief']);
+  g.augs(b, ['watcher']);
+  g.augs(c, ['shadow']);
+  g.hand(a, ['peek', 'steal', 'steal']);
+  g.hand(b, ['shield', 'mirror', 'cuff']);
+  g.hand(c, ['heal']);
+  assert.equal(g.card('peek'), true);
+  assert.deepEqual(g.priv[a].peek, { key: shellKey(g.S), live: 1 });
+  assert.deepEqual(g.priv[a].vision, [1, 0, null], '탐정: 다음 탄까지 2발');
+  assert.deepEqual(g.priv[b].peek, { key: shellKey(g.S), live: 1 }, '감시자: 남이 본 탄을 나도');
+  assert.equal(g.priv[c].peek, null);
+  assert.equal(g.card('steal', b), true);
+  assert.deepEqual([g.handOf(a).length, g.handOf(b).length], [3, 1], '소매치기: 2장');
+  assert.equal(g.card('steal', c), false, '그림자는 못 훔친다');
+});
+
+test('새 증강: 아드레날린(하트 1개면 피해 +1) · 덫(나를 쏜 사람은 다음 차례 손패 봉인)', () => {
+  const g = newGame(3);
+  const [a, b, c] = g.S.order;
+  g.shells([1, 0, 0, 0, 1]);
+  g.augs(a, ['adren']);
+  g.augs(b, ['trap']);
+  g.S.hp[a] = 1;
+  g.fire(b);
+  assert.equal(g.S.shot.dmg, 2, '아드레날린 +1');
+  g.react(b);
+  g.until(S => S.phase === 'shot');
+  assert.equal(g.S.hp[b], 1);
+  assert.deepEqual(g.S.seals, { [a]: true }, '덫에 걸림 (다음 차례)');
+  g.until(S => S.phase === 'turn' && S.turn === b);
+  assert.equal(g.S.sealed, null, '덫 건 사람 차례엔 아무 일 없음');
+  g.fire(c);
+  g.react(c);
+  g.until(S => S.phase === 'turn' && S.turn === c);
+  g.fire(a);
+  g.react(a);
+  g.until(S => S.phase === 'turn' && S.turn === a);
+  assert.equal(g.S.sealed, a);
+  g.hand(a, ['heal']);
+  assert.equal(g.card('heal'), false, '봉인: 이번 차례엔 손패를 못 쓴다');
+  g.fire(c);
+  g.react(c);
+  g.until(S => S.phase === 'turn' && S.turn === c);
+  assert.equal(g.S.sealed, null, '한 차례만');
+});
+
+test('새 증강: 독(다음 장전 때 -1, 1칸은 남김) · 갈고리(맞힌 사람 카드 1장) · 기절탄(맞은 사람 다음 차례 쉼)', () => {
+  const g = newGame(3);
+  const [a, b, c] = g.S.order;
+  g.augs(a, ['poison', 'hook', 'stun']);
+  g.hand(b, ['shield']);
+  g.shells([1]);
+  g.fire(b);
+  g.react(b);
+  g.until(S => S.phase === 'shot');
+  assert.equal(g.S.hp[b], 2);
+  assert.deepEqual([g.handOf(a), g.handOf(b)], [['shield'], []], '갈고리');
+  assert.deepEqual(g.S.poison, { [b]: a });
+  assert.equal(g.S.cuffs[b], 'stun', '기절탄 (쉬는 이유가 기절)');
+  g.S.poison[c] = a;
+  g.S.hp[c] = 1;
+  g.until(S => S.phase === 'skip');
+  assert.equal(g.S.skip, b);
+  g.until(S => S.phase === 'load');
+  assert.deepEqual([g.S.hp[b], g.S.hp[c], g.S.poisoned, g.S.poison], [1, 1, [b], {}], '독은 마지막 1칸을 남긴다');
+});
+
+test('새 증강: 폭발탄(맞은 사람 옆도 1칸) · 찬탈자(탈락시킨 사람 증강을 가져옴) · 독심술(남의 손패, 그림자는 빼고)', () => {
+  const g = newGame(4);
+  const [a, b, c, d] = g.S.order;
+  g.augs(a, ['splash', 'usurp', 'mind']);
+  g.augs(b, ['vamp', 'keen']);
+  g.augs(d, ['shadow']);
+  g.hand(c, ['cuff', 'heal']);
+  g.hand(d, ['mirror']);
+  g.S.hp[b] = 1;
+  g.shells([1]);
+  g.fire(b);
+  g.react(b);
+  g.until(S => S.phase === 'shot');
+  assert.deepEqual(g.S.shot.dead, [b]);
+  assert.equal(g.S.hp[c], 2, '폭발탄: b 옆(차례 방향 다음) c도 1칸');
+  assert.ok(g.S.shot.fx.some(f => f.k === 'splash' && f.id === c));
+  assert.deepEqual(g.S.augs[a], ['splash', 'usurp', 'mind', 'vamp', 'keen'], '찬탈자');
+  assert.deepEqual(g.S.augs[b], []);
+  assert.deepEqual(g.priv[a].minds, { [c]: ['cuff', 'heal'] }, '독심술: 그림자 d는 안 보인다');
+});
+
+test('룰렛 중독(장전 때 운명 카드 +1) · 새 운명 칸: 세금 징수 · 한 번 더 · 증강 하나 더 · 실탄 +2 · 하트 바꾸기', () => {
+  const g = newGame(4);
+  const [a, b, c, d] = g.S.order;
+  const spin = k => {
+    g.S.fates[g.S.turn] = 1;
+    g.ctx.secret.nextFate = k;
+    assert.equal(g.fate(), true);
+    g.until(S => S.phase !== 'fate');
+    assert.equal(g.S.fate.k, k);
+  };
+  g.shells([0, 1, 0]);
+  g.hand(b, ['peek', 'cuff']);
+  g.hand(c, ['heal']);
+  g.hand(d, ['mirror']);
+  g.augs(d, ['shadow']);
+  spin('tax');
+  assert.deepEqual([a, b, c, d].map(id => g.handOf(id).length), [2, 1, 0, 1], '세금: 그림자는 빼고 1장씩');
+  spin('again');
+  assert.equal(g.S.fates[a], 1, '한 번 더 돌릴 운명 카드');
+  spin('newaug');
+  assert.equal(g.S.augs[a].length, 1);
+  spin('morelive');
+  assert.deepEqual(g.S.left, { live: 3, blank: 2 });
+  assert.equal(g.ctx.secret.shells.filter(Boolean).length, 3);
+  Object.assign(g.S.hp, { [a]: 1, [b]: 3 });
+  g.aim(b);
+  spin('hpswap');
+  assert.deepEqual([g.S.hp[a], g.S.hp[b]], [3, 1], '겨눈 사람과 하트 바꾸기');
+
+  g.augs(b, ['addict']);
+  g.S.fates[b] = 0;
+  g.shells([1]);
+  g.fire(c);
+  g.react(c);
+  g.until(S => S.phase === 'load');
+  assert.equal(g.S.fates[b], 1, '룰렛 중독: 장전 때 +1');
+});
+
+test('탐정 시야가 Firebase를 거쳐 빈칸 빠진 객체로 돌아와도(방장이 바뀜) 전탄 실탄 · 다시 쓴 돋보기가 멈추지 않는다', () => {
+  const g = newGame(3);
+  const [a] = g.S.order;
+  g.shells([1, 0, 1, 1]);
+  g.augs(a, ['sleuth']);
+  g.hand(a, ['peek', 'peek']);
+  assert.equal(g.card('peek'), true);
+  // Firebase 흉내: null 칸은 저장되지 않고, 듬성듬성한 정수 키는 배열 대신 객체로 온다. 빈 배열(fired)도 사라진다
+  const v = g.ctx.secret.visions[a];
+  g.ctx.secret.visions[a] = { mag: v.mag, seq: { 0: v.seq[0], 1: v.seq[1] } };
+  delete g.S.fired;
+  g.S.fates[a] = 1;
+  g.ctx.secret.nextFate = 'alllive';
+  assert.equal(g.fate(), true);
+  g.until(S => S.phase !== 'fate');
+  assert.equal(g.S.phase, 'turn', '룰렛이 멈추지 않고 차례로 돌아온다');
+  assert.deepEqual(g.priv[a].vision, [1, 1, 1, 1], '본 칸 · 모르는 칸 모두 실탄');
+  g.ctx.secret.visions[a] = { mag: v.mag, seq: { ...g.ctx.secret.visions[a].seq } }; // 배열이 객체로 와도
+  assert.equal(g.card('peek'), true, '같은 탄창에서 돋보기를 또 써도 된다');
+  assert.deepEqual(g.priv[a].vision, [1, 1, 1, 1]);
 });

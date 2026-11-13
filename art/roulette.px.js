@@ -5,6 +5,7 @@ pal({
   k: 0, p: 1, r: 2, o: 3, y: 4, l: 5, g: 6, t: 7, n: 8, b: 9, B: 10, c: 11, w: 12, s: 13, m: 14, d: 15,
   W: "#a0623a", D: "#6b3f2a", Y: "#c8963e", // 나무 · 놋쇠 그늘
   U: "#c47c48", V: "#45261c",               // 나무 밝은 쪽 · 제일 어두운 쪽
+  P: "#e46a93",                             // 분홍 (룰렛판 칸 · 독심술 뇌)
 })
 ramps("kdmsw", "kproy", "kVDWUy", "kYy", "knbBc", "ktgl")
 
@@ -373,21 +374,26 @@ sprite("c_mirror", { w: 14, h: 14, outline: "k" },
 sprite("heart_gold", { base: "heart", swap: { r: "y", o: "w", p: "Y" } })
 
 // ───────── 🎰 운명 카드 · 룰렛판
-// 칸 11개는 FATE_ORDER 순서 (js/games/roulette.js): 시계 방향, 0번 칸이 처음에 맨 위.
+// 칸 16개는 FATE_ORDER 순서 (js/games/roulette.js): 시계 방향, 0번 칸이 처음에 맨 위.
 // 칸마다 [바깥 색, 안쪽 색, 칸 그림]. 이웃한 칸끼리 색이 겹치지 않게
 const TAU = Math.PI * 2;
 const SEGS = [
-  ["r", "p", "alllive"], // 전탄 실탄
-  ["B", "b", "rotate"],  // 손패 돌리기
-  ["o", "r", "power"],   // 이번 발 피해 +2
-  ["c", "B", "myaug"],   // 내 증강 바꾸기
-  ["p", "n", "bleed"],   // 모두 하트 -1
-  ["l", "g", "heal"],    // 내 하트 +1
-  ["y", "Y", "reveal"],  // 탄 공개
-  ["b", "n", "reverse"], // 방향 반대
-  ["s", "m", "swap"],    // 총 교체
-  ["t", "n", "allaug"],  // 모두 증강 바꾸기
-  ["g", "t", "gift"],    // 모두 카드 +1
+  ["r", "p", "alllive"],  // 전탄 실탄
+  ["B", "b", "rotate"],   // 손패 돌리기
+  ["Y", "D", "tax"],      // 세금 징수
+  ["c", "B", "myaug"],    // 내 증강 바꾸기
+  ["U", "W", "morelive"], // 실탄 +2
+  ["p", "n", "bleed"],    // 모두 하트 -1
+  ["l", "g", "heal"],     // 내 하트 +1
+  ["m", "d", "hpswap"],   // 하트 바꾸기
+  ["o", "r", "power"],    // 이번 발 피해 +2
+  ["n", "d", "newaug"],   // 증강 하나 더
+  ["y", "Y", "reveal"],   // 탄 공개
+  ["b", "n", "reverse"],  // 방향 반대
+  ["P", "r", "again"],    // 한 번 더 돌려
+  ["t", "n", "allaug"],   // 모두 증강 바꾸기
+  ["s", "m", "swap"],     // 총 교체
+  ["g", "t", "gift"],     // 모두 카드 +1
 ];
 // 칸 그림 (작게, 검은 테두리): 판이 돌아도 그림은 똑바로 선 채 칸을 따라간다
 const FI = {
@@ -451,6 +457,39 @@ const FI = {
     wrrw
     wrrw
     wwww`,
+  tax: `
+    .w.w.
+    ..w..
+    .www.
+    wwwww
+    wwwww
+    .www.`,
+  morelive: `
+    .r...r.
+    wrr.wrr
+    rrr.rrr
+    yyy.yyy
+    yyy.yyy`,
+  hpswap: `
+    ..r.r..
+    ..rrr..
+    ...r...
+    .w...w.
+    wwwwwww
+    .w...w.`,
+  newaug: `
+    ...w...
+    ..www..
+    wwwwwww
+    ..www..
+    ...w...`,
+  again: `
+    .ww.
+    w..w
+    ..w.
+    .w..
+    ....
+    .w..`,
 };
 const fiSize = (k) => {
   const rows = FI[k].trim().split("\n").map((r) => r.trim());
@@ -491,16 +530,16 @@ function drawWheel(c, theta, o = {}) {
   if (icons) {
     for (let i = 0; i < N; i++) {
       const ang = theta + i * seg;
-      const rr = (R - rim) * 0.66;
+      const rr = (R - rim) * 0.72;
       const [w, h] = fiSize(segs[i][2]);
       c.stamp(`_fi_${segs[i][2]}`, Math.round(cx + rr * Math.sin(ang) - w / 2), Math.round(cy - rr * Math.cos(ang) - h / 2));
     }
   }
 }
 
-// 룰렛판: 시계 방향 한 바퀴 44장 (칸마다 4장) → anims/wheel.png 가로 띠. 화면에서 띠를 칸칸이 넘겨 돌린다
-anim("wheel", { w: 62, h: 62, frames: 44, fps: 22, outline: "k" }, (c) =>
-  drawWheel(c, c.phase * TAU, { R: 31, rim: 3, hub: 5, icons: true, bulbs: 22 }))
+// 룰렛판: 시계 방향 한 바퀴 64장 (16칸 × 4장) → anims/wheel.png 가로 띠. 화면에서 띠를 칸칸이 넘겨 돌린다
+anim("wheel", { w: 78, h: 78, frames: 64, fps: 24, outline: "k" }, (c) =>
+  drawWheel(c, c.phase * TAU, { R: 39, rim: 3, hub: 6, icons: true, bulbs: 32 }))
 
 // 바늘: 판 위에서 멈춘 칸을 가리킨다
 sprite("wheel_pin", { outline: "k" }, `
@@ -521,21 +560,6 @@ sprite("fate_mark", { w: 7, h: 7, outline: "k" },
 
 // ───────── ✨ 증강 그림 19종 (14×14 + 테두리 = 16×16)
 // 실버
-sprite("a_brave", { w: 14, h: 14, outline: "k" }, `
-  ..............
-  ..wwwwwwwwww..
-  .wwwwwwwwwwws.
-  .wwrrwwwwwwws.
-  .wwrrwwwwwwws.
-  .wwwwwwwwwwws.
-  .wwwwwrrwwwws.
-  .wwwwwrrwwwws.
-  .wwwwwwwwwwws.
-  .wwwwwwwwrrws.
-  .wwwwwwwwrrws.
-  .wwwwwwwwwwws.
-  ..ssssssssss..
-  ..............`)
 sprite("a_keen", { w: 14, h: 14, outline: "k" }, `
   ..............
   ..............
@@ -711,21 +735,6 @@ sprite("a_chain", { w: 14, h: 14, mx: true, outline: "k" }, `
   ....www
   .......
   .......`)
-sprite("a_allin", { w: 14, h: 14, outline: "k" }, `
-  ..............
-  ....yyyyyy....
-  ...yYYYYYYy...
-  ...ywyyyyyy...
-  ...YyyyyyyY...
-  ....yyyyyy....
-  ...yYYYYYYy...
-  ...ywyyyyyy...
-  ...YyyyyyyY...
-  ....yyyyyy....
-  ...yYYYYYYy...
-  ...ywyyyyyy...
-  ...YYYYYYYY...
-  ..............`)
 sprite("a_phoenix", { w: 14, h: 14, mx: true, outline: "k" }, `
   .......
   .......
@@ -774,3 +783,221 @@ sprite("a_dual", { w: 14, h: 14, outline: "k" }, `
   ..YYYY..YYYY..
   ..............
   ..............`)
+
+// ───────── ✨ 새 증강 그림 13종 (그림 에이전트 셋이 나눠 그림: 실버 · 골드 · 프리즘)
+// 실버
+// 탐정: 체크무늬 사냥모자(앞챙은 왼쪽, 뒷챙 끝은 돋보기 뒤로) + 앞에 든 놋쇠 돋보기 (손잡이는 왼쪽 아래로)
+sprite("a_sleuth", { w: 14, h: 14, outline: "k" }, `
+  ..............
+  .....yDDU.....
+  ...DyyDDyyD...
+  ..yyDDUUDDWW..
+  ..yyDDUUDDWW..
+  ..DDUUDDUkkk..
+  .yDDUUDDkyYYk.
+  yUVVVVVkywcBYD
+  D......ycBBBBY
+  .......YBBBBnY
+  .......YBBBnnY
+  .......DYBnnY.
+  ......WD.YYY..
+  .....WD.......`)
+
+// 소매치기: 검은 눈가리개 가면. 비스듬한 눈구멍 사이로 옆을 흘끔 보는 눈, 위쪽 테두리에 빛
+sprite("a_thief", { w: 14, h: 14, outline: "k" }, `
+  ..............
+  ..............
+  ..............
+  ..ssmm..mmmm..
+  .swsmmmmmmmmm.
+  msmddddddddddd
+  md.kwwddd.kwwd
+  mdd.kwdd.kwddd
+  .ddddddddddddd
+  .ddddd..ddddd.
+  ..ddd....ddd..
+  ..............
+  ..............
+  ..............`)
+
+// 아드레날린: 빨간 약이 든 주사기 (오른쪽 위 → 왼쪽 아래), 바늘 끝에 맺힌 핏방울
+sprite("a_adren", { w: 14, h: 14, outline: "k" }, `
+  ...........ww.
+  ............sm
+  .......ws..s.m
+  ........sss...
+  .......wdsm...
+  ......woddmm..
+  .....worrs.d..
+  .....orrs.....
+  ....ssrs......
+  ....sm........
+  ...s..........
+  ...r..........
+  ..orr.........
+  ..rrp.........`)
+
+// 덫: 바닥에 벌려 놓은 쇠 덫. 둥근 테 앞뒤로 뾰족한 이빨, 오른쪽 아래로 사슬
+sprite("a_trap", { w: 14, h: 14, outline: "k" }, `
+  .....w..w.....
+  ..w..s..s..w..
+  ..s.wsmwsm.s..
+  .wsmsssssswsm.
+  .smddddddddmd.
+  sskkkkkkkkkkmd
+  skwkkwkkwkkwmd
+  skskkskkskksmd
+  swsmwsmwsmwsmd
+  .wssssssssssm.
+  ..mmmmmmmmmd..
+  ...dddddddd.s.
+  ...........m.s
+  ............s.`)
+
+// 그림자: 두건을 깊게 쓴 그림자. 얼굴은 어둠 속, 흰 눈만. 아래는 연기처럼 흩어짐
+sprite("a_shadow", { w: 14, h: 14, outline: "k" }, `
+  ......bn......
+  .....bBnn.....
+  ....bBnnnn....
+  ...bBnnnnnn...
+  ..bBnnnnnnnn..
+  ..bnnkkkkknn..
+  .bnnkkkkkkknn.
+  .bnkwwkkkwwkn.
+  .bnkkkkkkkkkn.
+  .bnnkkkkkkknn.
+  .nbnnnkkknnnn.
+  nbnnnnnnnnnnnn
+  nnnnnnnnnnnnnn
+  n.nnn.nnn.nnn.`)
+// 골드
+sprite("a_poison", { w: 14, h: 14, outline: "k" }, `
+  ....swwsm.wl..
+  .....sdm..lg..
+  .....sdm......
+  ....swddm...l.
+  ..swddddddm...
+  ..wdddddddm...
+  .slllllllllg..
+  .wlggwwwgggt..
+  .wlgwwwwwggt..
+  .llgwkwkwggt..
+  .lgggwwwggtt..
+  ..gggwgwgtt...
+  ..ggggggttt...
+  ....ttttt.....`)
+sprite("a_hook", { w: 14, h: 14, outline: "k" }, `
+  ....wwss......
+  ..wwssssm.....
+  .ws....sm.....
+  .ws.....sm....
+  .ss.....sm....
+  ..sm....sm....
+  ...w....wm....
+  ........sm....
+  .......ysmY...
+  .......yYYY...
+  ......UUWWDD..
+  ......UWWWDD..
+  ......UWWWDD..
+  .......VVVV...`)
+sprite("a_watcher", { w: 14, h: 14, outline: "k" }, `
+  ..............
+  ............sm
+  .....wwwwww.sm
+  ....wwwwwwm.sm
+  ...wwwwwwmmdsm
+  ..wwwwwwmmmdsm
+  wwwwwwwmmmm.sm
+  .ddddddmmmm.sm
+  .ssddsrmmmd.sm
+  .sdcndsmmd..sm
+  .sdnBdsmd.....
+  .ssddssd......
+  .mmmmmm.......
+  ..............`)
+// 프리즘
+// 폭발탄: 실탄(빨간 탄피 + 놋쇠 밑동)의 입구에서 터지는 폭발 + 사방으로 튀는 파편
+sprite("a_splash", { w: 14, h: 14, outline: "k" }, `
+  .y....r.....o.
+  ..r..ror...r..
+  ...rroyorrr...
+  .rrooyyyyoorr.
+  rooyyywwyyyoor
+  .rroyywwwyyorr
+  ..rrooyyyoorr.
+  ..rrooooooorr.
+  .rr.kprrpk.rr.
+  .r..rorrrp..r.
+  ....rorrrp....
+  ....yyyyyY....
+  ....ywyyyY....
+  ....yyyyYY....`)
+
+// 룰렛 중독: 빨간 슬롯머신 (금빛 간판 · 7 7 7 창 · 오른쪽 손잡이)
+sprite("a_addict", { w: 14, h: 14, outline: "k" }, `
+  ............or
+  .YyyyyyyyY..rp
+  rorrrrrrrrp.s.
+  kkkkkkkkkkk.s.
+  rrrkrrrkrrr.s.
+  wwrkwwrkwwr.s.
+  wwrkwwrkwwr.s.
+  wrwkwrwkwrw.s.
+  wrwkwrwkwrwss.
+  kkkkkkkkkkk...
+  rorrrrrrrrp...
+  rorrrrrrrrp...
+  rprrrrrrrpp...
+  .pppppppppp...`)
+
+// 찬탈자: 보석 박힌 금관을 비스듬히 꿰뚫은 단검 (손잡이 오른쪽 위, 칼끝 왼쪽 아래)
+sprite("a_usurp", { w: 14, h: 14, outline: "k" }, `
+  ............or
+  ...........Drp
+  ........orD...
+  .........or...
+  ........wsor..
+  .......ws.....
+  .w....yws..y..
+  .yy..yws..yY..
+  .yyy.wsY.yyY..
+  .yyywsYyyyyY..
+  .yywsYyyyyyY..
+  .YwsYYrYYlYY..
+  .wsYYYYYYYYY..
+  ws............`)
+
+// 독심술: 분홍 뇌 (주름 · 아래 그늘 · 뇌줄기) + 반짝임
+sprite("a_mind", { w: 14, h: 14, outline: "k" }, `
+  ...........w..
+  ..........www.
+  .w.........w..
+  ..............
+  ...PP.PPP.PP..
+  ..PwPPPrPPPPP.
+  .PwPPrrPPPrrPP
+  .PPrPPPPrPPPrP
+  PrPPPrrPPPrPPP
+  PPPrrPPPrrPPrP
+  .PrPPPrPPPPrPP
+  ..PPrPPrrPPPr.
+  ....rrrr.rrr..
+  ........pp....`)
+
+// 기절탄: 노란 소용돌이 + 주위를 도는 별 셋
+sprite("a_stun", { w: 14, h: 14, outline: "k" }, `
+  .y.........y..
+  ywy.......yyy.
+  .y.......yywyy
+  ..........yyy.
+  ...wwyyy..y.y.
+  ..wyyyyyy.....
+  .wyy...yyy....
+  yyy.....yyy...
+  yy...oo..yo...
+  yy..oooo.yo...
+  yy....oo....y.
+  yyo..ooo...ywy
+  .yooooo.....y.
+  ..oooo........`)

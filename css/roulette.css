@@ -125,6 +125,9 @@
 .rl-aug.t2 { box-shadow: 0 0 0 2px var(--gold); }
 .rl-aug.t3 { animation: rl-prism 1.2s steps(1) infinite; }
 .rl-seat.picked .rl-name { background: var(--leaf); }
+/* 🧠 독심술로 보이는 남의 손패 (2배 카드 그림) · 🥷 그림자의 숨긴 손패 */
+.rl-mini { background: var(--ink); box-shadow: 0 0 0 2px var(--steel); }
+.rl-hidden { min-width: 21px; height: 27px; display: grid; place-items: center; background: var(--slate); color: var(--mist); font-family: 'Galmuri9', var(--display); font-size: 18px; line-height: 1; }
 .rl-tags { position: absolute; left: 0; bottom: 100%; display: flex; gap: 3px; margin-bottom: 3px; font-family: 'Galmuri9', var(--display); font-size: 18px; line-height: 1; white-space: nowrap; }
 .rl-tags span { display: flex; align-items: center; gap: 3px; padding: 3px 6px; background: var(--slate); color: var(--gold); }
 .rl-show { position: absolute; left: 25px; top: 25px; z-index: 3; transform: translate(-50%, -50%); display: grid; justify-items: center; gap: 3px; pointer-events: none; }
