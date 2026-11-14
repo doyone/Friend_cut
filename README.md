@@ -26,6 +26,7 @@
 | 🥤 콜라 불어라 | 2~8명 | 콜라를 돌아가며 1~3번씩 흔들어 병 위 풍선을 불리기(스페이스, ↓로 넘기기). 빨간 구간부터는 어디서 터질지 모르고 차례마다 🎰 룰렛. 🔄 떠넘기기(↑)는 다음 사람이 3번 더(겹치면 +3). 터뜨리면 탈락, 마지막 1명 우승 |
 | 🎪 인간대포 컬링 | 2~8명 | 돌아가며 나를 대포로 쏴서 과녁판에 착지. 스페이스 톡 = 각도, 꾹 = 힘(떼면 발사). 각자 두 번씩: 1바퀴는 돌아가며, 2바퀴는 🎆 다 같이 일제 발사. 착지 자리는 안 보이고 🌬️ 바람을 읽어야 해요. 🎰 샷마다 룰렛(돌덩이·폭탄·얼음·풍선·대왕). 친구 말을 들이받거나 머리 위로 떨어져서 밀어내기. 내 말 2개 중 안쪽 말 기준으로 제일 바깥인 사람 독박(6명 이상 2명), 말이 다 장외면 바로 독박. 마지막 1명 우승 |
 | 🔫 독박 룰렛 | 2~8명 | 탄창에 실탄·공포탄이 몇 발인지만 알고 순서는 몰라요. 내 차례에 카드를 쓰고 ← → 로 겨눠서(총구는 모두에게 보임) 스페이스로 한 발. 나를 쏴서 공포탄이면 한 번 더, 실탄이면 하트 -1. 맞을 사람은 3초 안에 🛡️ 방패·🪞 거울(1칸 되돌리기)로 받아치기(공포탄이면 카드만 날림). 손패는 나만 보고(최대 3장) 카드 8종(돋보기·두 배·반창고·수갑·훔치기·산탄·방패·거울), 처음 3장 = 카드 2 + 🎰 운명 카드(한 판에 한 번, R로 룰렛을 돌려 전탄 실탄·총 교체·세금 징수·하트 바꾸기 등 16가지 중 하나). 남을 탈락시키면 카드 1장. ✨ 증강 30종(실버·골드·프리즘 10개씩)을 시작할 때와 탄창 3 앞에서 3개 중 1개씩. 탄창 4부터 막판. 탈락하면 👻 유품으로 카드 1장 물려주기. 마지막 1명 우승. 도트 그림 |
+| 🏟️ 투기장 | 2~8명 | 차례 없이 모두 동시에 싸우는 난투. 공격 단계에 ← → 로 몰래 한 명을 겨누고 숫자키로 무기를 장전, 스페이스로 준비 완료 → 화살표가 한꺼번에 공개 → 방어 단계에 남은 기력으로 막기. 기력 3을 공격과 방어에 나눠 쓰고, 먼저 준비한 사람이 먼저 때려요(먼저 쓰러지면 공격 취소). 3명 이상 몰리면 절반 피해. 목숨 2개 + 복수 표식. 시작할 때와 3턴마다 유물 3개 중 1개, 탈락시키면 그 사람 유물 약탈. 4턴 뒤 필살기를 하나 고르고, 때리고 맞아서 투지 100을 채우면 R로 준비 → 다음 턴에 발동(그 사이 10 넘게 맞으면 끊김). 7턴째부터 가운데에 야수가 나와 한 명씩 물고(↑ 로 겨눔, 잡으면 전설 유물), 제일 많이 쓰러뜨린 사람은 왕관 쓴 폭군이 되어 현상금이 걸려요. 카드 31종 · 유물 27종 · 필살기 6종. 마지막 1명 우승. 도트 그림. (3차 규칙 — 5턴부터 4턴마다 그 턴에만 통하는 규칙이 걸리는 관중의 변덕, 탈락한 사람의 유산과 원한 — 은 들어가 있지만 화면은 미완성. 지금은 보류) |
 
 기획과 앞으로 만들 게임은 [기획서.md](기획서.md)에 있어요.
 
@@ -102,9 +103,11 @@ python serve.py
 
 ```
 index.html
-css/style.css      공통 + 게임 화면 (교수님 몰래 게임하기는 css/professor.css, 독박 룰렛은 css/roulette.css)
+css/style.css      공통 + 게임 화면 (교수님 몰래 게임하기는 css/professor.css, 독박 룰렛은 css/roulette.css, 투기장은 css/arena.css)
 art/roulette.px.js 독박 룰렛 도트 그림 원본 (pxl 스킬: ~/.claude/skills/pxl-pixel-art). 고친 뒤 다시 굽기: node ~/.claude/skills/pxl-pixel-art/bin/pxl.js build art/roulette.px.js --out img/roulette --no-preview
 img/roulette/      구운 도트 그림 (sprites/*.png, 룰렛판은 anims/wheel.png 가로 띠 44장. 화면에서 3배로 키워 씀)
+art/arena.px.js    투기장 도트 그림 원본. 다시 굽기: node ~/.claude/skills/pxl-pixel-art/bin/pxl.js build art/arena.px.js --out img/arena --no-preview
+img/arena/         구운 도트 그림 (sprites/*.png, anims/torch.png · slash.png · beast.png · wheel.png 가로 띠)
 js/
   config.js        ← Firebase 설정 붙여넣는 곳
   main.js          홈 · 로비 · 게임 화면 전환
@@ -136,8 +139,9 @@ js/
     balloon.js     콜라 불어라
     cannon.js      인간대포 컬링 (틀과 글자 스타일은 범퍼카 것을 같이 씀)
     roulette.js    독박 룰렛 (+ roulette-audio.js 효과음. 도트 글꼴 Galmuri는 index.html에서 CDN으로 받음)
+    arena.js       투기장 (+ arena-core.js 규칙·봇, arena-view.js 화면, arena-audio.js 효과음)
   vendor/          planck.js 물리 엔진 (독박 타워·독박빼기·독박 시소·하늘끝까지·독박쌓기가 CDN 없이 씀)
-tests/             규칙 테스트: node --test tests/bumper.test.mjs tests/professor.test.mjs tests/seesaw.test.mjs tests/door.test.mjs tests/race.test.mjs tests/race-track.test.mjs tests/race-collision.test.mjs tests/race-network.test.mjs tests/race-prediction.test.mjs tests/kart-maps.test.mjs tests/stack.test.mjs tests/host.test.mjs tests/quick.test.mjs tests/nunchi.test.mjs tests/count.test.mjs tests/stop.test.mjs tests/memory.test.mjs tests/balloon.test.mjs tests/bomb.test.mjs tests/cannon.test.mjs tests/roulette.test.mjs
+tests/             규칙 테스트: node --test tests/bumper.test.mjs tests/professor.test.mjs tests/seesaw.test.mjs tests/door.test.mjs tests/race.test.mjs tests/race-track.test.mjs tests/race-collision.test.mjs tests/race-network.test.mjs tests/race-prediction.test.mjs tests/kart-maps.test.mjs tests/stack.test.mjs tests/host.test.mjs tests/quick.test.mjs tests/nunchi.test.mjs tests/count.test.mjs tests/stop.test.mjs tests/memory.test.mjs tests/balloon.test.mjs tests/bomb.test.mjs tests/cannon.test.mjs tests/roulette.test.mjs tests/arena.test.mjs
 database.rules.json  Firebase 보안 규칙
 ```
 
