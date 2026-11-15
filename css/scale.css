@@ -89,6 +89,8 @@
 .sc-card.gone { opacity: .35; filter: grayscale(1); }
 .sc-card.doom::before { content: '죽음'; position: absolute; right: -6px; top: -12px; z-index: 1; padding: 1px 4px; background: var(--blood); color: var(--paper); font-family: 'Galmuri9', var(--display); font-size: 18px; line-height: 1; }
 .sc-front.lead .sc-cell.foe .sc-card { filter: brightness(.92); }
+.sc-front.active .sc-lanes { box-shadow: 0 0 0 3px var(--gold); background: rgba(255, 205, 117, .08); }
+.sc-front.idle { opacity: .72; }
 .sc-fnote { min-height: 21px; font-family: 'Galmuri9', var(--display); font-size: 18px; line-height: 21px; color: var(--mist); white-space: nowrap; }
 .sc-fnote.good { color: var(--leaf); }
 .sc-fnote.bad { color: var(--fire); animation: sc-blink .6s steps(2) 3; }
@@ -198,7 +200,20 @@
 /* 아래: 안내 한 줄 · 내 것 · 손패 · 남은 시간 */
 .sc-panel { flex: none; display: grid; justify-items: center; gap: 6px; padding: 6px 12px 9px; border-top: 3px solid var(--wood2); background: var(--ink); }
 .sc-panel.nope { animation: nope .3s; }
-.sc-prompt { min-height: 29px; text-align: center; }
+.sc-bar { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px 12px; width: 100%; min-height: 33px; }
+.sc-steps { display: flex; align-items: center; gap: 4px; flex: none; font-family: 'Galmuri9', var(--display); font-size: 18px; line-height: 1; }
+.sc-steps:empty { display: none; }
+.sc-step { padding: 4px 6px; background: var(--slate); color: var(--steel); }
+.sc-step + .sc-step::before { content: '›'; margin: 0 6px 0 -2px; color: var(--steel); }
+.sc-step.now { background: var(--gold); color: var(--ink); animation: sc-blink .9s steps(2) 3; }
+.sc-step.done { color: var(--leaf); }
+.sc-btns { display: flex; align-items: center; gap: 6px; flex: none; }
+.sc-btns:empty { display: none; }
+.sc-btn { display: flex; align-items: center; gap: 6px; padding: 4px 9px; border: 0; background: var(--slate); color: var(--paper); font-family: 'Galmuri11', var(--display); font-size: 22px; line-height: 1; cursor: pointer; box-shadow: 0 3px 0 var(--ink); }
+.sc-btn.go { background: var(--leaf); color: var(--ink); }
+.sc-btn.off { opacity: .4; cursor: default; }
+.sc-btn kbd { padding: 1px 4px; background: rgba(26, 28, 44, .35); font-family: 'Galmuri9', var(--display); font-size: 18px; }
+.sc-prompt { flex: 1; min-height: 29px; text-align: center; }
 .sc-prompt.mine { color: var(--gold); }
 .sc-prompt.warn { color: var(--fire); }
 .sc-prompt.hint { color: var(--ice); }
@@ -249,6 +264,7 @@
 .sc-alive .avatar { width: 24px; height: 24px; }
 .sc-alive small { color: var(--muted); }
 .sc-log { margin: 0; padding-left: 18px; font-size: 14px; }
+.sc-how { margin: 0; padding-left: 20px; display: grid; gap: 3px; font-size: 14px; }
 .sc-siglist, .sc-cardlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 13px; }
 .sc-siglist li, .sc-cardlist li { display: flex; align-items: center; gap: 6px; }
 .sc-siglist img, .sc-cardlist img { image-rendering: pixelated; flex: none; }

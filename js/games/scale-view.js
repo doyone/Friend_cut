@@ -9,7 +9,7 @@ import {
   CARDS, DECKS, SIGILS, TOOLS, ROADS, LANES, SLOTS, SCALE_MAX, CANDLES, HAND_MAX, PLACE_TIME, DECK_TIME, ROAD_TIME, ROAD_EVERY,
   BEAT_MS, MOON, BURN, SIG_MAX, TOOL_MAX, SOUL_TIME,
   applyActs, runFight, simState, stepSlots, leftOf, rightOf, leadOf, across, foeOf, frontOf, rowOf, scaleFor, smoked, sigOf, has,
-  bloodOf, statsOf, cardName,
+  bloodOf, statsOf, cardName, valueOf, NINE,
 } from './scale-core.js';
 import { createScaleAudio } from './scale-audio.js';
 
@@ -34,15 +34,16 @@ const SLOT_KEY = 'QWERTY'.slice(0, SLOTS).split('');
 const TOOL_KEY = ['Z', 'X', 'C'].slice(0, TOOL_MAX);
 const PAGE = 8; // 내 카드 전부를 고를 때 한 쪽에 보이는 장수 (← → 로 넘긴다)
 const costOf = d => (d.blood ? `피 ${d.blood}` : d.bone ? `뼈 ${d.bone}` : '공짜');
-const AIM = { foe: '없앨 생물의 맞은편 내 칸 Q W E R', front: '전선 고르기 (Q W = 왼쪽 · E R = 오른쪽)', mine: '판에 있는 내 생물 Q W E R' };
+const AIM = { foe: '벨 상대 생물을 누르세요', front: '전선을 고르세요 (Q W 왼쪽 · E R 오른쪽)', mine: '지킬 내 생물을 누르세요' };
 
 function cardTip(c) {
   const d = CARDS[c.k] || { name: c.k };
   const st = statsOf(c);
-  const sigs = sigOf(c).map(g => `${SIGILS[g].name}: ${SIGILS[g].tip}`);
-  const extra = [c.k === 'soul' && '넋패: 탈락한 사람이 남긴 카드', c.t && '번식으로 생긴 복제 (죽으면 사라진다)',
-    (c.da || c.dh) && c.k !== 'soul' && `모닥불로 달굼${c.da ? ` 공격 +${c.da}` : ''}${c.dh ? ` 체력 +${c.dh}` : ''}`].filter(Boolean);
-  return [`${cardName(c)} (${costOf(d)}) · 공격 ${st.atk} · 체력 ${st.hp}`, ...sigs, ...extra].join('\n');
+  const lines = [`${cardName(c)} · ${costOf(d)} · ${st.atk}/${st.hp}`, ...sigOf(c).map(g => `${SIGILS[g].name}: ${SIGILS[g].tip}`)];
+  if (c.k === 'soul') lines.push('넋패 (탈락한 사람의 카드)');
+  if (c.t) lines.push('복제: 죽으면 사라짐');
+  if ((c.da || c.dh) && c.k !== 'soul') lines.push(`모닥불${c.da ? ` 공격 +${c.da}` : ''}${c.dh ? ` 체력 +${c.dh}` : ''}`);
+  return lines.join('\n');
 }
 
 export default function mount(root, api) {
@@ -58,11 +59,13 @@ export default function mount(root, api) {
   const floats = h('div', { class: 'sc-floats' });
   const flashEl = h('div', { class: 'sc-flash' });
   const stage = h('div', { class: 'sc-stage' }, ring, table, fx, floats, flashEl);
+  const steps = h('div', { class: 'sc-steps' });   // 이번 턴에 할 일: 뽑기 › 놓기 › 준비 완료
   const prompt = h('div', { class: 'sc-prompt' });
+  const btns = h('div', { class: 'sc-btns' });     // 준비 완료 · 되돌리기 같은 버튼
   const stat = h('div', { class: 'sc-stat' });
   const handEl = h('div', { class: 'sc-hand' });
   const timer = h('div', { class: 'sc-timer' });
-  const panel = h('div', { class: 'sc-panel' }, prompt, stat, handEl, timer);
+  const panel = h('div', { class: 'sc-panel' }, h('div', { class: 'sc-bar' }, steps, prompt, btns), stat, handEl, timer);
   const board = h('div', { class: 'sc-board' });
   const sound = h('button', { class: 'sc-sound', type: 'button', tabindex: '-1' });
   const box = h('div', { class: 'sc-box' }, stage, panel, board, sound);
@@ -167,9 +170,37 @@ export default function mount(root, api) {
   const mySlots = () => (stepNo() ? stepSlots(S, me, stepNo()) : []);
   const curBlood = (board, cur = local.cur) => (cur ? cur.sac.reduce((t, s) => t + (board[s] ? bloodOf(board[s]) : 0), 0) : 0);
   // 카드를 고른 뒤: 'sac' = 제물을 고르는 중 · 'place' = 놓을 칸을 고르는 중
-  const curMode = board => (!local.cur ? null : curBlood(board) < local.cur.need ? 'sac' : 'place');
+  // 제물 고르기: 표시한 것 먼저, 모자라면 약한 것부터 (아홉 목숨 · 닭 · 잿불 먼저). 놓을 칸에 내 생물이 있으면 그것부터 바친다
+  function autoSac(board, need, slot, marked) {
+    const sac = marked.filter(s => board[s]);
+    const at = board[slot];
+    if (at && !sac.includes(slot)) {
+      if (has(at, 'nine') && (at.lv ?? NINE) > 0) return null; // 아홉 목숨은 바쳐도 자리를 안 비킨다
+      sac.unshift(slot);
+    }
+    const blood = () => sac.reduce((t, s) => t + bloodOf(board[s]), 0);
+    const cheap = c => (has(c, 'nine') && (c.lv ?? NINE) > 0 ? -10 : 0) + (CARDS[c.k]?.tok || c.t ? -5 : 0) + valueOf(c);
+    const rest = board.map((c, s) => (c && !sac.includes(s) && s !== slot ? s : -1)).filter(s => s >= 0).sort((a, b) => cheap(board[a]) - cheap(board[b]) || a - b);
+    for (const s of rest) {
+      if (blood() >= need) break;
+      sac.push(s);
+    }
+    return blood() >= need ? sac : null;
+  }
   // 지금 고른 카드를 그 칸에 놓을 수 있나 (아홉 목숨은 바쳐도 자리를 안 비킨다)
-  const canPlace = s => !!local.cur && sim([...local.acts, { u: local.cur.u, sac: local.cur.sac, slot: s }]).done === local.acts.length + 1;
+  function planAct(s) { // 고른 카드를 칸 s에 놓는 수 (못 놓으면 null)
+    const cur = local.cur;
+    if (!cur || !mySlots().includes(s)) return null;
+    const R = sim();
+    let sac = [];
+    if (cur.need) {
+      sac = autoSac(R.board, cur.need, s, cur.sac);
+      if (!sac) return null;
+    } else if (R.board[s]) return null;
+    const act = { u: cur.u, sac, slot: s };
+    return sim([...local.acts, act]).done === local.acts.length + 1 ? act : null;
+  }
+  const canPlace = s => !!planAct(s);
   // 이 카드를 지금 낼 수 있나 (안 되면 까닭)
   function whyNot(card, R) {
     const d = CARDS[card.k];
@@ -178,10 +209,10 @@ export default function mount(root, api) {
     if (d.bone && R.bones < d.bone) return `뼈가 모자라요 (${R.bones}/${d.bone})`;
     if (d.blood) {
       const blood = R.board.reduce((t, c) => t + (c ? bloodOf(c) : 0), 0);
-      if (blood < d.blood) return `제물이 모자라요: 피 ${d.blood}이 필요한데 판에 ${blood}뿐 (닭을 먼저 놓으세요)`;
+      if (blood < d.blood) return `제물이 모자라요 (피 ${d.blood}) · 닭부터 놓으세요`;
       return null; // 제물로 비운 칸에 놓을 수 있다
     }
-    if (!slots.some(s => !R.board[s])) return `놓을 칸이 없어요 (이번엔 ${slots.map(s => SLOT_KEY[s]).join(' ')})`;
+    if (!slots.some(s => !R.board[s])) return '놓을 빈칸이 없어요';
     return null;
   }
 
@@ -227,34 +258,31 @@ export default function mount(root, api) {
     audio.pick();
     paint();
   }
-  // Q W E R (또는 내 칸을 누름): 도구를 겨누는 중이면 그 칸, 아니면 제물로 점찍기 → 피가 차면 놓을 칸
+  // Q W E R (또는 내 칸을 누름): 도구를 겨누는 중이면 그 칸. 카드를 골랐으면 이번에 놓을 칸 = 놓기, 다른 칸의 내 생물 = 제물로 표시
   function pressSlot(s) {
     if (modeOf() !== 'plan' || s < 0 || s >= SLOTS) return;
     if (local.tool) return aimTool(s);
     const R = sim();
-    if (!local.cur) {
-      if (R.board[s]) return say(`${cardName(R.board[s])}: 숫자키로 손패 카드를 고른 다음 제물로 바칠 수 있어요`, 'hint');
-      return say('먼저 숫자키로 손패 카드를 고르세요', 'hint');
-    }
-    const cur = local.cur;
-    const mode = curMode(R.board);
     const slots = mySlots();
-    if (mode === 'sac' || (cur.sac.includes(s) && !slots.includes(s))) {
-      if (cur.sac.includes(s)) { // 다시 누르면 빼기
-        cur.sac = cur.sac.filter(x => x !== s);
-        audio.unpick();
-        return paint();
-      }
-      if (!R.board[s]) return nope('빈칸은 제물로 못 바쳐요. 내 생물이 있는 칸을 고르세요');
-      cur.sac.push(s);
+    const where = slots.map(x => SLOT_KEY[x]).join(' ');
+    if (!local.cur) return say(slots.includes(s) ? '카드부터 고르세요' : `이번엔 ${where}에 놓아요`);
+    const cur = local.cur;
+    if (!slots.includes(s)) { // 반대쪽 전선의 내 생물: 제물로 쓸지 표시
+      if (!cur.need || !R.board[s]) return nope(`이번엔 ${where}에 놓아요`);
+      cur.sac = cur.sac.includes(s) ? cur.sac.filter(x => x !== s) : [...cur.sac, s];
       audio.mark();
       return paint();
     }
-    if (!slots.includes(s)) return nope(`이번 단계엔 ${slots.map(x => SLOT_KEY[x]).join(' ')}에만 놓을 수 있어요`);
-    if (!canPlace(s)) return nope(R.board[s] && has(R.board[s], 'nine') && cur.sac.includes(s) ? '아홉 목숨은 바쳐도 자리를 안 비켜요' : '그 칸엔 이미 생물이 있어요 (제물로 바치면 비어요)');
-    local.acts.push({ u: cur.u, sac: [...cur.sac], slot: s });
+    const act = planAct(s);
+    if (!act) {
+      if (!cur.need && R.board[s]) return nope('빈칸에 놓으세요');
+      if (R.board[s] && has(R.board[s], 'nine')) return nope('아홉 목숨은 바쳐도 자리를 안 비켜요');
+      return nope(`제물이 모자라요 (피 ${cur.need})`);
+    }
+    local.acts.push(act);
     local.cur = null;
     audio.place();
+    if (act.sac.length) audio.sac();
     touch();
   }
   function undo() {
@@ -268,7 +296,7 @@ export default function mount(root, api) {
   }
   function ringBell() {
     if (modeOf() !== 'plan') return;
-    if (local.cur || local.tool) return nope('고른 것을 마저 하거나 Backspace로 취소하세요');
+    if (local.cur || local.tool) return nope('고른 것부터 놓거나 취소하세요');
     local.ready = true;
     sendPlan(true);
     audio.bell();
@@ -304,7 +332,7 @@ export default function mount(root, api) {
     if (modeOf() !== 'plan') return;
     const t = myTools()[i];
     if (!t) return nope('그 자리엔 도구가 없어요');
-    if (local.cur) return nope('고른 카드를 먼저 놓거나 Backspace로 취소하세요');
+    if (local.cur) return nope('고른 카드부터 놓거나 취소하세요');
     if (local.tool?.i === i) { // 다시 누르면 취소
       local.tool = null;
       audio.unpick();
@@ -318,14 +346,14 @@ export default function mount(root, api) {
   function aimTool(s) {
     const { i, t } = local.tool;
     const aim = TOOLS[t].aim;
-    if (aim === 'foe' && !rowOf(S, foeOf(S, me, s))[across(s)]) return nope('그 칸 맞은편엔 생물이 없어요');
-    if (aim === 'mine' && !rowOf(S, me)[s]) return nope('판에 이미 있는 내 생물에만 붙일 수 있어요 (놓는 중인 카드는 안 돼요)');
-    if (t === 'coin' && scaleFor(S, me, frontOf(S, me, s)) >= SCALE_MAX - 1) return nope(`그 저울은 더 못 밀어요 (${SCALE_MAX - 1}칸까지만, 촛불은 생물이 끈다)`);
-    if (t === 'moktak' && list(S.fx?.[me]?.mok).includes(frontOf(S, me, s))) return nope('그 전선엔 이미 목탁을 쳤어요');
+    if (aim === 'foe' && !rowOf(S, foeOf(S, me, s))[across(s)]) return nope('거긴 상대 생물이 없어요');
+    if (aim === 'mine' && !rowOf(S, me)[s]) return nope('이미 판에 있는 내 생물만 돼요');
+    if (t === 'coin' && scaleFor(S, me, frontOf(S, me, s)) >= SCALE_MAX - 1) return nope(`엽전으론 ${SCALE_MAX - 1}칸까지만`);
+    if (t === 'moktak' && list(S.fx?.[me]?.mok).includes(frontOf(S, me, s))) return nope('이미 쳤어요');
     sendTool(i, s);
   }
   function sendTool(i, s) {
-    if (myTools()[i] === 'fan' && S.fx?.[me]?.fan) return nope('이미 부채를 폈어요');
+    if (myTools()[i] === 'fan' && S.fx?.[me]?.fan) return nope('이미 폈어요');
     api.send('tool', { round: S.round, i, s });
     local.tool = null;
     audio.tool();
@@ -616,14 +644,14 @@ export default function mount(root, api) {
       return;
     }
     if (e.k === 'breed') {
-      if (el) floatAt(el, '번식! 손에 한 장 더', 'gold', 'g_breed', -30);
+      if (el) floatAt(el, '번식: 한 장 더', 'gold', 'g_breed', -30);
       return;
     }
     if (e.k === 'sac') {
       if (el) {
         replay(el, 'sacking');
         burst(el, ['#b13e53', '#7a2433', '#ef7d57'], 18, 1.2);
-        if (e.nine != null) floatAt(el, `아홉 목숨: ${e.nine}번 남음`, 'gold', 'g_nine', -20);
+        if (e.nine != null) floatAt(el, `목숨 ${e.nine}`, 'gold', 'g_nine', -20);
         else floatAt(el, `+${e.bn}`, 'bone', 'i_bone', -20);
         if (near(e.by)) audio.sac();
       }
@@ -661,7 +689,7 @@ export default function mount(root, api) {
       const c = cardIn(e.to, e.s);
       if (c) c.hp = e.hp;
       const t = cellOf(e.to, e.s);
-      if (t) later(160, () => { replay(t, 'hit'); floatAt(t, '-1 가시', 'hit small', 'g_thorn'); });
+      if (t) later(160, () => { replay(t, 'hit'); floatAt(t, '가시 -1', 'hit small', 'g_thorn'); });
       return;
     }
     if (e.k === 'direct') {
@@ -683,12 +711,12 @@ export default function mount(root, api) {
     }
     if (e.k === 'smoke') {
       const g = gaugeOf(e.f);
-      if (g) { floatAt(g, '연기에 막힘', 'calm', 'i_smoke'); audio.smoke(); }
+      if (g) { floatAt(g, '연기', 'calm', 'i_smoke'); audio.smoke(); }
       return;
     }
     if (e.k === 'mute') {
       const a = cellOf(e.by, e.s);
-      if (a) floatAt(a, '목탁: 못 친다', 'calm', 't_moktak');
+      if (a) floatAt(a, '못 침', 'calm', 't_moktak');
       return;
     }
     if (e.k === 'charm') {
@@ -697,7 +725,7 @@ export default function mount(root, api) {
       if (c) c.hp = Math.max(1, c.hp);
       if (el) {
         replay(el, 'saved');
-        floatAt(el, '부적! 버텼다', 'gold', 't_charm', -24);
+        floatAt(el, '부적', 'gold', 't_charm', -24);
         burst(el, ['#ffcd75', '#f4f4f4'], 18, 1.2);
         audio.tool();
       }
@@ -734,14 +762,14 @@ export default function mount(root, api) {
       const el = cellOf(e.by, e.s);
       if (el) {
         later(30, () => replay(el, 'grow'));
-        floatAt(el, `자랐다! ${CARDS[e.card.k]?.name || ''}`, 'gold', 'g_grow', -24);
+        floatAt(el, `자람: ${CARDS[e.card.k]?.name || ''}`, 'gold', 'g_grow', -24);
         burst(el, ['#a7f070', '#38b764', '#f4f4f4'], 18, 1.1);
         audio.grow();
       }
       return;
     }
     if (e.k === 'gift') {
-      later(600, () => floatAt(tagOf(e.to), e.to === me ? '촛불을 껐다: 도구 하나!' : '도구 하나', 'gold', null));
+      later(600, () => floatAt(tagOf(e.to), '도구 +1', 'gold', null));
       return;
     }
     if (e.k === 'candle') {
@@ -754,7 +782,7 @@ export default function mount(root, api) {
       replay(stage, mine ? 'dark' : 'punch');
       burst(gaugeOf(e.f), ['#ffcd75', '#ef7d57', '#94b0c2'], 30, 1.6);
       audio.candle(mine);
-      if (e.by === pov()) later(500, () => floatAt(gaugeOf(e.f), e.over ? `넘친 ${e.over} → 뼈` : '촛불을 껐다!', 'gold'));
+      if (e.by === pov()) later(500, () => floatAt(gaugeOf(e.f), e.over ? `뼈 +${e.over}` : '촛불을 껐다!', 'gold'));
       return;
     }
     if (e.k === 'revive') {
@@ -777,11 +805,11 @@ export default function mount(root, api) {
     if (!T) return;
     if (e.t === 'sickle') {
       const el = cellOf(e.to, e.s);
-      if (el) { replay(el, 'hit'); burst(el, ['#b13e53', '#f4f4f4', '#94b0c2'], 22, 1.4); floatAt(el, `낫! ${CARDS[e.c]?.name || ''}`, 'hit', 't_sickle'); }
+      if (el) { replay(el, 'hit'); burst(el, ['#b13e53', '#f4f4f4', '#94b0c2'], 22, 1.4); floatAt(el, '낫', 'hit', 't_sickle'); }
       audio.sac();
     } else if (e.t === 'coin' || e.t === 'moktak') {
       const g = gaugeOf(e.f);
-      floatAt(g || tagOf(e.by), e.t === 'coin' ? `${nameOf(e.by)} 엽전: 저울 1칸` : `${nameOf(e.by)} 목탁: 이 전선은 이번 턴 못 친다`, 'gold', `t_${e.t}`);
+      floatAt(g || tagOf(e.by), `${nameOf(e.by)} ${e.t === 'coin' ? '엽전' : '목탁'}`, 'gold', `t_${e.t}`);
       if (g) replay(g, 'pushed');
       audio.tool();
     } else if (e.t === 'charm') {
@@ -789,7 +817,7 @@ export default function mount(root, api) {
       if (el) floatAt(el, '부적', 'gold', 't_charm');
       audio.tool();
     } else {
-      floatAt(tagOf(e.by), { coop: '닭장: 닭 2마리', fan: '부채: 전부 날개!', sack: '뼈 자루: 뼈 +4' }[e.t] || T.name, 'gold', `t_${e.t}`);
+      floatAt(tagOf(e.by), { coop: '닭 +2', fan: '부채', sack: '뼈 +4' }[e.t] || T.name, 'gold', `t_${e.t}`);
       audio.tool();
     }
   }
@@ -830,11 +858,13 @@ export default function mount(root, api) {
     const orig = rowOf(X, p);
     const pv = plan && !local.ready && !S.ready?.[me] ? preview(plan) : null;
     const slots = planning ? mySlots() : [];
-    const mode = planning && modeOf() === 'plan' ? curMode(myRow) : null;
     const aim = planning && local.tool ? TOOLS[local.tool.t].aim : null;
     const st = stepNo();
     const fxMe = S.fx?.[p] || {};
     for (const F of fronts) {
+      const here = !!planning && slots.some(s => (s < LANES ? 0 : 1) === F.i); // 지금 놓는 전선
+      F.el.classList.toggle('active', here);
+      F.el.classList.toggle('idle', !!planning && !here);
       const nb = F.i === 0 ? L : R;
       const f = F.i === 0 ? p : R;          // 이 전선의 이름 (왼쪽 전선 = 나, 오른쪽 전선 = 오른쪽 이웃)
       const lead = leadOf(X, f) === p;
@@ -852,13 +882,13 @@ export default function mount(root, api) {
           h('span', { class: 'sc-chip' }, spr('i_bone', '', 2), String(X.bones?.[nb] || 0)),
           h('span', { class: 'sc-chip' }, `손패 ${S.hands?.[nb] || 0}`),
           S.toolsN?.[nb] ? h('span', { class: 'sc-chip', title: '도구 (무엇인지는 안 보인다)' }, `도구 ${S.toolsN[nb]}`) : null,
-          drew ? h('span', { class: `sc-chip ${drew === 'hen' ? 'hen' : ''}` }, drew === 'hen' ? '닭을 뽑음' : '덱에서 뽑음') : null,
-          (S.ready?.[nb] && st) || (S.phase === 'road' && S.road?.st?.[nb]?.done) ? h('span', { class: 'sc-chip rang' }, spr('i_bell', '', 2), st ? '종' : '골랐다') : null,
+          drew ? h('span', { class: `sc-chip ${drew === 'hen' ? 'hen' : ''}` }, drew === 'hen' ? '닭 뽑음' : '덱 뽑음') : null,
+          (S.ready?.[nb] && st) || (S.phase === 'road' && S.road?.st?.[nb]?.done) ? h('span', { class: 'sc-chip rang' }, spr('i_bell', '', 2), st ? '준비' : '고름') : null,
           smoked(X, nb, f) ? h('span', { class: 'sc-chip smoke' }, spr('i_smoke', '', 2), '연기') : null,
-          list(fxMe.mok).includes(f) ? h('span', { class: 'sc-chip rang' }, spr('t_moktak', '', 1), '못 침') : null,
-          list(fxNb.mok).includes(f) ? h('span', { class: 'sc-chip warn' }, spr('t_moktak', '', 1), '내가 못 침') : null,
+          list(fxMe.mok).includes(f) ? h('span', { class: 'sc-chip rang' }, spr('t_moktak', '', 1), '목탁 걸음') : null,
+          list(fxNb.mok).includes(f) ? h('span', { class: 'sc-chip warn' }, spr('t_moktak', '', 1), '목탁 맞음') : null,
           fxNb.fan ? h('span', { class: 'sc-chip warn' }, spr('t_fan', '', 1), '부채') : null,
-          h('span', { class: `sc-turn ${lead ? 'lead' : 'second'}`, title: lead ? '이번 턴 이 전선은 내가 선공: 먼저 놓고 먼저 친다' : '이번 턴 이 전선은 내가 후공: 보고 놓지만 먼저 맞는다' },
+          h('span', { class: `sc-turn ${lead ? 'lead' : 'second'}`, title: lead ? '이번 턴 여기선 내가 먼저 놓고 먼저 친다' : '이번 턴 여기선 상대가 놓은 걸 보고 놓는다 (먼저 맞는다)' },
             spr(lead ? 'i_lead' : 'i_second', '', 2), lead ? '선공' : '후공'),
         ].filter(Boolean));
         F.el.classList.toggle('lead', lead);
@@ -879,8 +909,8 @@ export default function mount(root, api) {
         const marks = local.cur?.sac || [];
         const state = [
           slots.includes(C.s) && 'step',
-          mode === 'place' && slots.includes(C.s) && canPlace(C.s) && 'can',
-          mode === 'sac' && mc && !marks.includes(C.s) && 'sacable',
+          local.cur && slots.includes(C.s) && canPlace(C.s) && 'can',
+          local.cur?.need && mc && !slots.includes(C.s) && !marks.includes(C.s) && 'sacable',
           marks.includes(C.s) && 'marked',
           planned && 'planned',
           aim === 'mine' && og && 'aim',
@@ -914,11 +944,12 @@ export default function mount(root, api) {
       let ncls = '';
       if (pv) {
         const unknown = st === 1 || leadOf(S, f) === me;
-        if (hit) [note, ncls] = hit.to === me ? ['이대로면 내 촛불이 꺼진다!', 'bad'] : ['이대로면 촛불을 끈다!', 'good'];
-        else if (pvv > v) [note, ncls] = [`이대로면 ▲${pvv - v} 민다`, 'good'];
-        else if (pvv < v) [note, ncls] = [`이대로면 ▼${v - pvv} 밀린다`, 'bad'];
+        if (hit) [note, ncls] = hit.to === me ? ['이대로면 내 촛불이 꺼진다', 'bad'] : ['이대로면 촛불을 끈다', 'good'];
+        else if (pvv > v) [note, ncls] = [`이대로면 ▲${pvv - v}`, 'good'];
+        else if (pvv < v) [note, ncls] = [`이대로면 ▼${v - pvv}`, 'bad'];
         else note = '이대로면 그대로';
-        if (unknown) note += ' (상대가 더 놓을 수 있음)';
+        if (unknown) note += ' ?';
+        F.note.title = unknown ? '상대가 아직 놓을 수 있어요' : '';
       }
       const nk = note + ncls;
       if (nk !== F.nk) {
@@ -968,25 +999,25 @@ export default function mount(root, api) {
 
   function roadPrompt() {
     const st = myRoad();
-    if (!st) return ['길목! 셋 중 하나: 숫자키 1~3', 'mine'];
-    if (st.done) return [roadResult(me, st) || '골랐어요! 다른 사람을 기다리는 중…', 'calm'];
-    if (st.kind === 'pack') return ['새 패: 손에 넣을 카드 하나 (숫자키)', 'mine'];
-    if (st.kind === 'tools') return ['도구 상자: 하나 (숫자키) · 놓기 단계에 Z X로 쓴다', 'mine'];
+    if (!st) return ['길목 · 하나 고르세요', 'mine'];
+    if (st.done) return [roadResult(me, st) || '다른 사람 기다리는 중', 'calm'];
+    if (st.kind === 'pack') return ['가질 카드를 고르세요', 'mine'];
+    if (st.kind === 'tools') return ['가질 도구를 고르세요', 'mine'];
     if (st.kind === 'fire') {
-      if (!st.u && !pick.fire) return ['모닥불: 달굴 카드 (숫자키 · ← → 넘기기)', 'mine'];
-      if (!st.n) return ['1 = 공격 +1 · 2 = 체력 +2 (첫 번째는 안전) · Backspace 다른 카드', 'mine'];
-      return [`한 번 더? 1 = 공격 +1 · 2 = 체력 +2 (${Math.round(BURN[st.n] * 100)}% 타 버림) · 3 = 그만`, 'warn'];
+      if (!st.u && !pick.fire) return ['달굴 카드를 고르세요', 'mine'];
+      if (!st.n) return ['공격 +1 또는 체력 +2', 'mine'];
+      return [`한 번 더 달구면 ${Math.round(BURN[st.n] * 100)}% 확률로 탄다`, 'warn'];
     }
-    if (st.kind === 'altar') return pick.from ? ['제단: 문양을 새길 카드 (숫자키 · Backspace 다시)', 'mine'] : ['제단: 바칠 카드 — 그 문양을 다른 카드에 (숫자키 · Backspace 건너뛰기)', 'mine'];
+    if (st.kind === 'altar') return pick.from ? ['문양을 받을 카드를 고르세요', 'mine'] : ['바칠 카드를 고르세요 (문양을 넘겨준다)', 'mine'];
     return ['', ''];
   }
   function roadResult(id, st) {
     if (!st?.done) return '';
     const nm = id === me ? '' : `${nameOf(id)}: `;
-    if (st.kind === 'pack') return `${nm}새 패 ${CARDS[st.got]?.name || ''}`;
-    if (st.kind === 'tools') return `${nm}도구 ${id === me ? TOOLS[st.got]?.name || '' : '하나'}`;
-    if (st.kind === 'fire') return st.burnt ? `${nm}${st.nm} 타 버렸다!` : st.n ? `${nm}모닥불 ${st.nm} ×${st.n}` : `${nm}모닥불 그만`;
-    if (st.kind === 'altar') return st.skip ? `${nm}제단 건너뜀` : `${nm}제단 ${st.from} → ${st.to}`;
+    if (st.kind === 'pack') return `${nm}${CARDS[st.got]?.name || ''} 얻음`;
+    if (st.kind === 'tools') return `${nm}${id === me ? TOOLS[st.got]?.name || '도구' : '도구'} 얻음`;
+    if (st.kind === 'fire') return st.burnt ? `${nm}${st.nm} 타 버림!` : st.n ? `${nm}${st.nm} 달굼 ×${st.n}` : `${nm}모닥불 그만`;
+    if (st.kind === 'altar') return st.skip ? `${nm}제단 건너뜀` : `${nm}${st.from} → ${st.to}`;
     return '';
   }
 
@@ -995,31 +1026,31 @@ export default function mount(root, api) {
     if (!S) return ['', ''];
     if (S.phase === 'intro') return [S.again ? '한 판 더!' : '죽여야 낼 수 있다. 왼쪽을 밀면 오른쪽이 뚫린다', ''];
     if (S.phase === 'final') return ['', ''];
-    if (mode === 'soul') {
-      return pick.stat == null ? ['넋패 만들기: 내 넋패의 공격 · 체력이 될 카드 (숫자키 · ← → 넘기기)', 'mine']
-        : ['넋패 만들기: 문양을 줄 카드 (숫자키 · 0 = 문양 없이 · Backspace 다시)', 'mine'];
-    }
-    if (!inGame()) return [`관전 중 · ← → 로 다른 사람 판 보기 (지금 ${nameOf(pov())})`, 'calm'];
-    if (!alive(me)) return [`탈락! ← → 로 다른 사람 판 보기 (지금 ${nameOf(pov())}) · 채팅으로 훈수`, 'calm'];
-    if (S.phase === 'deck') return mode === 'deck' ? ['시작 덱을 고르세요: 숫자키 1~4 (모두 동시에)', 'mine'] : ['골랐어요! 다른 사람을 기다리는 중…', 'calm'];
+    if (mode === 'soul') return pick.stat == null ? ['넋패: 공격·체력을 물려줄 카드', 'mine'] : ['넋패: 문양을 물려줄 카드', 'mine'];
+    if (!inGame()) return ['관전 중', 'calm'];
+    if (!alive(me)) return ['탈락 · 다른 사람 판을 볼 수 있어요', 'calm'];
+    if (S.phase === 'deck') return mode === 'deck' ? ['시작 덱을 고르세요', 'mine'] : ['다른 사람 기다리는 중', 'calm'];
     if (S.phase === 'road') return roadPrompt();
     if (S.phase === 'reveal1' || S.phase === 'reveal2') return ['공개!', 'warn'];
-    if (S.phase === 'fight') return ['선공 쪽이 먼저 치고, 살아남은 후공 쪽이 되받아친다', 'calm'];
+    if (S.phase === 'fight') return ['선공이 먼저 치고, 살아남은 후공이 되받아친다', 'calm'];
     if (!stepNo()) return ['', ''];
-    if (S.ready?.[me] || local.ready) return ['종을 쳤어요. 다른 사람을 기다리는 중…', 'calm'];
-    const slots = mySlots().map(s => SLOT_KEY[s]).join(' ');
-    const where = stepNo() === 1 ? '선공 전선' : '후공 전선';
-    if (local.tool) return [`${TOOLS[local.tool.t].name}: ${AIM[TOOLS[local.tool.t].aim]} · Backspace 취소`, 'warn'];
-    if (canDraw()) return ['← 덱에서 한 장 · → 닭 한 마리 (턴마다 한 번 뽑기)', 'mine'];
+    if (S.ready?.[me] || local.ready) return ['준비 완료 · 기다리는 중', 'calm'];
+    if (local.tool) return [`${TOOLS[local.tool.t].name}: ${AIM[TOOLS[local.tool.t].aim]}`, 'warn'];
+    if (canDraw()) return ['한 장 뽑으세요 (덱 또는 닭)', 'mine'];
     if (local.cur) {
-      const R = sim();
-      if (curMode(R.board) === 'sac') return [`${cardName(local.cur)}: 제물로 바칠 내 생물 Q W E R (피 ${curBlood(R.board)}/${local.cur.need}) · Backspace 취소`, 'warn'];
-      return [`${cardName(local.cur)}: 놓을 칸 ${slots} (${where}) · Backspace 취소`, 'mine'];
+      const need = local.cur.need;
+      const have = curBlood(sim().board);
+      const sac = !need ? '' : have ? ` · 제물 ${have}/${need}` : ` · 제물 ${need}마리는 약한 것부터`;
+      return [`${cardName(local.cur)}: 빛나는 칸을 누르세요${sac}`, 'mine'];
     }
-    const tools = myTools().length ? ` · ${TOOL_KEY.slice(0, myTools().length).join(' ')} = 도구` : '';
-    return [`숫자키 = 카드 → ${slots}(${where})에 놓기${tools} · Backspace 되돌리기 · 스페이스 = 종`, 'mine'];
+    if (!local.acts.length && S.round === 1 && stepNo() === 1) return ['닭을 놓고, 그 닭을 바쳐 센 카드를 내세요', 'mine'];
+    return [local.acts.length ? '더 놓거나 준비 완료' : '카드를 고르고 빛나는 칸을 누르세요', 'mine'];
   }
 
+  const btn = (label, onClick, cls = '', key = '') => h('button', {
+    class: `sc-btn ${cls}`, type: 'button', tabindex: '-1',
+    onClick: e => { e.currentTarget.blur(); unlock(); if (!cls.includes('off')) onClick(); },
+  }, label, key ? h('kbd', {}, key) : null);
   // 길목 · 넋패에서 고를 것들을 카드처럼 늘어놓는다
   const choiceBtn = (i, cls, onPick, ...kids) => h('button', {
     class: `sc-choice ${cls}`, type: 'button', tabindex: '-1',
@@ -1082,11 +1113,35 @@ export default function mount(root, api) {
     const hand = R ? R.hand : myHand();
     const bones = R ? R.bones : S.bones?.[me] || 0;
     const key = JSON.stringify([mode, text, cls, hand.map(c => [c.u, c.da, c.dh, c.sig]), bones, local.cur, local.tool, local.acts.length, S.phase, S.deckDone?.[me], sent.deck, canDraw(),
-      S.deckN?.[me], S.graveN?.[me], S.candles?.[me], P?.grave, alive(me), myTools(), S.road?.st?.[me], S.road?.offers?.[me], pick, myCards().length, list(P?.soul).length, S.fx?.[me]]);
+      S.deckN?.[me], S.graveN?.[me], S.candles?.[me], P?.grave, alive(me), myTools(), S.road?.st?.[me], S.road?.offers?.[me], pick, myCards().length, list(P?.soul).length, S.fx?.[me],
+      S.ready?.[me], local.ready, S.drew?.[me], sent.draw, list(S.alive).length]);
     if (key !== keys.panel) {
       keys.panel = key;
       prompt.className = `sc-prompt ${cls}`;
       prompt.textContent = text;
+      // 이번 턴에 할 일: 뽑기 › 놓기 › 준비 완료 (지금 할 것이 빛난다)
+      const st0 = stepNo();
+      const isReady = !!(S.ready?.[me] || local.ready);
+      const drewDone = !!S.drew?.[me] || sent.draw === S.round;
+      steps.replaceChildren(...(st0 && alive(me) && inGame() ? [
+        st0 === 1 ? h('span', { class: `sc-step ${drewDone || isReady ? 'done' : 'now'}` }, '뽑기') : null,
+        h('span', { class: `sc-step ${isReady ? 'done' : drewDone || st0 === 2 ? 'now' : ''}` }, '놓기'),
+        h('span', { class: `sc-step ${isReady ? 'done' : ''}` }, '준비 완료'),
+      ].filter(Boolean) : []));
+      const B = [];
+      if (mode === 'plan') {
+        if (local.cur || local.tool) B.push(btn('취소', undo, '', '⌫'));
+        else B.push(btn('되돌리기', undo, local.acts.length ? '' : 'off', '⌫'), btn('준비 완료', ringBell, 'go', '␣'));
+      } else if (mode === 'road') {
+        const rs = myRoad();
+        if (rs?.kind === 'fire' && pick.fire && !rs.u) B.push(btn('다른 카드', roadBack, '', '⌫'));
+        if (rs?.kind === 'altar') B.push(btn(pick.from ? '다시' : '건너뛰기', roadBack, '', '⌫'));
+      } else if (mode === 'soul' && pick.stat != null) {
+        B.push(btn('다시', () => { pick.stat = null; pick.page = 0; paint(); }, '', '⌫'), btn('문양 없이', () => soulKey(0), '', '0'));
+      } else if (mode === 'watch' && list(S.alive).length > 1) {
+        B.push(btn('◀', () => turnWatch(-1), '', '←'), btn('▶', () => turnWatch(1), '', '→'));
+      }
+      btns.replaceChildren(...B);
       let cards;
       if (mode === 'soul') cards = soulPanel();
       else if (S.phase === 'deck' && inGame() && alive(me)) {
@@ -1125,7 +1180,7 @@ export default function mount(root, api) {
           onClick: e => { e.currentTarget.blur(); unlock(); useTool(i); },
         }, h('em', {}, TOOL_KEY[i]), spr(`t_${t}`, '', 2), TOOLS[t].name)));
         if (S.fx?.[me]?.fan) bits.push(h('span', { class: 'sc-chip rang' }, spr('t_fan', '', 1), '부채'));
-        if (hand.length >= HAND_MAX) bits.push(h('span', { class: 'sc-chip warn' }, '손패가 꽉 참'));
+        if (hand.length >= HAND_MAX) bits.push(h('span', { class: 'sc-chip warn' }, '손패 가득'));
       }
       stat.replaceChildren(...bits);
     }
@@ -1169,48 +1224,44 @@ export default function mount(root, api) {
     const key = JSON.stringify([S.alive, out, log, S.candles, S.picked, S.toolsN]);
     if (key === keys.side) return;
     keys.side = key;
-    const nextRoad = S.round ? ROAD_EVERY - (S.round % ROAD_EVERY || ROAD_EVERY) : ROAD_EVERY;
     side.replaceChildren(...[
       h('h3', {}, `생존 ${list(S.alive).length}명`),
       h('ul', { class: 'sc-alive' }, list(S.alive).map(id => h('li', {}, avatar(who(id)), h('b', {}, who(id).name),
         h('span', { class: 'sc-candles' }, ...Array.from({ length: Math.max(CANDLES, S.candles?.[id] || 0) }, (_, k) => candle(k < (S.candles?.[id] || 0), 1))),
         S.picked?.[id] ? h('small', {}, DECKS[S.picked[id]]?.name || '') : null,
         S.toolsN?.[id] ? h('small', {}, ` · 도구 ${S.toolsN[id]}`) : null))),
-      out.length ? h('h3', {}, '탈락 기록') : null,
+      out.length ? h('h3', {}, '탈락') : null,
       out.length ? h('ul', { class: 'rules' }, out.map(id => h('li', {}, h('b', {}, who(id).name), S.dead?.[id] ? ` ← ${who(S.dead[id]).name}` : ''))) : null,
       log.length ? h('h3', {}, '방금') : null,
       log.length ? h('ol', { class: 'sc-log' }, log.map(t => h('li', {}, t))) : null,
-      h('h3', {}, '한 턴'),
+      h('h3', {}, '하는 법'),
+      h('ol', { class: 'sc-how' },
+        h('li', {}, '한 장 뽑는다 (덱 또는 닭)'),
+        h('li', {}, '카드를 골라 빛나는 칸에 놓는다'),
+        h('li', {}, '피 카드는 내 생물을 바쳐야 나온다'),
+        h('li', {}, '다 놓았으면 준비 완료'),
+        h('li', {}, `빈칸을 치면 직격, 저울이 ${SCALE_MAX}칸 기울면 촛불이 꺼진다`),
+        h('li', {}, `촛불 ${CANDLES}개가 다 꺼지면 탈락`)),
+      h('h3', {}, '알아 두기'),
       h('ul', { class: 'rules' },
-        h('li', {}, h('b', {}, '선공 놓기'), ' 한 장 뽑고(덱 또는 닭), 선공 전선 두 칸에 놓는다. 다 같이 공개'),
-        h('li', {}, h('b', {}, '후공 놓기'), ' 이웃이 놓은 걸 보고 반대쪽 전선에 놓는다'),
-        h('li', {}, h('b', {}, '타격'), ' 선공 쪽 생물이 한꺼번에 치고, 살아남은 후공 쪽이 되받아친다. 맞은편이 비면 직격'),
-        h('li', {}, '홀수 턴은 왼쪽 전선이 선공, 짝수 턴은 오른쪽 전선이 선공'),
-        h('li', {}, h('b', {}, '길목'), ` ${ROAD_EVERY}턴마다 (다음은 ${nextRoad ? `${nextRoad}턴 뒤` : '이번 턴 끝'}): 새 패 · 모닥불 · 제단 · 도구 상자 중 하나`)),
-      h('h3', {}, '규칙'),
-      h('ul', { class: 'rules' },
-        h('li', {}, '피 카드는 판 위 내 생물을 그 수만큼 제물로 바쳐야 낸다 (어느 전선 생물이든). 방금 놓은 닭도 바칠 수 있다'),
-        h('li', {}, '생물이 죽으면(제물 포함) 뼈 1. 뼈 카드는 뼈로 낸다'),
-        h('li', {}, `직격은 그 전선의 저울을 민다. ${SCALE_MAX}칸 밀리면 촛불이 꺼지고 그 저울은 0으로`),
-        h('li', {}, '촛불이 꺼진 사람은 잿불(0/3) 한 장을 받고, 다음 턴까지 그 전선에서 직격을 안 받는다. 꺼뜨린 사람은 도구 하나'),
-        h('li', {}, `촛불 ${CANDLES}개가 다 꺼지면 탈락. 양옆이 새로 맞대고, 그 저울은 0에서. 탈락한 사람은 넋패(뼈 ${CARDS.soul.bone})가 되어 꺼뜨린 사람 손으로`),
-        h('li', {}, `도구는 ${TOOL_MAX}개까지, 놓기 단계에 ${TOOL_KEY.join(' ')}로 바로 쓴다 (모두에게 보인다)`),
-        h('li', {}, `붉은 달: ${MOON.map(([r, m]) => `${r}턴부터 직격 +${m}`).reverse().join(' · ')}`),
-        h('li', {}, '마지막 한 명 우승')),
+        h('li', {}, '홀수 턴은 왼쪽, 짝수 턴은 오른쪽 전선이 선공'),
+        h('li', {}, '선공은 먼저 놓고 먼저 친다. 후공은 보고 놓는다'),
+        h('li', {}, '생물이 죽으면 뼈 1. 뼈 카드는 뼈로 낸다'),
+        h('li', {}, `${ROAD_EVERY}턴마다 길목, 촛불을 끄면 도구 +1`),
+        h('li', {}, `${MOON[MOON.length - 1][0]}턴부터 붉은 달: 직격이 세진다`),
+        h('li', {}, '탈락하면 넋패가 되어 꺼뜨린 사람 손으로')),
       h('h3', {}, '조작'),
       h('ul', { class: 'rules' },
-        h('li', {}, '← 덱 · → 닭 (턴마다 한 번 뽑기)'),
-        h('li', {}, '숫자키 = 손패 카드 → Q W E R = 제물로 바칠 칸 → Q W E R = 놓을 칸'),
-        h('li', {}, `${TOOL_KEY.join(' ')} = 도구 (고를 게 있으면 Q W E R)`),
-        h('li', {}, 'Backspace = 하나 되돌리기 · 스페이스 = 종 치기 (되돌릴 수 없음)'),
-        h('li', {}, '카드에 마우스를 올리면 설명')),
+        h('li', {}, '클릭: 카드 → 칸'),
+        h('li', {}, `숫자 카드 · Q W E R 칸 · ${TOOL_KEY.join(' ')} 도구`),
+        h('li', {}, '← 덱 · → 닭 · ⌫ 되돌리기 · ␣ 준비 완료')),
       h('h3', {}, '도구'),
       h('ul', { class: 'sc-siglist' }, Object.entries(TOOLS).map(([k, t]) => h('li', {}, spr(`t_${k}`, '', 2), h('span', {}, h('b', {}, t.name), ` ${t.tip}`)))),
       h('h3', {}, '문양'),
       h('ul', { class: 'sc-siglist' }, Object.entries(SIGILS).map(([k, g]) => h('li', {}, spr(`g_${k}`, '', 2), h('span', {}, h('b', {}, g.name), ` ${g.tip}`)))),
       h('h3', {}, '카드'),
       h('ul', { class: 'sc-cardlist' }, Object.entries(CARDS).filter(([k]) => k !== 'soul').map(([k, c]) => h('li', { title: cardTip({ k }) }, spr(`p_${k}`, '', 1),
-        h('span', {}, h('b', {}, c.name), ` ${costOf(c)} · ${c.atk}/${c.hp}${c.sig.length ? ` · ${c.sig.map(g => SIGILS[g].name).join(' · ')}` : ''}${c.grown ? ' · 자라서만' : c.grow ? ` → ${CARDS[c.grow].name}` : ''}`)))),
+        h('span', {}, h('b', {}, c.name), ` ${costOf(c)} · ${c.atk}/${c.hp}${c.sig.length ? ` · ${c.sig.map(g => SIGILS[g].name).join(' · ')}` : ''}${c.grown ? ' · 자라야 나옴' : c.grow ? ` → ${CARDS[c.grow].name}` : ''}`)))),
     ].filter(Boolean));
   }
 
@@ -1275,8 +1326,8 @@ export default function mount(root, api) {
         for (const [id, st] of Object.entries(S.road.st || {})) {
           if (!st.done || seen.roadDone[id]) continue;
           seen.roadDone[id] = true;
-          if (st.burnt) { audio.burn(); if (id !== me) setBanner(`${nameOf(id)}의 ${st.nm} 타 버렸다!`, 'blood', 1400); }
-          if (id === me && st.burnt) setBanner(`${st.nm} 타 버렸다!`, 'blood', 1600);
+          if (st.burnt) { audio.burn(); if (id !== me) setBanner(`${nameOf(id)}의 ${st.nm} 타 버림!`, 'blood', 1400); }
+          if (id === me && st.burnt) setBanner(`${st.nm} 타 버림!`, 'blood', 1600);
           later(80, () => floatAt(tagOf(id), roadResult(id, st).replace(`${nameOf(id)}: `, ''), st.burnt ? 'hit' : 'gold'));
         }
       }
@@ -1296,12 +1347,12 @@ export default function mount(root, api) {
         if ((S.moon || 0) > seen.moon) {
           seen.moon = S.moon;
           later(400, () => { setBanner(`붉은 달! 직격 +${S.moon}`, 'blood', 1800); audio.moon(); });
-        } else later(shown ? 600 : 0, () => setBanner(`${S.round}턴 · ${S.round % 2 ? '왼쪽' : '오른쪽'} 전선 선공`, '', 1300));
+        } else later(shown ? 600 : 0, () => setBanner(`${S.round}턴 · ${S.round % 2 ? '왼쪽' : '오른쪽'}부터`, '', 1300));
         if (S.round > 1 && alive(me)) audio.draw();
       }
       if (S.phase === 'place2' && seen.place2 !== S.round) {
         seen.place2 = S.round;
-        later(shown ? 300 : 0, () => setBanner('후공 놓기', '', 900));
+        later(shown ? 300 : 0, () => setBanner(`이제 ${S.round % 2 ? '오른쪽' : '왼쪽'}`, '', 900));
       }
       // 내 촛불이 하나 남았고 어느 저울이든 끝에 가까우면 두근두근
       const danger = alive(me) && pov() === me && (S.candles?.[me] || 0) === 1

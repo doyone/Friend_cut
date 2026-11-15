@@ -15,8 +15,8 @@ export const SLOTS = LANES * 2;      // 내 칸 (왼쪽 전선 + 오른쪽 전�
 export const SCALE_MAX = 5;          // 저울이 이만큼 기울면 촛불이 꺼진다
 export const CANDLES = 2;
 export const SMOKE_TURNS = 1;        // 촛불이 꺼진 뒤 그 전선에서 직격을 안 받는 턴 (꺼진 턴은 끝까지 + 이만큼)
-export const DECK_TIME = 10000;      // 시작 덱 고르기
-export const PLACE_TIME = 20000;     // 놓기 단계 하나
+export const DECK_TIME = 60000;      // 시작 덱 고르기 (모두 고르면 바로)
+export const PLACE_TIME = 60000;     // 놓기 단계 하나 (모두 준비 완료를 누르면 바로)
 export const REVEAL_TIME = 1500;     // 놓은 것을 보여 주는 시간
 export const START_HAND = 3;         // 처음 손패: 덱에서 이만큼 + 닭
 export const START_HEN = 1;
@@ -25,9 +25,9 @@ export const MOON = [[14, 2], [10, 1]]; // 붉은 달: [이 턴부터, 직격 +n
 export const BEAT_MS = 560;          // 타격 장면 한 박자
 // 2차
 export const ROAD_EVERY = 3;         // 이 턴마다 (타격이 끝난 뒤) 길목
-export const ROAD_TIME = 20000;
+export const ROAD_TIME = 60000;      // 길목 (모두 고르면 바로)
 export const TOOL_MAX = 2;           // 도구는 이만큼까지 든다
-export const SOUL_TIME = 12000;      // 탈락한 사람이 넋패를 고르는 시간 (판은 그동안에도 흐른다)
+export const SOUL_TIME = 60000;      // 탈락한 사람이 넋패를 고르는 시간 (판은 그동안에도 흐른다)
 export const SOUL_COST = 4;          // 넋패는 뼈 4
 export const BURN = [0, 0.4, 0.7];   // 모닥불: 같은 카드를 n번째로 달굴 때 타 버릴 확률 (첫 번째는 안전)
 export const NINE = 3;               // 아홉 목숨: 제물로 바쳐도 안 죽는 횟수
@@ -37,22 +37,22 @@ const LOG_KEEP = 7;
 
 // 문양: 카드에 새겨진 능력
 export const SIGILS = {
-  wing: { name: '날개', tip: '맞은편에 생물이 있어도 넘어가 직격한다 (올려치기만 막는다)' },
-  leap: { name: '올려치기', tip: '날개 달린 생물을 막는다' },
-  venom: { name: '독니', tip: '피해를 입힌 생물은 체력과 상관없이 죽는다' },
-  thorn: { name: '가시', tip: '나를 때린 생물은 1 피해' },
-  fork: { name: '두 갈래', tip: '정면 대신 양옆 대각선 두 줄을 친다 (가운데 칸이면 반대편 전선까지)' },
-  sprint: { name: '질주', tip: '턴이 끝나면 옆 칸으로 한 칸 (막히면 돌아선다, 전선을 넘나든다)' },
-  fat: { name: '살진 제물', tip: '제물로 바치면 피 3으로 친다' },
+  wing: { name: '날개', tip: '막혀도 넘어가서 직격' },
+  leap: { name: '올려치기', tip: '날개를 막는다' },
+  venom: { name: '독니', tip: '물린 생물은 죽는다' },
+  thorn: { name: '가시', tip: '때린 놈에게 1' },
+  fork: { name: '두 갈래', tip: '정면 대신 양옆 대각선을 친다' },
+  sprint: { name: '질주', tip: '턴이 끝나면 옆 칸으로 간다' },
+  fat: { name: '살진 제물', tip: '바치면 피 3' },
   boneyard: { name: '뼈무덤', tip: '죽으면 뼈 3' },
-  back: { name: '귀환', tip: '죽으면 무덤 대신 손으로 돌아온다' },
-  squeeze: { name: '조이기', tip: '맞은편 생물의 공격력 -1' },
-  nine: { name: '아홉 목숨', tip: `제물로 바쳐도 안 죽는다 (${NINE}번까지)` },
-  breed: { name: '번식', tip: '낼 때 똑같은 카드가 손에 한 장 생긴다 (그 카드는 죽으면 사라진다)' },
-  dive: { name: '잠수', tip: '내가 후공인 전선에선 물속: 안 맞지만 막지도 못한다 (치기는 한다)' },
-  leader: { name: '우두머리', tip: '양옆 내 생물 공격력 +1' },
-  grow: { name: '성장', tip: '한 턴을 버티면 더 큰 놈이 된다' },
-  trample: { name: '돌진', tip: '맞은편 생물을 죽이고 남은 피해는 직격' },
+  back: { name: '귀환', tip: '죽으면 손으로 돌아온다' },
+  squeeze: { name: '조이기', tip: '맞은편 공격 -1' },
+  nine: { name: '아홉 목숨', tip: `바쳐도 ${NINE}번까지 안 죽는다` },
+  breed: { name: '번식', tip: '내면 손에 한 장 더 생긴다' },
+  dive: { name: '잠수', tip: '후공일 땐 안 맞는 대신 막지도 못한다' },
+  leader: { name: '우두머리', tip: '양옆 내 생물 공격 +1' },
+  grow: { name: '성장', tip: '한 턴 버티면 자란다' },
+  trample: { name: '돌진', tip: '죽이고 남은 피해는 직격' },
 };
 
 // 카드. blood = 피(제물 수) · bone = 뼈 · 둘 다 없으면 공짜. tok = 닭 · 잿불처럼 죽으면 사라지는 것
@@ -101,26 +101,26 @@ const packWeight = k => (CARDS[k].blood >= 3 || CARDS[k].bone >= 5 ? 2 : 4);
 // 시작 덱: 시작할 때 넷 중 하나를 고른다 (겹쳐 골라도 된다)
 export const DECKS = {
   hunter: { name: '사냥꾼', tip: '닭을 바쳐 큰 놈을 세운다 (처음이면 이것)', cards: ['lynx', 'lynx', 'hound', 'hedgehog', 'jackal', 'boar', 'bear'] },
-  grave: { name: '무덤지기', tip: '싸게 죽이고 뼈로 다시 일어난다', cards: ['lynx', 'pig', 'viper', 'wisp', 'wisp', 'rats', 'reaper'] },
-  falcon: { name: '매잡이', tip: '막기 어려운 직격으로 저울을 민다', cards: ['crow', 'crow', 'toad', 'lynx', 'owl', 'owl', 'centipede'] },
-  snake: { name: '땅꾼', tip: '큰 놈을 잡고 오래 버틴다', cards: ['viper', 'viper', 'totem', 'python', 'hedgehog', 'toad', 'lynx'] },
+  grave: { name: '무덤지기', tip: '싸게 죽이고 뼈로 다시 낸다', cards: ['lynx', 'pig', 'viper', 'wisp', 'wisp', 'rats', 'reaper'] },
+  falcon: { name: '매잡이', tip: '날개로 막혀도 직격한다', cards: ['crow', 'crow', 'toad', 'lynx', 'owl', 'owl', 'centipede'] },
+  snake: { name: '땅꾼', tip: '독으로 큰 놈을 잡고 버틴다', cards: ['viper', 'viper', 'totem', 'python', 'hedgehog', 'toad', 'lynx'] },
 };
 
 // 도구: 놓기 단계에 바로 쓴다 (모두에게 보인다). aim = 고를 것: foe 맞은편 생물 · front 전선 · mine 내 생물
 export const TOOLS = {
-  sickle: { name: '낫', tip: '맞은편 생물 하나를 없앤다', aim: 'foe' },
-  coin: { name: '엽전', tip: `한 전선의 저울을 1칸 내 쪽으로 (${SCALE_MAX - 1}칸까지만)`, aim: 'front' },
-  moktak: { name: '목탁', tip: '한 전선의 상대 생물들이 이번 턴 공격하지 않는다', aim: 'front' },
-  coop: { name: '닭장', tip: '닭 2마리를 손으로' },
-  fan: { name: '부채', tip: '이번 턴 내 생물 전부 날개' },
+  sickle: { name: '낫', tip: '상대 생물 하나를 벤다', aim: 'foe' },
+  coin: { name: '엽전', tip: `저울 1칸 당긴다 (${SCALE_MAX - 1}칸까지)`, aim: 'front' },
+  moktak: { name: '목탁', tip: '이번 턴 한 전선의 상대가 못 친다', aim: 'front' },
+  coop: { name: '닭장', tip: '닭 2마리' },
+  fan: { name: '부채', tip: '이번 턴 내 생물 모두 날개' },
   sack: { name: '뼈 자루', tip: '뼈 +4' },
-  charm: { name: '부적', tip: '내 생물 하나가 이번 턴 죽지 않는다', aim: 'mine' },
+  charm: { name: '부적', tip: '내 생물 하나가 이번 턴 안 죽는다', aim: 'mine' },
 };
 // 길목: ROAD_EVERY턴마다 넷 중 셋이 뜨고, 하나를 고른다
 export const ROADS = {
-  pack: { name: '새 패', tip: '카드 3장 중 1장을 손으로' },
-  fire: { name: '모닥불', tip: '내 카드 하나의 공격 +1 또는 체력 +2. 또 달구면 더 세지지만 탈 수도 있다' },
-  altar: { name: '제단', tip: '카드 하나를 바치고, 그 문양을 다른 카드에 새긴다' },
+  pack: { name: '새 패', tip: '카드 3장 중 1장' },
+  fire: { name: '모닥불', tip: '카드 하나를 세게. 또 달구면 탈 수도' },
+  altar: { name: '제단', tip: '카드 하나를 바쳐 그 문양을 옮긴다' },
   tools: { name: '도구 상자', tip: '도구 2개 중 1개' },
 };
 
@@ -505,7 +505,7 @@ function draw(ctx, id, from) {
     if (!deck.length && graveOf(ctx, id).length) {
       deck = shuffle(graveOf(ctx, id));
       keep(ctx, 'graves', id, []);
-      note(ctx.state, `${ctx.nameOf(id)} 무덤을 섞어 다시 덱으로`);
+      note(ctx.state, `${ctx.nameOf(id)}: 무덤을 섞어 덱으로`);
     }
     card = deck.shift() || null;
     keep(ctx, 'decks', id, deck);
@@ -636,12 +636,12 @@ function roadPick(ctx, id, i) { // 새 패 · 도구 상자: 하나 고르기
     if (!k) return false;
     keep(ctx, 'hands', id, [...handOf(ctx, id), make(ctx, k)]);
     setRoad(S, id, { ...st, got: k, done: true });
-    note(S, `${ctx.nameOf(id)} 새 패: ${CARDS[k].name}`);
+    note(S, `${ctx.nameOf(id)}: ${CARDS[k].name} 얻음`);
   } else if (st.kind === 'tools') {
     const t = list(st.tools)[i];
     if (!t || !giveTool(ctx, id, t)) return false;
     setRoad(S, id, { ...st, got: t, done: true });
-    note(S, `${ctx.nameOf(id)} 도구 하나`);
+    note(S, `${ctx.nameOf(id)}: 도구 얻음`);
   } else return false;
   sync(ctx, id);
   return true;
@@ -659,13 +659,13 @@ function fireCard(ctx, id, u, stat, rand = Math.random) {
     keep(ctx, f.key, id, f.arr);
     inc(S, 'burnt', id);
     setRoad(S, id, { ...st, u, k: f.card.k, nm: name, burnt: 1, done: true });
-    note(S, `${ctx.nameOf(id)}의 ${name}이 모닥불에 타 버렸다!`);
+    note(S, `${ctx.nameOf(id)}의 ${name} 타 버림!`);
   } else {
     f.arr[f.i] = { ...f.card, [stat === 'atk' ? 'da' : 'dh']: (f.card[stat === 'atk' ? 'da' : 'dh'] || 0) + (stat === 'atk' ? 1 : 2) };
     keep(ctx, f.key, id, f.arr);
     const n = st.n + 1;
     setRoad(S, id, { ...st, u, k: f.card.k, nm: name, n, last: stat, done: n >= BURN.length });
-    if (n === 1) note(S, `${ctx.nameOf(id)} 모닥불: ${name} ${stat === 'atk' ? '공격 +1' : '체력 +2'}`);
+    if (n === 1) note(S, `${ctx.nameOf(id)}: ${name} ${stat === 'atk' ? '공격 +1' : '체력 +2'}`);
   }
   sync(ctx, id);
   return true;
@@ -688,7 +688,7 @@ function altarCards(ctx, id, from, to) {
   c.arr.splice(c.i, 1);
   keep(ctx, c.key, id, c.arr);
   setRoad(S, id, { ...st, from: cardName(a.card), to: cardName(b.card), gave, done: true });
-  note(S, `${ctx.nameOf(id)} 제단: ${cardName(a.card)}의 ${gave.map(g => SIGILS[g].name).join(' · ')} → ${cardName(b.card)}`);
+  note(S, `${ctx.nameOf(id)}: ${cardName(a.card)}의 ${gave.map(g => SIGILS[g].name).join(' · ')} → ${cardName(b.card)}`);
   sync(ctx, id);
   return true;
 }
