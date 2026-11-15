@@ -1,121 +1,168 @@
-/* ── 독박 원정대 ── 1차 임시 화면: 그림 없이 상자와 글자. 투기장과 같은 어두운 팔레트.
-   해 보고 규칙이 정해지면 도트 그림(img/raid)으로 바꾼다 */
-.rd { display: grid; grid-template-columns: 1fr 300px; gap: 18px; }
+/* ── 독박 원정대 ── 투기장과 같은 어두운 팔레트. 그림은 img/raid (art/raid.px.js 를 구운 것, 정수배로 키운다).
+   글은 짧게, 고르기는 클릭 한 번 */
+.rd { display: grid; grid-template-columns: 1fr 280px; gap: 18px; }
 .rd-main { min-width: 0; }
 .rd-box {
   --ink: #1a1c2c; --slate: #333c57; --steel: #566c86; --mist: #94b0c2; --paper: #f4f4f4;
-  --gold: #ffcd75; --fire: #ef7d57; --blood: #b13e53; --sky: #41a6f6; --ice: #73eff7; --leaf: #a7f070; --plum: #c58ad8;
-  position: relative; display: flex; flex-direction: column; gap: 10px; min-height: 640px; padding: 12px;
+  --gold: #ffcd75; --fire: #ef7d57; --blood: #b13e53; --ice: #73eff7; --leaf: #a7f070; --plum: #c58ad8;
+  position: relative; display: flex; flex-direction: column; gap: 10px; min-height: 620px; padding: 12px;
   background: var(--ink); color: var(--paper); border: 3px solid var(--ink); box-shadow: 0 4px 0 var(--line);
-  font-size: 14px; line-height: 1.4; user-select: none; -webkit-user-select: none;
+  font-size: 14px; line-height: 1.35; user-select: none; -webkit-user-select: none;
 }
-.rd-box .rd-sub { color: var(--steel); font-size: 12px; margin-left: 6px; }
+.rd-box .rd-sub { color: var(--steel); font-size: 12px; }
 .rd-box b { font-weight: 800; }
+.rd-box em { font-style: normal; }
 
-/* 적 */
-.rd-foes { display: flex; flex-wrap: wrap; gap: 8px; min-height: 40px; }
-.rd-foe { flex: 1 1 200px; max-width: 360px; padding: 8px 10px; background: #261f30; border: 2px solid var(--slate); cursor: default; }
-.rd-foe.boss { flex-basis: 100%; max-width: none; background: #331b2b; border-color: var(--blood); }
-.rd-foe.groggy { border-color: var(--gold); }
-.rd-foe.aim { outline: 3px solid var(--gold); outline-offset: 1px; }
-.rd-foe.dead { opacity: .35; }
-.rd-fname { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; margin-bottom: 4px; }
-.rd-intent { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 2px; font-weight: 700; }
-.rd-intent li.me { color: var(--fire); }
-.rd-next { margin-top: 3px; color: var(--steel); font-size: 12px; }
-.rd-gauge { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin-top: 5px; color: var(--gold); font-size: 13px; }
-.rd-gauge .rd-bar { flex: 1 1 90px; }
+/* 도트 그림 · 아이콘 */
+.rd-spr { display: block; flex: none; image-rendering: pixelated; }
+.rd-ico { display: inline-block; vertical-align: middle; }
+.rd-ic { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
+.rd-hstat { display: inline-flex; align-items: center; gap: 12px; }
+@keyframes rd-hit {
+  0% { transform: translateX(-4px); filter: brightness(2.4); }
+  40% { transform: translateX(4px); }
+  100% { transform: none; filter: none; }
+}
 
-.rd-bar { position: relative; display: block; min-width: 90px; height: 16px; background: #0d0e17; border: 1px solid var(--slate); }
+/* 막대 */
+.rd-bar { position: relative; display: block; min-width: 80px; height: 15px; background: #0d0e17; border: 1px solid var(--slate); }
 .rd-bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--leaf); }
 .rd-bar.foe i { background: var(--blood); }
 .rd-bar.brk i { background: var(--gold); }
-.rd-bar b { position: relative; display: block; text-align: center; font-size: 11px; line-height: 14px; color: var(--paper); text-shadow: 0 1px 0 #000; }
+.rd-bar b { position: relative; display: block; text-align: center; font-size: 11px; line-height: 13px; text-shadow: 0 1px 0 #000; }
+.rd-bar em { position: absolute; right: 4px; top: 0; font-size: 11px; line-height: 13px; font-weight: 800; }
+.rd-pre { color: var(--leaf); }
 .rd-blk { color: var(--ice); font-weight: 800; }
-.rd-st { color: var(--plum); font-size: 12px; font-weight: 700; }
-.rd-pre { color: var(--leaf); font-size: 12px; font-weight: 700; }
+.rd-st { display: inline-flex; flex-wrap: wrap; gap: 5px; color: var(--plum); font-size: 12px; font-weight: 700; }
 
-/* 가운데: 큰 글자 · 단계별 표 · 결과 장면 */
-.rd-mid { display: grid; gap: 6px; min-height: 110px; padding: 6px 4px; border-top: 2px solid var(--slate); border-bottom: 2px solid var(--slate); }
-.rd-banner { min-height: 30px; font-family: 'Galmuri14', var(--display); font-size: 28px; line-height: 30px; text-align: center; color: var(--paper); }
+/* 적: 묘지 벽 앞, 돌바닥 위 */
+.rd-foes {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; min-height: 30px; margin: -12px -12px 0; padding: 38px 10px 10px;
+  background: url(../img/raid/sprites/wall.png) 0 0 / 128px 52px repeat-x, #2e3142 url(../img/raid/sprites/floor.png) 0 0 / 64px 64px repeat;
+  image-rendering: pixelated;
+}
+.rd-foe { flex: 1 1 190px; max-width: 320px; display: flex; align-items: center; gap: 8px; padding: 7px 9px; background: rgba(28, 22, 38, .88); border: 2px solid var(--slate); }
+.rd-foe.boss { flex-basis: 100%; max-width: none; background: rgba(51, 27, 43, .9); border-color: var(--blood); }
+.rd-foe.groggy { border-color: var(--gold); }
+.rd-foe.groggy .rd-fspr { transform: rotate(-10deg); filter: brightness(1.3) saturate(.6); }
+.rd-foe.dead { opacity: .3; }
+.rd-foe.hit .rd-fspr, .rd-hero.hit .rd-hspr { animation: rd-hit .32s; }
+.rd-finfo { flex: 1; min-width: 0; display: grid; gap: 4px; }
+.rd-lord { position: relative; flex: none; }
+.rd-lord .avatar.rd-face { position: absolute; left: 50%; top: 28px; width: 27px; height: 27px; transform: translate(-50%, -50%); }
+.rd-fname { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rd-intent { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; font-weight: 700; }
+.rd-intent li { display: flex; align-items: center; gap: 4px; }
+.rd-intent li.me { color: var(--fire); }
+.rd-next { color: var(--steel); font-size: 12px; }
+.rd-gauge { display: flex; align-items: center; gap: 6px; color: var(--gold); font-size: 12px; font-weight: 700; }
+.rd-gauge .rd-bar { flex: 1; }
+
+/* 고를 수 있는 대상: 빛난다. 누르면 그 대상으로 */
+.rd-foe.pick, .rd-hero.pick { cursor: pointer; border-color: var(--ice); box-shadow: 0 0 0 1px var(--ice); }
+.rd-foe.pick:hover, .rd-hero.pick:hover, .rd-foe.aim, .rd-hero.aim { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold); }
+
+/* 가운데: 큰 글자 · 단계별 표 · 결과 글줄 */
+.rd-mid { display: grid; align-content: start; gap: 4px; min-height: 96px; padding: 6px 4px; border-top: 2px solid var(--slate); border-bottom: 2px solid var(--slate); }
+.rd-banner { min-height: 30px; font-family: 'Galmuri14', var(--display); font-size: 28px; line-height: 30px; text-align: center; }
 .rd-banner.gold { color: var(--gold); }
 .rd-banner.blood { color: var(--fire); }
-.rd-info h3 { margin: 0 0 4px; font-size: 14px; color: var(--gold); }
-.rd-info p { margin: 4px 0 0; color: var(--mist); }
-.rd-table { margin: 0; padding-left: 20px; display: grid; gap: 2px; }
-.rd-table li.mvp { color: var(--gold); font-weight: 800; }
-.rd-table li.dark { color: var(--plum); font-weight: 800; }
-.rd-ticker { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; color: var(--mist); font-size: 13px; white-space: pre-wrap; }
-.rd-ticker li.me { color: var(--paper); font-weight: 700; }
+.rd-info h3 { margin: 0 0 2px; font-size: 13px; color: var(--gold); }
+.rd-info p { margin: 2px 0 0; color: var(--mist); font-size: 13px; }
+.rd-table { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.rd-table li.mvp { color: var(--gold); }
+.rd-table li.dark { color: var(--plum); }
+.rd-ticker { list-style: none; margin: 0; padding: 0; display: grid; color: var(--mist); font-size: 13px; white-space: pre-wrap; }
+.rd-ticker li { display: flex; align-items: center; gap: 4px; min-height: 18px; }
+.rd-ticker li.sub { padding-left: 20px; }
+.rd-ticker li.me { color: var(--paper); }
 .rd-ticker li.down, .rd-ticker li.groggy, .rd-ticker li.ult, .rd-ticker li.feed { color: var(--gold); font-weight: 800; }
 .rd-ticker li.corrupt { color: var(--plum); }
 
-/* 원정대 */
-.rd-party { display: grid; gap: 4px; }
-.rd-hero { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 5px 8px; background: #20243a; border: 2px solid transparent; }
+/* 원정대: 작은 카드 격자 */
+.rd-party { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 6px; }
+.rd-hero { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: #20243a; border: 2px solid transparent; }
 .rd-hero.me { background: #263452; }
-.rd-hero.down { opacity: .55; }
-.rd-hero.aim { border-color: var(--gold); }
-.rd-hero .avatar { width: 24px; height: 24px; }
-.rd-hname { display: inline-flex; align-items: baseline; min-width: 150px; }
-.rd-hero .rd-bar { width: 140px; }
+.rd-hero.down { opacity: .5; }
+.rd-hspr.c1 { filter: saturate(.7) brightness(.9) drop-shadow(0 0 3px rgba(181, 80, 200, .5)); }  /* 타락 단계: 3 · 6 · 9 */
+.rd-hspr.c2 { filter: saturate(.45) brightness(.75) drop-shadow(0 0 4px rgba(181, 80, 200, .8)); }
+.rd-hspr.c3 { filter: saturate(.25) brightness(.6) contrast(1.2) drop-shadow(0 0 5px rgba(210, 60, 120, .95)); }
+.rd-hero.down .rd-hspr { filter: grayscale(1) brightness(.6); }
+.rd-hspr.none { width: 40px; height: 52px; }
+.rd-hinfo { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.rd-hrow { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.rd-hrow.small { gap: 8px; font-size: 12px; }
+.rd-hrow .avatar { width: 22px; height: 22px; flex: none; }
+.rd-hrow b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rd-acts { margin-left: auto; white-space: nowrap; }
+.rd-acts em { color: var(--leaf); font-weight: 800; }
 .rd-en { color: var(--gold); letter-spacing: 1px; }
-.rd-en.big { font-size: 16px; font-weight: 800; }
-.rd-res { color: var(--ice); font-size: 13px; }
-.rd-corrupt { color: var(--plum); font-size: 13px; font-weight: 700; }
+.rd-en.big { font-size: 18px; }
+.rd-res { color: var(--ice); }
+.rd-corrupt { color: var(--plum); font-weight: 700; margin-left: auto; }
 .rd-corrupt.hot { color: var(--fire); }
-.rd-acts { min-width: 60px; }
-.rd-acts em { color: var(--leaf); font-style: normal; font-size: 12px; }
-.rd-inc { color: var(--fire); font-size: 12px; font-weight: 700; }
-.rd-threat { padding: 0 6px; background: var(--blood); color: var(--paper); font-size: 12px; font-weight: 800; }
-.rd-sig { padding: 0 6px; background: var(--paper); color: var(--ink); font-size: 12px; font-weight: 800; border-radius: 8px; }
+.rd-inc { color: var(--fire); font-weight: 800; }
+.rd-threat { padding: 0 5px; background: var(--blood); font-weight: 800; }
+.rd-sig { padding: 0 6px; background: var(--paper); color: var(--ink); font-weight: 800; border-radius: 8px; }
 
 /* 내 차례 */
-.rd-panel { display: grid; gap: 8px; padding-top: 4px; }
+.rd-panel { display: grid; gap: 8px; }
 .rd-panel.nope { animation: nope .3s; }
-.rd-prompt { color: var(--mist); font-weight: 700; }
+.rd-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rd-prompt { flex: 1; min-width: 160px; color: var(--mist); font-weight: 800; font-size: 15px; }
 .rd-prompt.warn { color: var(--fire); }
 .rd-prompt.dark { color: var(--plum); }
-.rd-stat { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; min-height: 20px; }
-.rd-q { padding: 1px 8px; border: 1px solid var(--steel); color: var(--mist); font-size: 13px; }
-.rd-q.on { border-color: var(--gold); color: var(--gold); }
-.rd-q.off { opacity: .45; }
-.rd-hand { display: flex; flex-wrap: wrap; gap: 8px; min-height: 60px; }
+.rd-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.rd-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; background: #2b2f45; border: 2px solid var(--steel); color: var(--paper); font: inherit; font-weight: 800; cursor: pointer; }
+.rd-btn:hover { border-color: var(--mist); }
+.rd-btn kbd { padding: 0 4px; background: var(--slate); color: var(--mist); font-size: 11px; font-family: inherit; box-shadow: none; }
+.rd-btn.go { background: #2d4a2a; border-color: var(--leaf); }
+.rd-btn.on { border-color: var(--gold); color: var(--gold); }
+.rd-btn.off { opacity: .45; }
+.rd-btn.dark { background: #3a2139; border-color: var(--plum); }
+.rd-hand { display: flex; flex-wrap: wrap; gap: 8px; }
 .rd-card {
-  position: relative; display: flex; flex-direction: column; gap: 2px; width: 156px; min-height: 118px; padding: 6px 8px;
+  position: relative; display: flex; flex-direction: column; gap: 3px; width: 136px; min-height: 96px; padding: 6px 8px;
   background: #2b2f45; border: 2px solid var(--slate); color: var(--paper); text-align: left; font: inherit; cursor: pointer;
 }
 .rd-card.can { border-color: var(--steel); }
-.rd-card.sel { border-color: var(--ice); }
+.rd-card.can:hover { border-color: var(--mist); }
+.rd-card.sel { border-color: var(--ice); box-shadow: 0 0 0 1px var(--ice); }
 .rd-card.on { border-color: var(--gold); transform: translateY(-5px); }
 .rd-card.bad { border-color: var(--fire); }
 .rd-card.drop { opacity: .5; text-decoration: line-through; }
-.rd-card.dim { opacity: .5; }
+.rd-card.off, .rd-card.dim { opacity: .45; }
 .rd-card.dark { background: #3a2139; }
 .rd-card.ult { box-shadow: inset 0 0 0 1px var(--gold); }
-.rd-card.cls { width: 230px; }
-.rd-card.mark { width: 190px; min-height: 80px; }
+.rd-card.cls { width: 220px; }
+.rd-card.mark { width: 150px; min-height: 64px; }
 .rd-card.power { background: #33202c; }
-.rd-key { position: absolute; top: 4px; right: 7px; color: var(--mist); font-weight: 800; }
-.rd-cost { color: var(--ice); font-size: 12px; }
+.rd-key { position: absolute; top: 4px; right: 7px; color: var(--steel); font-size: 12px; font-weight: 800; }
+.rd-cost { color: var(--gold); font-size: 12px; letter-spacing: 1px; }
 .rd-cname { font-size: 15px; }
-.rd-tree { color: var(--steel); font-size: 12px; }
+.rd-chead { display: flex; align-items: center; gap: 6px; }
+.rd-card.cls .rd-chead { align-items: flex-end; }
+.rd-cwho { display: grid; }
 .rd-ctip { font-size: 12px; color: #d6dbe8; }
-.rd-ctip.good { color: var(--leaf); }
-.rd-ctip.bad { color: var(--fire); }
-.rd-tags { color: var(--gold); font-size: 11px; }
-.rd-note { color: var(--leaf); font-size: 12px; font-weight: 700; }
+.rd-line { font-size: 13px; color: var(--gold); font-weight: 700; }
+.rd-tags { color: var(--plum); font-size: 11px; }
+.rd-note { color: var(--leaf); font-size: 12px; font-weight: 800; }
+.rd-card.bad .rd-note, .rd-card.off .rd-note { color: var(--fire); }
 .rd-deckrow { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
-.rd-deck-label { color: var(--mist); font-size: 12px; font-weight: 700; }
-.rd-mini { padding: 2px 7px; border: 1px solid var(--slate); background: #23263a; font-size: 12px; }
+.rd-deckrow:empty { display: none; }
+.rd-deck-label { color: var(--mist); font-size: 12px; font-weight: 800; }
+.rd-mini { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px 2px 4px; border: 1px solid var(--slate); background: #23263a; color: var(--paper); font: inherit; font-size: 12px; cursor: pointer; }
+.rd-mini:hover { border-color: var(--mist); }
 .rd-mini.on { border-color: var(--gold); background: #3d3420; }
-.rd-mini.off { opacity: .35; }
+.rd-mini.off { opacity: .3; cursor: default; }
 .rd-mini.dark { color: var(--plum); }
-.rd-mini em { color: var(--gold); font-style: normal; }
-.rd-pv { color: var(--leaf); font-weight: 700; }
+.rd-mini em { color: var(--gold); }
+.rd-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; min-height: 22px; }
+.rd-foot:empty { display: none; }
+.rd-pv { color: var(--leaf); font-weight: 800; }
 .rd-pv.danger { color: var(--fire); }
-.rd-box .countdown { color: var(--mist); font-size: 13px; }
-.rd-box .countdown .track { height: 8px; border-radius: 0; background: var(--slate); box-shadow: none; }
+.rd-box .countdown { color: var(--mist); font-size: 12px; }
+.rd-box .countdown .track { height: 6px; border-radius: 0; background: var(--slate); box-shadow: none; }
 .rd-box .countdown i { background: var(--leaf); transition: none; }
 .rd-box .countdown.urgent i { background: var(--fire); }
 
@@ -124,8 +171,8 @@
 .rd-overlay.on { display: block; }
 .rd-overlay h3 { margin: 0 0 8px; color: var(--gold); }
 .rd-trees { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
-.rd-treebox { flex: 1 1 200px; padding: 8px; background: #20243a; }
-.rd-treebox ul { margin: 4px 0 0; padding-left: 18px; color: var(--steel); font-size: 12px; }
+.rd-treebox { flex: 1 1 180px; padding: 8px; background: #20243a; }
+.rd-treebox ul { margin: 4px 0 0; padding-left: 16px; color: var(--steel); font-size: 12px; }
 .rd-treebox li.on { color: var(--leaf); font-weight: 700; }
 
 /* 결과 */
@@ -133,10 +180,13 @@
 .rd-box.final .rd-board { display: block; }
 .rd-box.final .rd-foes, .rd-box.final .rd-mid, .rd-box.final .rd-party, .rd-box.final .rd-panel { display: none; }
 .rd-titles { margin: 12px 0 0; padding-left: 18px; text-align: left; }
+.rd-finart { display: flex; justify-content: center; align-items: flex-end; gap: 14px; margin-bottom: 10px; }
 
 /* 옆 칸 */
+.rd-sound { display: block; margin: 0 0 10px; padding: 4px 10px; background: #2b2f45; border: 2px solid #566c86; color: #f4f4f4; font: inherit; font-size: 13px; font-weight: 800; cursor: pointer; }
+.rd-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 6px 0 0; font-size: 12px; color: var(--muted-2); }
 .rd-log { margin: 0; padding-left: 18px; font-size: 13px; color: var(--muted-2); }
-.rd-cardlist { margin: 0; padding-left: 16px; font-size: 12px; line-height: 1.55; color: var(--muted-2); }
+.rd-cardlist { margin: 0; padding-left: 16px; font-size: 12px; line-height: 1.6; color: var(--muted-2); }
 .rd-cardlist li.dark b { color: #8d3a8d; }
 
 @media (max-width: 900px) {

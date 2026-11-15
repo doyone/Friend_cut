@@ -28,6 +28,7 @@
 | 🔫 독박 룰렛 | 2~8명 | 탄창에 실탄·공포탄이 몇 발인지만 알고 순서는 몰라요. 내 차례에 카드를 쓰고 ← → 로 겨눠서(총구는 모두에게 보임) 스페이스로 한 발. 나를 쏴서 공포탄이면 한 번 더, 실탄이면 하트 -1. 맞을 사람은 3초 안에 🛡️ 방패·🪞 거울(1칸 되돌리기)로 받아치기(공포탄이면 카드만 날림). 손패는 나만 보고(최대 3장) 카드 8종(돋보기·두 배·반창고·수갑·훔치기·산탄·방패·거울), 처음 3장 = 카드 2 + 🎰 운명 카드(한 판에 한 번, R로 룰렛을 돌려 전탄 실탄·총 교체·세금 징수·하트 바꾸기 등 16가지 중 하나). 남을 탈락시키면 카드 1장. ✨ 증강 30종(실버·골드·프리즘 10개씩)을 시작할 때와 탄창 3 앞에서 3개 중 1개씩. 탄창 4부터 막판. 탈락하면 👻 유품으로 카드 1장 물려주기. 마지막 1명 우승. 도트 그림 |
 | 🏟️ 투기장 | 2~8명 | 차례 없이 모두 동시에 싸우는 난투. 공격 단계에 ← → 로 몰래 한 명을 겨누고 숫자키로 무기를 장전, 스페이스로 준비 완료 → 화살표가 한꺼번에 공개 → 방어 단계에 남은 기력으로 막기. 기력 3을 공격과 방어에 나눠 쓰고, 먼저 준비한 사람이 먼저 때려요(먼저 쓰러지면 공격 취소). 3명 이상 몰리면 절반 피해. 목숨 2개 + 복수 표식. 시작할 때와 3턴마다 유물 3개 중 1개, 탈락시키면 그 사람 유물 약탈. 4턴 뒤 필살기를 하나 고르고, 때리고 맞아서 투지 100을 채우면 R로 준비 → 다음 턴에 발동(그 사이 10 넘게 맞으면 끊김). 7턴째부터 가운데에 야수가 나와 한 명씩 물고(↑ 로 겨눔, 잡으면 전설 유물), 제일 많이 쓰러뜨린 사람은 왕관 쓴 폭군이 되어 현상금이 걸려요. 카드 31종 · 유물 27종 · 필살기 6종. 마지막 1명 우승. 도트 그림. (3차 규칙 — 5턴부터 4턴마다 그 턴에만 통하는 규칙이 걸리는 관중의 변덕, 탈락한 사람의 유산과 원한 — 은 들어가 있지만 화면은 미완성. 지금은 보류) |
 | 🕯️ 피의 저울 | 2~8명 | 원탁에 둘러앉아 양옆 이웃과 각각 '전선' 2줄씩을 맞대는 카드 대결 (인스크립션 챕터 1의 구조를 여럿이 하게). 내 생물을 제물로 바쳐(피) 더 센 생물을 내고, 생물이 죽을 때 모은 뼈로도 낸다. 턴마다 덱 또는 닭 한 장. 선공 놓기(먼저 놓고 먼저 침) → 공개 → 후공 놓기(보고 놓음) → 공개 → 타격, 홀수 턴은 왼쪽 전선이 선공. 맞은편이 비면 직격으로 그 전선의 저울이 기울고, 5칸이면 촛불이 꺼진다. 촛불 2개, 마지막 1명 우승. 3턴마다 길목(새 패 · 모닥불 · 제단 · 도구 상자 중 하나), 도구 7종(놓기 단계에 Z X로 바로), 탈락한 사람은 넋패(얼굴이 박힌 카드)가 되어 꺼뜨린 사람 손으로. 카드 33종 · 문양 16종 · 시작 덱 4종 · 놓기 전 미리 보기. 도트 그림 |
+| ⚔️ 독박 원정대 | 2~8명 | 같이 지하 묘지 방 3개(망자 떼 → 살점 골렘 → 무덤지기)를 내려가는 협동 덱 빌딩. 적이 다음 턴에 할 일을 미리 보여 주면, 60초 안에 다 같이 기술을 골라 막고 때려요(모두 준비하면 바로 결과, 클릭이나 숫자키). 직업 4개(수호자 · 광전사 · 거너 · 사제)마다 무기와 기술 계열이 다르고, 방을 깰 때마다 기술을 배워 8장짜리 내 덱을 바꿔 가요(같은 계열 2장 숙련 · 4장 각성, 각인). 기력은 턴마다 +3, 안 쓰면 남아요(최대 6). 적의 필살기는 차단을 채우면 끊겨 그로기. 방마다 오는 금단의 속삭임을 받으면 세지는 대신 타락이 쌓이고, 마지막엔 제일 타락한 사람(6 이상)이 마왕이 되어 원정대와 싸워요(아무도 없으면 이름 없는 왕). 카드 82종(금단 12) · 각인 8 · 마왕 권능 24. 도트 그림 · 효과음 |
 
 기획과 앞으로 만들 게임은 [기획서.md](기획서.md)에 있어요.
 
@@ -106,13 +107,15 @@ python serve.py
 
 ```
 index.html
-css/style.css      공통 + 게임 화면 (교수님 몰래 게임하기는 css/professor.css, 독박 룰렛은 css/roulette.css, 투기장은 css/arena.css, 피의 저울은 css/scale.css)
+css/style.css      공통 + 게임 화면 (교수님 몰래 게임하기는 css/professor.css, 독박 룰렛은 css/roulette.css, 투기장은 css/arena.css, 피의 저울은 css/scale.css, 독박 원정대는 css/raid.css)
 art/roulette.px.js 독박 룰렛 도트 그림 원본 (pxl 스킬: ~/.claude/skills/pxl-pixel-art). 고친 뒤 다시 굽기: node ~/.claude/skills/pxl-pixel-art/bin/pxl.js build art/roulette.px.js --out img/roulette --no-preview
 img/roulette/      구운 도트 그림 (sprites/*.png, 룰렛판은 anims/wheel.png 가로 띠 44장. 화면에서 3배로 키워 씀)
 art/arena.px.js    투기장 도트 그림 원본. 다시 굽기: node ~/.claude/skills/pxl-pixel-art/bin/pxl.js build art/arena.px.js --out img/arena --no-preview
 img/arena/         구운 도트 그림 (sprites/*.png, anims/torch.png · slash.png · beast.png · wheel.png 가로 띠)
 art/scale.px.js    피의 저울 도트 그림 원본. 다시 굽기: node ~/.claude/skills/pxl-pixel-art/bin/pxl.js build art/scale.px.js --out img/scale --no-preview
 img/scale/         구운 도트 그림 (sprites/*.png: 생물 초상 p_* · 문양 g_* · 표시 i_*, anims/candle.png 가로 띠)
+art/raid.px.js     독박 원정대 도트 그림 원본. 다시 굽기: node ~/.claude/skills/pxl-pixel-art/bin/pxl.js build art/raid.px.js --out <임시 폴더> 뒤 sprites/*.png 만 img/raid/sprites/ 로 (scenes/contact.png 는 확인용)
+img/raid/          구운 도트 그림 (sprites/*.png: 원정대 h_* · 적 f_* · 마왕 b_* · 기술 종류 k_* · 예고 i_* · 작은 표시 s_* · 바닥 floor · 벽 wall)
 js/
   config.js        ← Firebase 설정 붙여넣는 곳
   main.js          홈 · 로비 · 게임 화면 전환
@@ -146,8 +149,9 @@ js/
     roulette.js    독박 룰렛 (+ roulette-audio.js 효과음. 도트 글꼴 Galmuri는 index.html에서 CDN으로 받음)
     arena.js       투기장 (+ arena-core.js 규칙·봇, arena-view.js 화면, arena-audio.js 효과음)
     scale.js       피의 저울 (+ scale-core.js 규칙·봇, scale-view.js 화면, scale-audio.js 효과음)
+    raid.js        독박 원정대 (+ raid-data.js 표, raid-core.js 규칙·봇, raid-view.js 화면, raid-audio.js 효과음)
   vendor/          planck.js 물리 엔진 (독박 타워·독박빼기·독박 시소·하늘끝까지·독박쌓기가 CDN 없이 씀)
-tests/             규칙 테스트: node --test tests/bumper.test.mjs tests/professor.test.mjs tests/seesaw.test.mjs tests/door.test.mjs tests/race.test.mjs tests/race-track.test.mjs tests/race-collision.test.mjs tests/race-network.test.mjs tests/race-prediction.test.mjs tests/kart-maps.test.mjs tests/stack.test.mjs tests/host.test.mjs tests/quick.test.mjs tests/nunchi.test.mjs tests/count.test.mjs tests/stop.test.mjs tests/memory.test.mjs tests/balloon.test.mjs tests/bomb.test.mjs tests/cannon.test.mjs tests/roulette.test.mjs tests/room.test.mjs tests/arena.test.mjs tests/scale.test.mjs
+tests/             규칙 테스트: node --test tests/bumper.test.mjs tests/professor.test.mjs tests/seesaw.test.mjs tests/door.test.mjs tests/race.test.mjs tests/race-track.test.mjs tests/race-collision.test.mjs tests/race-network.test.mjs tests/race-prediction.test.mjs tests/kart-maps.test.mjs tests/stack.test.mjs tests/host.test.mjs tests/quick.test.mjs tests/nunchi.test.mjs tests/count.test.mjs tests/stop.test.mjs tests/memory.test.mjs tests/balloon.test.mjs tests/bomb.test.mjs tests/cannon.test.mjs tests/roulette.test.mjs tests/room.test.mjs tests/arena.test.mjs tests/scale.test.mjs tests/raid.test.mjs
 database.rules.json  Firebase 보안 규칙
 ```
 
