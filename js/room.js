@@ -1,6 +1,7 @@
-import { pick, randId, session } from './util.js';
+import { josa, pick, randId, session } from './util.js';
 
-export const MAX_PLAYERS = 8;
+export const MAX_PLAYERS = 8;   // 게임에 같이 하는 사람 (봇 포함)
+export const MAX_WATCHERS = 8;  // 👀 관전은 따로 8명까지 (참가 자리가 꽉 차도 구경은 할 수 있게)
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ'.split(''); // I, L, O 는 헷갈려서 뺌
 const COLORS = ['#ff7ad9', '#f1c40f', '#2ecc71', '#3498db', '#e67e22', '#9b59b6', '#1abc9c', '#e74c3c'];
 const ROOM_TTL = 6 * 60 * 60 * 1000;
@@ -19,6 +20,10 @@ export function myId() {
 
 // nicks: 꼴찌 별명 { id: '바보같은' } → 보이는 이름은 '바보같은 민준' (원래 닉네임은 base)
 export const withNick = (name, nick) => (nick ? `${nick} ${name}` : name);
+
+// 관전하는 사람(watch)은 게임 참가자(roster)에 안 들어가고 구경만 한다
+export const isWatcher = p => !!p?.watch;
+export const playingIds = players => Object.keys(players || {}).filter(id => !players[id]?.watch);
 
 export function sortedPlayers(players, nicks = {}) {
   return Object.entries(players || {})
@@ -69,6 +74,7 @@ export class RoomSession {
     this.unsubs = [];
     this.onChange = () => {};
     this.onChat = () => {};
+    this.onKicked = () => {};
   }
 
   path(sub) {
@@ -79,20 +85,33 @@ export class RoomSession {
     return this.got.has('meta') && this.got.has('players');
   }
 
-  async enter() {
+  // watch: true = 관전으로 들어가기, false = 참가로, 안 주면 이 탭이 하던 대로 (새로고침해도 관전은 관전)
+  async enter({ watch: wantWatch } = {}) {
     const meta = await this.net.get(this.path('meta'));
     if (!meta) throw new Error(`${this.code} 방을 찾을 수 없어요`);
+    if (await this.net.get(this.path(`kicked/${this.id}`))) throw new Error(`${this.code} 방에서 강퇴당해서 다시 들어갈 수 없어요`);
     const players = (await this.net.get(this.path('players'))) || {};
     const prev = players[this.id];
-    if (!prev && Object.keys(players).length >= MAX_PLAYERS) {
-      throw new Error(`방이 꽉 찼어요 (최대 ${MAX_PLAYERS}명)`);
+    const others = Object.entries(players).filter(([id]) => id !== this.id).map(([, p]) => p);
+    const playing = others.filter(p => !p.watch).length;
+    const saved = session.get('fcg-watch');
+    let watchMe = wantWatch ?? (prev ? !!prev.watch : saved?.code === this.code && !!saved.watch);
+    this.full = false;
+    if (!watchMe && playing >= MAX_PLAYERS) {
+      watchMe = true; // 참가 자리가 꽉 찼으면 관전으로
+      this.full = true;
     }
-    const used = new Set(Object.values(players).map(p => p.color));
+    if (watchMe && !prev?.watch && others.length - playing >= MAX_WATCHERS) {
+      throw new Error(`방이 꽉 찼어요 (참가 ${MAX_PLAYERS}명 · 관전 ${MAX_WATCHERS}명)`);
+    }
+    session.set('fcg-watch', { code: this.code, watch: watchMe });
+    const used = new Set(others.filter(p => !p.watch).map(p => p.color));
     this.me = {
       name: this.name,
       face: this.face,
       color: prev?.color || COLORS.find(c => !used.has(c)) || pick(COLORS),
       joinedAt: prev?.joinedAt || this.net.now(),
+      ...(watchMe ? { watch: true } : {}),
     };
     await this.announce();
     // 와이파이가 잠깐 끊겼다 붙으면 서버가 나를 지웠을 수 있으니 다시 등록한다.
@@ -101,10 +120,18 @@ export class RoomSession {
     const watch = (sub, key) => this.unsubs.push(this.net.on(this.path(sub), v => {
       this.snap[key] = v;
       this.got.add(key);
+      if (key === 'players') this.syncMe(v?.[this.id]);
       this.changed();
     }));
     watch('meta', 'meta');
     watch('players', 'players');
+    // 강퇴: 방장이 kicked에 내 id를 적으면 바로 나간다 (자동 재접속으로 다시 들어오지도 않게)
+    this.unsubs.push(this.net.on(this.path(`kicked/${this.id}`), v => {
+      if (v && !this.left && !this.kicked) {
+        this.kicked = true;
+        this.onKicked();
+      }
+    }));
     watch('game/state', 'state');
     watch(`game/private/${this.id}`, 'priv');
     watch('votes', 'votes');
@@ -114,10 +141,33 @@ export class RoomSession {
     this.unsubs.push(this.net.on(this.path('chat'), v => this.onChat(v || {})));
   }
 
-  announce() {
-    if (this.left) return null;
+  async announce() {
+    if (this.left || this.kicked) return null;
+    // 강퇴당한 뒤 노트북을 다시 열었을 때 슬쩍 다시 들어가지 않게
+    if (await this.net.get(this.path(`kicked/${this.id}`))) {
+      if (!this.kicked) {
+        this.kicked = true;
+        this.onKicked();
+      }
+      return null;
+    }
     const p = this.path(`players/${this.id}`);
     return Promise.all([this.net.onDisconnectRemove(p), this.net.set(p, this.me)]);
+  }
+
+  // 방장이 나를 관전으로 보냈거나 색을 바꿨으면, 재접속할 때 옛 값으로 덮어쓰지 않게 맞춰 둔다
+  syncMe(rec) {
+    if (!rec || !this.me) return;
+    const watch = !!rec.watch;
+    if (watch !== !!this.me.watch || (rec.color && rec.color !== this.me.color)) {
+      const { watch: _old, ...rest } = this.me;
+      this.me = { ...rest, color: rec.color || this.me.color, ...(watch ? { watch: true } : {}) };
+    }
+    session.set('fcg-watch', { code: this.code, watch });
+  }
+
+  get watching() {
+    return !!this.me?.watch;
   }
 
   changed() {
@@ -149,7 +199,9 @@ export class RoomSession {
   chat(text, taunt = false) {
     const { color, face } = this.me;
     const name = withNick(this.me.name, this.snap.stats?.nicks?.[this.id]);
-    this.net.push(this.path('chat'), { pid: this.id, name, color, face, text, t: this.net.now(), ...(taunt ? { taunt: true } : {}) });
+    this.net.push(this.path('chat'), {
+      pid: this.id, name, color, face, text, t: this.net.now(), ...(taunt ? { taunt: true } : {}), ...(this.watching ? { watch: true } : {}),
+    });
   }
 
   // 혼자 테스트하거나 사람이 모자랄 때: 봇은 방장 컴퓨터가 대신 조작한다.
@@ -159,8 +211,8 @@ export class RoomSession {
     const now = Date.now();
     this.recentBots = (this.recentBots || []).filter(b => now - b.at < 3000);
     const list = [...Object.values(this.snap.players || {}), ...this.recentBots];
-    const ids = new Set([...Object.keys(this.snap.players || {}), ...this.recentBots.map(b => b.id)]);
-    if (ids.size >= MAX_PLAYERS) throw new Error(`방이 꽉 찼어요 (최대 ${MAX_PLAYERS}명)`);
+    const ids = new Set([...playingIds(this.snap.players), ...this.recentBots.map(b => b.id)]);
+    if (ids.size >= MAX_PLAYERS) throw new Error(`참가 자리가 꽉 찼어요 (최대 ${MAX_PLAYERS}명)`);
     const names = new Set(list.map(p => p.name));
     const colors = new Set(list.map(p => p.color));
     const bot = {
@@ -187,6 +239,46 @@ export class RoomSession {
     this.removedBots.push({ id: target.id, at: now });
     this.net.remove(this.path(`players/${target.id}`));
     return target.name;
+  }
+
+  // 👀 관전 ↔ 🙋 참가. 관전하는 사람은 다음 판 참가자(roster)에서 빠진다 (하던 판은 끝까지).
+  // 방장은 다른 사람을 관전으로 보낼 수 있다 (자리만 차지하고 안 하는 친구)
+  async setWatch(on, id = this.id) {
+    const players = this.snap.players || {};
+    const p = players[id] || (id === this.id ? this.me : null);
+    if (!p || p.bot || !!p.watch === on) return false;
+    const others = Object.entries(players).filter(([k]) => k !== id).map(([, o]) => o);
+    const change = { watch: on ? true : null };
+    if (on) {
+      if (others.filter(o => o.watch).length >= MAX_WATCHERS) throw new Error(`관전 자리가 꽉 찼어요 (최대 ${MAX_WATCHERS}명)`);
+    } else {
+      const playing = others.filter(o => !o.watch);
+      if (playing.length >= MAX_PLAYERS) throw new Error(`참가 자리가 꽉 찼어요 (최대 ${MAX_PLAYERS}명)`);
+      // 관전하는 동안 다른 사람이 같은 색을 가져갔으면 남는 색으로 바꾼다
+      const used = new Set(playing.map(o => o.color));
+      if (used.has(p.color)) change.color = COLORS.find(c => !used.has(c)) || p.color;
+    }
+    if (id === this.id) this.syncMe({ ...this.me, ...change });
+    // 그 사이 나간 사람이면 아무것도 안 한다 (update는 이름 없는 빈 자리를 만들어 버림)
+    await this.net.transaction(this.path(`players/${id}`), cur => (cur ? { ...cur, ...change } : undefined));
+    if (on) await this.net.remove(this.path(`votes/${id}`));
+    return true;
+  }
+
+  // 방장: 강퇴. kicked에 적어 두면 그 사람 화면이 알아서 나가고, 이 방엔 다시 못 들어온다 (봇은 그냥 빼기)
+  async kick(id) {
+    const p = this.snap.players?.[id];
+    if (!p || id === this.id) return null;
+    if (p.bot) return this.removeBot(id);
+    const name = withNick(p.name, this.snap.stats?.nicks?.[id]);
+    await this.net.set(this.path(`kicked/${id}`), true);
+    await Promise.all([this.net.remove(this.path(`players/${id}`)), this.net.remove(this.path(`votes/${id}`))]);
+    this.sys(`👢 ${josa(name, '이', '가')} 강퇴당했어요`);
+    return name;
+  }
+
+  sys(text) {
+    this.net.push(this.path('chat'), { sys: true, text, t: this.net.now() });
   }
 
   vote(gameId) {

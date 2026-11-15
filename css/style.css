@@ -157,8 +157,18 @@ button, input { font: inherit; color: inherit; }
 .side-players .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-pts { margin-left: auto; font-size: 13px; color: var(--side-muted); white-space: nowrap; }
 .nemesis { font-size: 11px; font-weight: 800; padding: 2px 6px; border-radius: 6px; background: #5c2a2a; color: #ff9d8f; white-space: nowrap; }
+/* 방장 도구: 👀 관전으로 보내기 · ✕ 강퇴 (봇은 ✕ 빼기) */
+.side-acts { display: inline-flex; gap: 2px; flex: none; }
+.side-acts .side-x { margin-left: 0; opacity: .6; }
+.side-acts .side-x:hover { opacity: 1; }
+.side-acts .side-x.armed { opacity: 1; background: var(--red); color: #fff; font-size: 12px; white-space: nowrap; }
+.side-pts + .side-acts { margin-left: -4px; }
+/* 👀 관전하는 사람: 점선 테두리로 참가자와 구분 */
+.side-players.watchers li { min-height: 40px; padding: 5px 10px; background: transparent; border: 2px dashed var(--side-3); }
+.avatar.xs { width: 20px; height: 20px; }
+.chat-watch { margin-right: 3px; }
 .side-chat-slot { height: 250px; flex: none; border-top: 1px solid #23313f; }
-.side-foot { display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid #23313f; }
+.side-foot { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid #23313f; }
 .side-foot button {
   display: flex; align-items: center; justify-content: center; gap: 8px; padding: 16px 8px; border: 0;
   background: var(--side-2); color: var(--side-text); font-weight: 800; cursor: pointer;
@@ -228,6 +238,26 @@ button, input { font: inherit; color: inherit; }
 .shell-info { display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
 .shell-info .chip { background: var(--side-2); color: var(--side-text); }
 .shell-info .chip.warn { background: #5b4320; color: #ffcf8a; }
+/* 👥 버튼 → 참가자 창 (관전 바꾸기, 방장은 강퇴) */
+.who-btn { border: 0; cursor: pointer; font: inherit; font-size: 13px; font-weight: 800; }
+.who-btn::after { content: '▾'; opacity: .7; }
+.shell-info .who-btn:hover, .shell-info .who-btn.on { background: var(--side-3); color: #fff; }
+.who-eyes { display: inline-flex; align-items: center; gap: 3px; }
+.who-panel {
+  position: absolute; top: calc(100% + 6px); right: 16px; z-index: 8; width: min(310px, calc(100vw - 32px));
+  max-height: min(70vh, 560px); overflow: auto; display: flex; flex-direction: column; gap: 8px;
+  padding: 14px; border-radius: 12px; background: var(--side); color: var(--side-text);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .35); animation: drop-in .15s ease-out;
+}
+.who-panel[hidden] { display: none; }
+.who-panel .side-label { margin: 4px 0 0; }
+.who-panel .side-players li { min-height: 42px; }
+.who-tag { font-size: 11px; font-weight: 800; padding: 2px 6px; border-radius: 6px; background: var(--side-3); color: var(--side-text); white-space: nowrap; margin-left: auto; }
+.who-panel .side-acts { margin-left: auto; }
+.who-panel .who-tag + .side-acts { margin-left: 0; }
+.who-gone { margin: 0; font-size: 12px; font-weight: 700; color: var(--side-muted); }
+.who-toggle { margin-top: 4px; }
+@keyframes drop-in { from { transform: translateY(-6px); opacity: 0; } }
 .shell-body { flex: 1; width: 100%; max-width: 1200px; margin: 0 auto; padding: 22px 16px 120px; }
 .shell-footer {
   position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 6;
@@ -1079,6 +1109,8 @@ button, input { font: inherit; color: inherit; }
 .sk-next-item.parcel { color: var(--red); }
 .sk-next-item.parcel .sk-icon { background: #fff5f4; border-radius: 8px; outline: 2px solid #f5b7b1; }
 .sk-icon { width: 70px; height: 52px; }
+.sk-watch { position: absolute; left: 10px; top: 10px; padding: 6px 12px; border-radius: 999px; background: rgba(255, 255, 255, .92); border: 2px solid var(--ink); box-shadow: 0 3px 0 var(--ink); font-weight: 800; color: var(--ink); }
+.sk-watch[hidden] { display: none; }
 .sk-hold { position: absolute; left: 50%; top: 64px; transform: translateX(-50%); background: #fcc419; color: var(--ink); font-family: var(--display); font-size: 24px; padding: 8px 18px; border-radius: 999px; box-shadow: 0 4px 0 #e67700; animation: now-pop .3s cubic-bezier(.2, 1.6, .4, 1); }
 .sk-overlay { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
 .sk-card { background: rgba(255, 255, 255, .96); border-radius: 16px; padding: 20px 26px; max-width: min(560px, 92%); box-shadow: 0 8px 30px rgba(0, 0, 0, .2); }

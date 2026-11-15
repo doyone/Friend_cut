@@ -36,6 +36,8 @@
 - 로비: **← → / 숫자키**로 게임 고르기, **스페이스**로 시작(방장) 또는 투표(참가자)
 - 결과 화면: **R** 한 판 더, **L** 다른 게임(방장) · 1등은 **숫자키**로 꼴찌 얼굴에 붙일 스티커 선택 → 이어서 꼴찌 **별명** 짓기 (숫자키로 보기 고르기, **7** = 직접 쓰고 Enter. 민준 → 바보같은 민준, 1등 하면 떨어져요)
 - 닉네임은 **2글자**까지예요
+- **👀 관전**: 홈에서 코드를 쓰고 **👀 관전**으로 들어오면 게임엔 안 끼고 구경만 해요. 로비 아래 **👀 관전 / 🙋 참가** 버튼, 게임 중엔 위쪽 **👥** 버튼이나 결과 화면에서 바꿀 수 있어요(게임 중이면 다음 판부터). 참가 자리(8명)가 꽉 차면 자동으로 관전으로 들어와요 (관전도 8명까지)
+- **👢 강퇴**(방장): 로비 참가자 목록이나 게임 중 **👥** 창에서 이름 옆 **✕를 두 번** 누르면 강퇴 (그 탭으로는 이 방에 다시 못 들어와요). **👀**를 누르면 강퇴 대신 관전으로 보내요
 
 구조: **GitHub Pages**(게임 파일 무료 호스팅) + **Firebase Realtime Database**(실시간 통신, 무료 플랜)
 
@@ -111,7 +113,7 @@ img/arena/         구운 도트 그림 (sprites/*.png, anims/torch.png · slash
 js/
   config.js        ← Firebase 설정 붙여넣는 곳
   main.js          홈 · 로비 · 게임 화면 전환
-  room.js          방 만들기/입장, 방장 이어받기
+  room.js          방 만들기/입장, 방장 이어받기, 👀 관전 · 👢 강퇴
   host.js          방장 컴퓨터에서 게임 규칙을 돌리는 엔진
   ui.js            점수판, 타이머 같은 공통 화면 조각
   util.js
@@ -141,7 +143,7 @@ js/
     roulette.js    독박 룰렛 (+ roulette-audio.js 효과음. 도트 글꼴 Galmuri는 index.html에서 CDN으로 받음)
     arena.js       투기장 (+ arena-core.js 규칙·봇, arena-view.js 화면, arena-audio.js 효과음)
   vendor/          planck.js 물리 엔진 (독박 타워·독박빼기·독박 시소·하늘끝까지·독박쌓기가 CDN 없이 씀)
-tests/             규칙 테스트: node --test tests/bumper.test.mjs tests/professor.test.mjs tests/seesaw.test.mjs tests/door.test.mjs tests/race.test.mjs tests/race-track.test.mjs tests/race-collision.test.mjs tests/race-network.test.mjs tests/race-prediction.test.mjs tests/kart-maps.test.mjs tests/stack.test.mjs tests/host.test.mjs tests/quick.test.mjs tests/nunchi.test.mjs tests/count.test.mjs tests/stop.test.mjs tests/memory.test.mjs tests/balloon.test.mjs tests/bomb.test.mjs tests/cannon.test.mjs tests/roulette.test.mjs tests/arena.test.mjs
+tests/             규칙 테스트: node --test tests/bumper.test.mjs tests/professor.test.mjs tests/seesaw.test.mjs tests/door.test.mjs tests/race.test.mjs tests/race-track.test.mjs tests/race-collision.test.mjs tests/race-network.test.mjs tests/race-prediction.test.mjs tests/kart-maps.test.mjs tests/stack.test.mjs tests/host.test.mjs tests/quick.test.mjs tests/nunchi.test.mjs tests/count.test.mjs tests/stop.test.mjs tests/memory.test.mjs tests/balloon.test.mjs tests/bomb.test.mjs tests/cannon.test.mjs tests/roulette.test.mjs tests/room.test.mjs tests/arena.test.mjs
 database.rules.json  Firebase 보안 규칙
 ```
 

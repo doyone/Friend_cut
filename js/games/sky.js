@@ -330,9 +330,10 @@ export default {
       svg('g', { transform: 'scale(1,-1)' }, backdrop(), spaceLabel, goalLabel, itemsG, chutesG, previewG));
     const nextBox = h('div', { class: 'sk-next' });
     const holdBox = h('div', { class: 'sk-hold', hidden: true });
+    const watchTag = h('div', { class: 'sk-watch', hidden: true }); // 👀 관전: 누구 탑을 보는 중인지
     const overlay = h('div', { class: 'sk-overlay' });
     const fxBox = h('div', { class: 'sk-fx' });
-    const stageWrap = h('div', { class: 'sk-stage' }, stage, nextBox, holdBox, overlay, fxBox);
+    const stageWrap = h('div', { class: 'sk-stage' }, stage, nextBox, holdBox, watchTag, overlay, fxBox);
     const strip = svg('svg', { class: 'sk-strip', preserveAspectRatio: 'xMidYMax meet' });
     const box = h('div', { class: 'sk-box' }, top, stageWrap, strip);
     const side = h('aside', { class: 'side' });
@@ -367,6 +368,10 @@ export default {
     const who = id => S?.roster.find(p => p.id === id) || { id, name: '?' };
     const alive = () => !!S?.alive?.includes(me);
     const playing = () => S?.phase === 'play' && alive();
+    const inGame = () => !!S?.roster?.some(p => p.id === me); // 아니면 👀 관전 (택배도 못 보냄)
+    // 관전하면 큰 화면에 지금 제일 높은 사람의 탑을 보여 준다
+    const leaderId = () => [...(S?.alive || [])].sort((a, b) => (S.h?.[b] || 0) - (S.h?.[a] || 0))[0]
+      || S?.placement?.[0] || S?.roster?.[0]?.id;
     // 숫자키 = 택배 받을 사람 (방에 들어온 순서, 나 빼고)
     const targets = () => (S?.roster || []).filter(p => p.id !== me);
 
@@ -433,7 +438,7 @@ export default {
       // 숫자키 = 그 친구에게 택배
       const d = digitOf(e);
       const t = targets()[d - 1];
-      if (d >= 1 && t && S.phase === 'play' && !e.repeat) {
+      if (d >= 1 && t && S.phase === 'play' && inGame() && !e.repeat) {
         e.preventDefault();
         api.send('parcel', { to: t.id });
       }
@@ -506,10 +511,30 @@ export default {
       }
     }
 
+    // 👀 관전: 1등의 탑 모양(1초에 한 번 오는 것)을 큰 화면에 그대로 그린다
+    let watchKey = '';
+    function paintWatch() {
+      const id = leaderId();
+      const tw = (id && S.tw?.[id]) || [];
+      const key = JSON.stringify([id, tw]);
+      if (key !== watchKey) {
+        watchKey = key;
+        chutesG.replaceChildren();
+        itemsG.replaceChildren(...tw.filter(t => KEYS[t[0]]).map(([ki, x, y, a, f]) => svg('g',
+          { class: `sk-item${f ? ' frozen' : ''}`, transform: `translate(${x} ${y}) rotate(${(a * 180) / Math.PI})` }, objGroup(KEYS[ki]))));
+      }
+      const tag = id && S.phase !== 'intro' ? `👀 ${who(id).name}의 탑 · ${(S.h?.[id] || 0).toFixed(1)}m` : '';
+      if (watchTag.textContent !== tag) watchTag.textContent = tag;
+      watchTag.hidden = !tag;
+      return S.h?.[id] || 0;
+    }
+
     function paint() {
       drawnAt = performance.now();
       if (!S) return;
-      paintTower();
+      const watching = !inGame();
+      const camH = watching ? paintWatch() : myH;
+      if (!watching) paintTower();
       // 조준 미리보기 (떨어질 높이 그대로)
       if (playing() && T && cur) {
         const y = spawnY(T, cur.k, aim.x, aim.a);
@@ -531,7 +556,7 @@ export default {
       // 카메라: 폭 13m, 높이는 화면 비율대로. 처음엔 받침대가 보이고, 쌓을수록 꼭대기 위 2.5m가 보이게 올라간다
       const r = stage.getBoundingClientRect();
       const hm = r.width ? Math.min(14, (13 * r.height) / r.width) : 9;
-      const want = Math.max(-1.4, myH + 2.5 - hm);
+      const want = Math.max(-1.4, camH + 2.5 - hm);
       cam += (want - cam) * 0.08;
       stage.setAttribute('viewBox', `-6.5 ${-(cam + hm).toFixed(3)} 13 ${hm.toFixed(3)}`);
       // 하늘 끝 버티기
@@ -567,7 +592,13 @@ export default {
       const nextCut = play && (S.cutNo || 0) < CUTS.length ? S.startAt + CUTS[S.cutNo || 0] - now : null;
       const rank = [...S.alive].sort((a, b) => (S.h?.[b] || 0) - (S.h?.[a] || 0)).indexOf(me) + 1;
       const lowest = play && alive() && S.alive.length > 2 && rank === S.alive.length;
-      const bits = [
+      const lead = leaderId();
+      const bits = !inGame() ? [
+        h('span', {}, '👀 관전 중'),
+        lead ? h('span', {}, `1등 ${who(lead).name} ${(S.h?.[lead] || 0).toFixed(1)}m`) : null,
+        nextCut != null ? h('span', { class: nextCut < 5000 ? 'sk-cut hot' : 'sk-cut' }, `✂️ 컷 ${sec(nextCut)}초`) : null,
+        play ? countdown(S.endAt, LIMIT) : null,
+      ].filter(Boolean) : [
         h('span', { class: 'sk-h' }, `${(alive() ? myH : S.h?.[me] || 0).toFixed(1)}m`),
         alive() ? h('span', {}, `${rank}등 / ${S.alive.length}명`) : h('span', {}, '👻 유령'),
         h('span', {}, alive() ? `📦 ${S.parcels?.[me] || 0}` : `📦 ${sec((S.ghostAt?.[me] || 0) - now) ? `${sec((S.ghostAt?.[me] || 0) - now)}초` : '준비!'}`),
@@ -651,8 +682,8 @@ export default {
     function renderSide() {
       const now = api.now();
       const order = [...(S.roster || [])].sort((a, b) => (S.alive.includes(b.id) - S.alive.includes(a.id)) || (S.h?.[b.id] || 0) - (S.h?.[a.id] || 0));
-      const keyOf = new Map(targets().map((p, i) => [p.id, i + 1]));
-      const canSend = S.phase === 'play' && (alive() ? (S.parcels?.[me] || 0) > 0 : now >= (S.ghostAt?.[me] || 0));
+      const keyOf = new Map(inGame() ? targets().map((p, i) => [p.id, i + 1]) : []);
+      const canSend = S.phase === 'play' && inGame() && (alive() ? (S.parcels?.[me] || 0) > 0 : now >= (S.ghostAt?.[me] || 0));
       const key = JSON.stringify([order.map(p => [p.id, S.h?.[p.id], S.parcels?.[p.id]]), S.alive, canSend, S.phase]);
       if (key === sideKey) return;
       sideKey = key;
@@ -672,7 +703,8 @@ export default {
           h('li', {}, '30초·60초에 제일 낮은 사람 컷! 1분 30초가 끝나면 제일 높은 사람 우승'),
           h('li', {}, `🚀 ${SPACE_Y}m 위는 우주(중력 절반) · 아래층은 굳어서 꼭대기만 무너져요`)),
         h('h3', {}, '😈 택배'),
-        h('p', { class: 'muted small' }, canSend ? '숫자키로 친구를 고르면 그 친구 다음 짐이 볼링공·얼음·라바콘 같은 걸로 바뀌어요' : alive() ? '3m 오를 때마다 1개 생겨요' : '유령은 10초마다 보낼 수 있어요'),
+        h('p', { class: 'muted small' }, canSend ? '숫자키로 친구를 고르면 그 친구 다음 짐이 볼링공·얼음·라바콘 같은 걸로 바뀌어요'
+          : !inGame() ? '👀 관전 중엔 택배를 못 보내요' : alive() ? '3m 오를 때마다 1개 생겨요' : '유령은 10초마다 보낼 수 있어요'),
         h('h3', {}, '조작'),
         h('ul', { class: 'rules' },
           h('li', {}, '← → (A D) 위치 · 톡 치면 조금씩'),

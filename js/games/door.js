@@ -530,6 +530,12 @@ export default {
           h('div', { class: 'bt-act-title' }, S.escaped?.length ? `🏃 ${S.escaped.map(id => who(id).name).join(' · ')} 탈출!` : `🏁 ${who(win).name} 최후의 생존자!`),
           podium(S.roster, S.standings, me));
       }
+      if (!S.roster.some(p => p.id === me)) {
+        return h('div', { class: 'bt-act' },
+          h('div', { class: 'bt-act-title' }, '👀 관전 중'),
+          h('p', { class: 'muted' }, S.phase === 'reveal' ? '어느 문이 통과했을까?' : S.phase === 'closing' ? '🚪 문 닫힘!'
+            : '누가 어느 문으로 갈까… 정전되면 아무도 안 보여요'));
+      }
       if (!alive(me) && !(S.escaped || []).includes(me)) {
         return h('div', { class: 'bt-act' },
           h('div', { class: 'bt-act-title' }, '🔥 불길에 잡혔어요'),

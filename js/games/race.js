@@ -1561,6 +1561,18 @@ export default {
     function renderTop() {
       const c = mine();
       const order = S.order || S.roster.map(p => p.id);
+      if (!S.roster.some(p => p.id === me)) {
+        // 👀 관전: 카메라가 따라가는 차 (아직 달리는 1등)
+        const lead = order.find(x => S.cars?.[x] && !S.cars[x].fin) || order[0];
+        const key = JSON.stringify(['watch', S.round, S.phase, lead, Math.floor((api.now() - (S.startAt || 0)) / 100)]);
+        if (key === topKey) return;
+        topKey = key;
+        top.replaceChildren(
+          h('span', { class: 'rc-lap' }, `ROUND ${S.round}/3`),
+          h('span', { class: 'rc-time' }, fmt(S.phase === 'race' ? Math.max(0, api.now() - S.startAt) : 0)),
+          h('span', {}, `👀 관전 중${lead ? ` · ${who(lead).name} 따라가는 중` : ''}`));
+        return;
+      }
       const pos = order.indexOf(me) + 1;
       const key = JSON.stringify([S.round, S.points?.[me], Math.floor((car.charge || 0) * 10), car.boostLeft > 0, S.phase, c?.lap, c?.fin, pos, c?.split, Math.floor((api.now() - (S.startAt || 0)) / 100)]);
       if (key === topKey) return;

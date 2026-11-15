@@ -1,5 +1,5 @@
 import { connect } from './net/index.js';
-import { MAX_PLAYERS, RoomSession, createRoom, roomExists, sortedPlayers, withNick } from './room.js';
+import { MAX_PLAYERS, MAX_WATCHERS, RoomSession, createRoom, roomExists, sortedPlayers, withNick } from './room.js';
 import { GameHost, nemesisOf } from './host.js';
 import { createChat } from './chat.js';
 import { CATEGORIES, COMING, GAMES, TAG_COLORS, getGame } from './games/index.js';
@@ -133,7 +133,8 @@ function renderHome(prefill = '') {
   }));
 
   const joinBtn = h('button', { class: 'btn blue', tabindex: '-1' }, '들어가기');
-  const join = () => withBusy(joinBtn)(async () => {
+  const watchBtn = h('button', { class: 'btn', tabindex: '-1', title: '게임엔 안 끼고 구경만 해요 (나중에 참가로 바꿀 수 있어요)' }, '👀 관전');
+  const join = (watch = false) => withBusy(watch ? watchBtn : joinBtn)(async () => {
     const name = takeName();
     if (!name) return;
     const code = codeIn.value.trim();
@@ -146,9 +147,10 @@ function renderHome(prefill = '') {
       toast(`${code} 방이 없어요. 코드를 확인해 주세요`);
       return;
     }
-    await enterRoom(code, name);
+    await enterRoom(code, name, watch);
   });
-  joinBtn.addEventListener('click', join);
+  joinBtn.addEventListener('click', () => join());
+  watchBtn.addEventListener('click', () => join(true));
   codeIn.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) join(); });
   // 닉네임 칸: Enter = 방 만들기, Tab으로 코드 칸 이동 (마우스 없이 시작 가능)
   nameIn.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) (prefill ? join() : createBtn.click()); });
@@ -173,7 +175,7 @@ function renderHome(prefill = '') {
       nameIn,
       createBtn,
       h('div', { class: 'or' }, h('span', {}, '친구 방에 들어가기')),
-      h('div', { class: 'row' }, codeIn, joinBtn),
+      h('div', { class: 'row' }, codeIn, joinBtn, watchBtn),
       h('p', { class: 'key-hint' }, '닉네임 쓰고 Enter = 방 만들기 · Tab으로 코드 칸 이동')),
     localBanner()));
   (nameIn.value ? (prefill ? codeIn : nameIn) : nameIn).focus();
@@ -181,11 +183,17 @@ function renderHome(prefill = '') {
 
 /* ───────────── 방 입장/퇴장 ───────────── */
 
-async function enterRoom(code, name) {
+// watch: true = 관전으로, false = 참가로, 안 주면(새로고침) 이 탭이 하던 대로
+async function enterRoom(code, name, watch) {
   const r = new RoomSession(net, code, name, savedFace());
+  // 방장이 강퇴하면 바로 홈으로 (다시 들어오려 해도 막힌다)
+  r.onKicked = () => {
+    toast(`👢 방장이 ${code} 방에서 내보냈어요`);
+    if (room === r) exitRoom();
+  };
   chat.attach(r);
   try {
-    await r.enter();
+    await r.enter({ watch });
   } catch (e) {
     chat.detach();
     toast(e?.message || '들어가지 못했어요');
@@ -193,9 +201,17 @@ async function enterRoom(code, name) {
     renderHome(code);
     return;
   }
+  if (r.kicked) {
+    chat.detach();
+    setHash('');
+    renderHome();
+    r.leave();
+    return;
+  }
   room = r;
   setHash(code);
   room.onChange = render;
+  if (r.full) toast(`참가 자리가 꽉 차서(${MAX_PLAYERS}명) 👀 관전으로 들어왔어요`);
   if (room.ready) render();
 }
 
@@ -267,12 +283,13 @@ async function copyInvite() {
 
 const lobbyGames = () => GAMES.filter(g => lobbyTab === 'all' || g.tag === lobbyTab);
 
-function gameCard({ game, index, selected, focused, isHost, voters, myVote, onClick }) {
+function gameCard({ game, index, selected, focused, isHost, watching, voters, myVote, onClick }) {
   const soon = !game.id;
   let right;
   if (soon) right = h('span', { class: 'pill right' }, '제작 예정');
   else if (selected) right = h('span', { class: 'pill green right' }, '✓ 선택됨');
   else if (!isHost && myVote) right = h('span', { class: 'pill orange right' }, '✓ 내 투표');
+  else if (!isHost && watching) right = null; // 관전 중엔 투표 못 함
   else right = h('span', { class: 'pill right' }, isHost ? '고르기' : '투표하기');
   return h(soon ? 'div' : 'button', {
     class: `gcard${selected ? ' selected' : ''}${focused ? ' kfocus' : ''}${soon ? ' soon' : ''}`,
@@ -295,17 +312,20 @@ function renderLobby() {
   teardownGame();
   const { meta, players, votes, stats } = room.snap;
   const isHost = meta.hostId === room.id;
-  const list = sortedPlayers(players, stats?.nicks);
-  const me = list.find(p => p.id === room.id) || { id: room.id, name: room.name };
+  const everyone = sortedPlayers(players, stats?.nicks);
+  const list = everyone.filter(p => !p.watch);     // 다음 판에 같이 하는 사람
+  const watchers = everyone.filter(p => p.watch);  // 👀 관전 (게임엔 안 낌)
+  const me = everyone.find(p => p.id === room.id) || { id: room.id, name: room.name };
+  const iWatch = room.watching;
   const selected = getGame(meta.game);
   const enough = list.length >= selected.minPlayers;
   const season = stats?.season || {};
   const pts = id => Number(season[id]) || 0;
-  const best = Math.max(1, ...list.map(p => pts(p.id)));
-  const myRank = 1 + list.filter(p => pts(p.id) > pts(me.id)).length;
+  const best = Math.max(1, ...everyone.map(p => pts(p.id)));
+  const myRank = 1 + everyone.filter(p => pts(p.id) > pts(me.id)).length;
   const nemesis = nemesisOf(stats?.kills, room.id);
 
-  const playerItems = list.map(p => h('li', { class: p.bot ? 'bot' : '' },
+  const row = p => h('li', { class: p.bot ? 'bot' : '' },
     avatar(p),
     h('span', { class: 'nm' }, p.name),
     p.bot ? h('em', { class: 'bot-badge' }, '🤖') : null,
@@ -313,7 +333,8 @@ function renderLobby() {
     p.id === meta.hostId ? h('span', { title: '방장' }, '👑') : null,
     p.id === nemesis ? h('span', { class: 'nemesis', title: '나를 제일 많이 죽인 사람' }, '🎯 원수') : null,
     h('span', { class: 'side-pts' }, `${pts(p.id)}점`),
-    isHost && p.bot ? h('button', { class: 'side-x', tabindex: '-1', title: '봇 빼기', onClick: () => room.removeBot(p.id) }, '✕') : null));
+    isHost && p.id !== room.id ? hostActs(p) : null);
+  const playerItems = list.map(row);
   for (let i = list.length; i < Math.max(4, Math.min(MAX_PLAYERS, list.length + 1)); i++) {
     playerItems.push(isHost && i === list.length
       ? h('li', { class: 'empty add-bot', onClick: addBot }, '＋ 봇 추가', h('kbd', {}, 'B'))
@@ -322,7 +343,10 @@ function renderLobby() {
 
   const playable = lobbyGames();
   const focusId = isHost ? meta.game : (lobbyFocus || meta.game);
-  const votersOf = id => Object.entries(votes || {}).filter(([, g]) => g === id).map(([pid]) => playerOf(null, pid));
+  // 나갔거나 관전으로 바꾼 사람의 투표는 안 센다
+  const votersOf = id => Object.entries(votes || {})
+    .filter(([pid, g]) => g === id && players?.[pid] && !players[pid].watch)
+    .map(([pid]) => playerOf(null, pid));
   const cards = [
     ...playable.map((g, i) => gameCard({
       game: g,
@@ -330,13 +354,18 @@ function renderLobby() {
       selected: g.id === selected.id,
       focused: !isHost && g.id === focusId,
       isHost,
+      watching: iWatch,
       voters: votersOf(g.id),
       myVote: votes?.[room.id] === g.id,
       onClick: () => {
         if (isHost) net.update(room.path('meta'), { game: g.id });
         else {
           lobbyFocus = g.id;
-          room.vote(g.id);
+          if (!iWatch) room.vote(g.id);
+          else {
+            toast('👀 관전 중이라 투표는 못 해요');
+            renderLobby();
+          }
         }
       },
     })),
@@ -352,9 +381,11 @@ function renderLobby() {
     ? h('div', { class: 'head-action' },
       h('button', { class: 'btn primary', disabled: !enough, tabindex: '-1', onClick: () => startGame(selected.id) },
         icon('play'), `${selected.title} 시작`, h('kbd', {}, 'Space')),
-      h('span', { class: 'head-note' }, enough ? `${list.length}명이 같이 해요` : `${selected.minPlayers}명 이상 모여야 시작할 수 있어요`))
+      h('span', { class: 'head-note' }, enough
+        ? `${list.length}명이 같이 해요${iWatch ? ' · 나는 👀 관전' : ''}`
+        : `${selected.minPlayers}명 이상 모여야 시작할 수 있어요`))
     : h('div', { class: 'head-action' },
-      h('div', { class: 'waiting-box dots' }, `방장이 ${josa(selected.title, '을', '를')} 고르는 중`));
+      h('div', { class: 'waiting-box dots' }, `${iWatch ? '👀 관전 중 · ' : ''}방장이 ${josa(selected.title, '을', '를')} 고르는 중`));
 
   app.replaceChildren(h('div', { class: 'layout' },
     h('aside', { class: 'sidebar' },
@@ -363,7 +394,7 @@ function renderLobby() {
           avatar(me, 'xl'),
           h('div', { class: 'me-info' },
             h('b', { class: 'me-name' }, me.name),
-            h('span', { class: 'me-sub' }, `${isHost ? '👑 방장 · ' : ''}오늘 ${pts(me.id)}점 · ${myRank}위`),
+            h('span', { class: 'me-sub' }, `${isHost ? '👑 방장 · ' : ''}${iWatch ? '👀 관전 · ' : ''}오늘 ${pts(me.id)}점 · ${myRank}위`),
             h('div', { class: 'season-bar' }, h('i', { style: `width:${Math.round((pts(me.id) / best) * 100)}%` })))),
         h('div', { class: 'side-box' },
           h('span', { class: 'side-label' }, '방 코드'),
@@ -371,10 +402,15 @@ function renderLobby() {
           h('button', { class: 'side-btn', tabindex: '-1', onClick: copyInvite }, icon('link'), '초대 링크 복사')),
         h('div', {},
           h('span', { class: 'side-label' }, `참가자 ${list.length} / ${MAX_PLAYERS}`),
-          h('ul', { class: 'side-players' }, playerItems))),
+          h('ul', { class: 'side-players' }, playerItems)),
+        watchers.length ? h('div', {},
+          h('span', { class: 'side-label' }, `👀 관전 ${watchers.length} / ${MAX_WATCHERS}`),
+          h('ul', { class: 'side-players watchers' }, watchers.map(row))) : null),
       h('div', { class: 'side-chat-slot' }),
       h('nav', { class: 'side-foot' },
         h('button', { tabindex: '-1', onClick: copyInvite }, icon('link'), '초대'),
+        h('button', { tabindex: '-1', title: iWatch ? '다음 판부터 같이 해요' : '게임엔 안 끼고 구경만 해요', onClick: toggleWatch },
+          iWatch ? '🙋 참가' : '👀 관전'),
         h('button', { tabindex: '-1', onClick: confirmLeave }, icon('exit'), '나가기'))),
     h('main', { class: 'main' },
       h('header', { class: 'main-head' },
@@ -386,8 +422,79 @@ function renderLobby() {
       h('div', { class: 'tabs' }, tabs),
       h('p', { class: 'key-hint center-hint' }, isHost
         ? '← → / 숫자키 게임 고르기 · 스페이스 시작 · B 봇 추가 · Shift+B 봇 빼기 · Enter 채팅'
-        : '← → 또는 숫자키로 게임 보기 · 스페이스 투표 · Enter 채팅'),
+        : iWatch ? '👀 관전 중: 게임은 구경만 해요 (투표는 🙋 참가로 바꾸면) · Enter 채팅'
+          : '← → 또는 숫자키로 게임 보기 · 스페이스 투표 · Enter 채팅'),
       h('div', { class: 'cards' }, cards))));
+}
+
+// 방장: 이름 옆 👀 = 관전으로 보내기, ✕ = 강퇴 (봇은 ✕ = 빼기)
+// 강퇴는 ✕를 한 번 더 눌러야 된다. confirm 창은 방장 컴퓨터의 게임 엔진까지 멈춰서 모두의 게임이 얼기 때문
+let kickArmed = null; // { id, until } 화면이 다시 그려져도 '강퇴?' 상태 유지
+const armedFor = id => kickArmed?.id === id && performance.now() < kickArmed.until;
+
+function hostActs(p) {
+  const armed = armedFor(p.id);
+  return h('span', { class: 'side-acts' },
+    !p.bot && !p.watch ? h('button', { class: 'side-x', tabindex: '-1', title: '관전으로 보내기', onClick: () => sendToWatch(p) }, '👀') : null,
+    h('button', {
+      class: `side-x${armed ? ' armed' : ''}`, tabindex: '-1', title: p.bot ? '봇 빼기' : armed ? '한 번 더 누르면 강퇴' : '강퇴',
+      onClick: () => kickPlayer(p),
+    }, armed ? '강퇴?' : '✕'));
+}
+
+// 방장 도구를 누른 뒤 목록만 다시 그리기 (로비는 통째로, 게임 중엔 참가자 창만)
+function redrawActs() {
+  if (screen === 'lobby') renderLobby();
+  else if (shell) {
+    shell.whoKey = null;
+    render();
+  }
+}
+
+async function kickPlayer(p) {
+  if (!room) return;
+  if (p.bot) {
+    room.removeBot(p.id);
+    return;
+  }
+  if (!armedFor(p.id)) {
+    kickArmed = { id: p.id, until: performance.now() + 3000 };
+    toast(`✕를 한 번 더 누르면 ${josa(p.name, '을', '를')} 강퇴해요 (이 방에 다시 못 들어와요)`);
+    redrawActs();
+    setTimeout(() => {
+      if (kickArmed?.id !== p.id) return;
+      kickArmed = null;
+      if (room) redrawActs();
+    }, 3000);
+    return;
+  }
+  kickArmed = null;
+  try {
+    const name = await room.kick(p.id);
+    if (name) toast(`👢 ${name} 강퇴`);
+  } catch (e) {
+    toast(e?.message || '강퇴하지 못했어요');
+  }
+}
+
+async function sendToWatch(p) {
+  try {
+    if (await room?.setWatch(true, p.id)) room.sys(`👀 방장이 ${josa(p.name, '을', '를')} 관전으로 보냈어요`);
+  } catch (e) {
+    toast(e?.message || '관전으로 보내지 못했어요');
+  }
+}
+
+// 나: 👀 관전 ↔ 🙋 참가 (게임 중에 바꾸면 다음 판부터)
+async function toggleWatch() {
+  if (!room) return;
+  const on = !room.watching;
+  const later = screen === 'game' ? (on ? ' · 다음 판부터 구경만 해요' : ' · 다음 판부터 같이 해요') : '';
+  try {
+    if (await room.setWatch(on)) toast(on ? `👀 관전으로 바꿨어요${later}` : `🙋 참가로 바꿨어요${later}`);
+  } catch (e) {
+    toast(e?.message || '바꾸지 못했어요');
+  }
 }
 
 async function addBot() {
@@ -428,6 +535,7 @@ function lobbyKey(e) {
     e.preventDefault();
     if (e.repeat) return;
     if (isHost) startGame(meta.game);
+    else if (room.watching) toast('👀 관전 중이라 투표는 못 해요');
     else room.vote(cur);
     return;
   } else return;
@@ -436,7 +544,7 @@ function lobbyKey(e) {
     if (ids[i] !== meta.game) net.update(room.path('meta'), { game: ids[i] });
   } else {
     lobbyFocus = ids[i];
-    if (d) room.vote(ids[i]); // 숫자키는 바로 투표
+    if (d && !room.watching) room.vote(ids[i]); // 숫자키는 바로 투표
     else renderLobby();
   }
 }
@@ -456,6 +564,10 @@ function resultKey(e) {
 
 window.addEventListener('keydown', e => {
   if (!room?.snap.meta || isTyping(e)) return;
+  if (e.key === 'Escape' && shell?.whoOpen) {
+    toggleWho(false);
+    return;
+  }
   if (screen === 'lobby') lobbyKey(e);
   else if (screen === 'game') resultKey(e);
 });
@@ -466,7 +578,9 @@ async function startGame(gameId, prev = null) {
   if (busy) return;
   const game = getGame(gameId);
   // 게임 안 이름 = 별명까지 붙은 이름 (킬로그·결과·채팅 모두)
-  const roster = sortedPlayers(room.snap.players, room.snap.stats?.nicks).map(({ id, name, color, face, bot }) => ({ id, name, color, face, bot }));
+  const roster = sortedPlayers(room.snap.players, room.snap.stats?.nicks)
+    .filter(p => !p.watch) // 👀 관전하는 사람은 구경만
+    .map(({ id, name, color, face, bot }) => ({ id, name, color, face, bot }));
   if (roster.length < game.minPlayers) {
     toast(`${josa(game.title, '은', '는')} ${game.minPlayers}명 이상 필요해요`);
     return;
@@ -546,15 +660,59 @@ function gameShell(game) {
   }, '게임 중단');
   const body = h('div', { class: 'shell-body' }, h('div', { class: 'center muted' }, '불러오는 중…'));
   const footer = h('div', { class: 'shell-footer', hidden: true });
+  // 👥 버튼: 누가 하고 누가 구경하는지 보기 · 다음 판 관전/참가 · 방장은 강퇴
+  const whoBtn = h('button', { class: 'chip who-btn', tabindex: '-1', title: '참가자 · 관전', onClick: () => toggleWho() });
+  const who = h('div', { class: 'who-panel', hidden: true });
   const root = h('div', { class: 'shell' },
     h('header', { class: 'shell-head' },
       h('button', { class: 'btn ghost small', tabindex: '-1', onClick: confirmLeave }, '← 나가기'),
       h('div', { class: 'shell-title' }, h('span', { class: 'emoji' }, game.emoji), h('b', {}, game.title)),
       info,
-      hostBtn),
+      hostBtn,
+      who),
     body,
     footer);
-  return { root, body, footer, info, hostBtn, footerKey: '', footerNav: null };
+  return { root, body, footer, info, hostBtn, whoBtn, who, whoOpen: false, footerKey: '', footerNav: null };
+}
+
+function toggleWho(open) {
+  if (!shell) return;
+  shell.whoOpen = open ?? !shell.whoOpen;
+  shell.who.hidden = !shell.whoOpen;
+  shell.whoBtn.classList.toggle('on', shell.whoOpen);
+}
+
+// 참가자 창 바깥을 누르면 닫는다
+window.addEventListener('pointerdown', e => {
+  if (shell?.whoOpen && !shell.who.contains(e.target) && !shell.whoBtn.contains(e.target)) toggleWho(false);
+});
+
+function whoPanel(isHost, state) {
+  const { meta, players, stats } = room.snap;
+  const everyone = sortedPlayers(players, stats?.nicks);
+  const inRun = id => !!state?.roster?.some(p => p.id === id);
+  const row = p => h('li', { class: p.bot ? 'bot' : '' },
+    avatar(p),
+    h('span', { class: 'nm' }, p.name),
+    p.bot ? h('em', { class: 'bot-badge' }, '🤖') : null,
+    p.id === room.id ? h('em', { class: 'me-badge' }, '나') : null,
+    p.id === meta.hostId ? h('span', { title: '방장' }, '👑') : null,
+    state && !p.watch && !inRun(p.id) ? h('span', { class: 'who-tag' }, '다음 판부터') : null,
+    state && p.watch && inRun(p.id) ? h('span', { class: 'who-tag' }, '이번 판까지') : null,
+    isHost && p.id !== room.id ? hostActs(p) : null);
+  const list = everyone.filter(p => !p.watch);
+  const watchers = everyone.filter(p => p.watch);
+  const gone = (state?.roster || []).filter(p => !players?.[p.id]); // 이번 판에 있다가 나간 사람 (강퇴·창 닫음)
+  return [
+    h('span', { class: 'side-label' }, `참가 ${list.length} / ${MAX_PLAYERS}`),
+    h('ul', { class: 'side-players' }, list.map(row)),
+    watchers.length ? h('span', { class: 'side-label' }, `👀 관전 ${watchers.length} / ${MAX_WATCHERS}`) : null,
+    watchers.length ? h('ul', { class: 'side-players watchers' }, watchers.map(row)) : null,
+    gone.length ? h('p', { class: 'who-gone' }, `🚪 나감: ${gone.map(p => p.name).join(', ')}`) : null,
+    h('button', { class: 'btn small who-toggle', tabindex: '-1', onClick: toggleWatch },
+      room.watching ? '🙋 다음 판부터 참가하기' : '👀 다음 판부터 관전하기'),
+    isHost ? h('p', { class: 'who-gone' }, '👀 = 관전으로 보내기 · ✕ = 강퇴') : null,
+  ].filter(Boolean);
 }
 
 function resultSummary(result, state) {
@@ -676,20 +834,31 @@ function updateShell(isHost, state) {
   const spectating = state && !state.roster.some(p => p.id === room.id);
   shell.hostBtn.hidden = !isHost || !!state?.over;
   // 게임 상태가 초당 여러 번 오니(범퍼카는 20번) 위쪽 칩은 바뀔 때만 다시 만든다
-  const count = Object.keys(players || {}).length;
-  const infoKey = JSON.stringify([!!spectating, isHost, room.code, count]);
+  const infoKey = JSON.stringify([!!spectating, isHost, room.code]);
   if (infoKey !== shell.infoKey) {
     shell.infoKey = infoKey;
     shell.info.replaceChildren(...[
       spectating ? h('span', { class: 'chip warn' }, '👀 관전 중') : null,
       isHost ? h('span', { class: 'chip' }, '👑 방장') : null,
       h('span', { class: 'chip' }, `방 ${room.code}`),
-      h('span', { class: 'chip' }, `👥 ${count}`),
+      shell.whoBtn,
     ].filter(Boolean));
+  }
+  // 👥 버튼 · 참가자 창도 사람·관전·방장·이번 판 명단이 바뀔 때만 (관전하는 사람 얼굴도 여기 있어서 채팅 말풍선이 뜬다)
+  const everyone = sortedPlayers(players, stats?.nicks);
+  const watchers = everyone.filter(p => p.watch);
+  const whoKey = JSON.stringify([isHost, meta.hostId, room.watching, (state?.roster || []).map(p => p.id),
+    everyone.map(p => [p.id, p.name, p.color, p.face, !!p.watch]), stats?.stickers]);
+  if (whoKey !== shell.whoKey) {
+    shell.whoKey = whoKey;
+    shell.whoBtn.replaceChildren(...[`👥 ${everyone.length - watchers.length}`, watchers.length
+      ? h('span', { class: 'who-eyes' }, `· 👀 ${watchers.length}`, watchers.slice(0, 4).map(p => avatar(p, 'xs')))
+      : null].filter(Boolean));
+    shell.who.replaceChildren(...whoPanel(isHost, state));
   }
 
   const result = room.snap.result?.run === meta.run ? room.snap.result : null;
-  const key = JSON.stringify([!!state?.over, isHost, result, stats?.stickers, stats?.nicks]);
+  const key = JSON.stringify([!!state?.over, isHost, result, stats?.stickers, stats?.nicks, room.watching]);
   if (key === shell.footerKey) return;
   shell.footerKey = key;
   shell.footerNav?.destroy();
@@ -707,7 +876,9 @@ function updateShell(isHost, state) {
     h('div', { class: 'rb-actions' }, ...(isHost
       ? [h('button', { class: 'btn primary', tabindex: '-1', onClick: restartGame }, '🔁 한 판 더', h('kbd', {}, 'R')),
         h('button', { class: 'btn', tabindex: '-1', onClick: backToLobby }, '🎮 다른 게임 고르기', h('kbd', {}, 'L'))]
-      : [h('span', { class: 'dots muted' }, '방장이 다음 판을 고르는 중')])),
+      : [h('span', { class: 'dots muted' }, '방장이 다음 판을 고르는 중')]),
+    h('button', { class: 'btn small', tabindex: '-1', title: room.watching ? '다음 판부터 같이 해요' : '다음 판은 구경만 해요', onClick: toggleWatch },
+      room.watching ? '🙋 다음 판 참가' : '👀 다음 판 관전')),
   ].filter(Boolean));
 }
 

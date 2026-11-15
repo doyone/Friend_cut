@@ -84,6 +84,7 @@ export function createChat() {
   function line(m) {
     if (m.sys) return h('li', { class: 'sys' }, String(m.text || ''));
     return h('li', { class: m.taunt ? 'taunt' : '' },
+      m.watch ? h('span', { class: 'chat-watch', title: '관전 중' }, '👀') : null, // 관전하는 사람의 훈수
       h('b', { style: `color:${safeColor(m.color)}` }, String(m.name || '?')), ' ', String(m.text || ''));
   }
 
