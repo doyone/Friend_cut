@@ -2,7 +2,7 @@
 // 값은 forge-core.js 가 정하고, 여기는 대결 기록(duel)을 박자대로 틀기만 한다. 보여 주는 순서만 바꾸고 값은 안 건드린다.
 import { h } from '../util.js';
 import { dieFace, dieTumble, shard, DIE_SIZE, PX } from './dice-art.js';
-import { RULE, AUGS, GAMBLES, WEAPONS, TECHS, DICE, TIER_NAME, WEAPON_KEYS, diceTextOf, sidesOf, labelOf, other, stakeMultOf } from './forge-core.js';
+import { RULE, AUGS, GAMBLES, WEAPONS, TECHS, TASTE, DICE, WEAPON_KEYS, diceTextOf, sidesOf, labelOf, other, stakeMultOf } from './forge-core.js';
 
 const SILENT = new Proxy({}, { get: () => () => {} });
 const SIDES = ['a', 'b'];
@@ -256,28 +256,29 @@ export function createForgeView(root, { audio = SILENT, embed = false } = {}) {
   }
 
   // ───────── 한쪽 그리기 (기술 · 증강 · 주사위 · 도박 칸)
-  function techText(w, tier) {
-    const t = TECHS[`${w}${tier}`];
-    return `${tier}단 ${t.name} ${t.base} + ${diceTextOf(t)}`;
+  const diceOfF = f => f.dice || TECHS[`${f.w}${f.tier}`].dice;
+  function techText(f) {
+    const t = TECHS[`${f.w}${f.tier}`];
+    return `${f.tier}단 ${t.name} ${diceTextOf(diceOfF(f))}${t.tough ? ` · 버팀 ${t.tough}` : ''}`;
   }
+  // 합계는 주사위 눈 그대로. 증강으로 더해지는 것만 따로 적는다
   function powerText(f, c = null) {
-    const parts = [`위력 ${TECHS[`${f.w}${f.tier}`].base}`];
-    if (f.whet) parts.push(`숫돌 ${f.whet * RULE.WHET_POWER}`);
-    if (c?.venom) parts.push(`독기 ${c.venom}`);
-    if (c?.first) parts.push(`선빵 ${c.first}`);
-    return parts.join(' + ');
+    const parts = [];
+    if (c?.venom) parts.push(`🌀 독기 +${c.venom}`);
+    if (c?.first) parts.push(`🎯 선빵 +${c.first}`);
+    return parts.join(' · ');
   }
-  // f: { name, w, tier, whet, gamble, bet(true · false · null=모름), augs, mom, shadow }
+  // f: { name, w, tier, dice, gamble, bet(true · false · null=모름), augs, mom, shadow }
   function setSide(o, f, alive = null) {
     o.root.className = `fg-side fg-${o.s}${f.shadow ? ' shadow' : ''}`;
     o.name.replaceChildren(`${WEAPONS[f.w].icon} ${f.name}`, f.mom > 0 ? h('span', { class: 'fg-mom' }, ' ', '🔥'.repeat(f.mom)) : '');
-    o.tech.textContent = techText(f.w, f.tier);
+    o.tech.textContent = techText(f);
     o.augs.replaceChildren(...f.augs.map(k => h('span', { class: `fg-aug t-${AUGS[k].tier}`, title: `${AUGS[k].name}: ${AUGS[k].text}` }, AUGS[k].icon, h('small', null, AUGS[k].name))));
-    const t = TECHS[`${f.w}${f.tier}`];
+    const dice = diceOfF(f);
     o.dice.replaceChildren();
     o.views.clear();
-    for (let slot = 0; slot < t.n; slot++) {
-      const v = makeDie(t.die, slot === 0 && f.augs.includes('powder'));
+    for (let slot = 0; slot < dice.length; slot++) {
+      const v = makeDie(dice[slot], slot === 0 && f.augs.includes('powder'));
       o.views.set(slot, v);
       o.dice.append(v.el);
       if (alive && !alive.includes(slot)) v.gone();
@@ -366,13 +367,14 @@ export function createForgeView(root, { audio = SILENT, embed = false } = {}) {
         const W = WEAPONS[w];
         const t1 = TECHS[`${w}1`];
         const t3 = TECHS[`${w}3`];
+        const taste = TASTE[w] || W.taste;
         return h('div', { class: `fg-wcard${pick === w ? ' picked' : ''}` },
           h('span', { class: 'fg-key' }, String(i + 1)),
           h('div', { class: 'fg-wicon' }, W.icon),
           h('b', null, W.name),
-          h('small', null, W.taste),
-          h('div', { class: 'fg-wtech' }, `1단 ${t1.name} ${t1.base} + ${diceTextOf(t1)}`),
-          h('div', { class: 'fg-wtech dim' }, `→ 3단 ${t3.name} ${t3.base} + ${diceTextOf(t3)}`));
+          h('small', null, taste),
+          h('div', { class: 'fg-wtech' }, `1단 ${t1.name} ${diceTextOf(t1.dice)}${t1.tough ? ` · 버팀 ${t1.tough}` : ''}`),
+          h('div', { class: 'fg-wtech dim' }, `→ 3단 ${t3.name} ${diceTextOf(t3.dice)}${t3.tough ? ` · 버팀 ${t3.tough}` : ''}`));
       })));
     bottom.replaceChildren(h('div', { class: 'fg-hint' }, `숫자키 1~4 · ${Math.ceil(left / 1000)}초`), timerBar(left, total));
   }
@@ -562,58 +564,64 @@ export function createForgeView(root, { audio = SILENT, embed = false } = {}) {
       if (o.g && c[s].g) o.g.roll();
     }
     sfx(a => a.roll(Math.min(4, n)));
-    const run = { a: c.a.power + c.a.venom + c.a.first, b: c.b.power + c.b.venom + c.b.first };
+    const run = { a: c.a.venom + c.a.first, b: c.b.venom + c.b.first };
     setTotal('a', run.a);
     setTotal('b', run.b);
     markTotals(run);
     await wait(quick(450));
 
-    // 공개: 작은 눈부터 번갈아, 지고 있는 쪽이 마지막
+    // 공개: 한 걸음에 양쪽 주사위가 하나씩 '동시에' 멈춘다. 각자 작은 눈부터, 마지막 걸음 = 양쪽 제일 큰 눈
     const by = { a: new Map(c.a.dice.map(d => [d.slot, d])), b: new Map(c.b.dice.map(d => [d.slot, d])) };
     let lead = Math.sign(run.a - run.b);
-    for (let i = 0; i < c.order.length; i++) {
-      const o = c.order[i];
-      const d = by[o.side].get(o.slot);
-      const dv = sideOf(o.side).views.get(o.slot);
-      const sides = sidesOf(d.die);
+    for (let i = 0; i < c.steps.length; i++) {
+      const pair = SIDES.map(side => {
+        const slot = c.steps[i][side];
+        if (slot == null) return null;
+        const d = by[side].get(slot);
+        return d ? { side, d, dv: sideOf(side).views.get(slot) } : null;
+      }).filter(Boolean);
       const slow = i === c.slowAt;
       if (slow) {
-        cap('마지막 주사위!', 'tense');
+        cap(pair.length > 1 ? '마지막 주사위!' : '마지막 한 개!', 'tense');
         stageEl.classList.add('tense');
-        dv?.roll(true);
+        for (const x of pair) x.dv?.roll(true);
         sfx(a => { a.duck(true); a.heart(true, 1.4); a.slow(); });
         await wait(1100);
       }
-      if (d.rr) {
-        dv?.face(d.rr[0], 'min', tagOf(d.rr));
-        note(o.side, '🍀 행운: 1이라 다시');
+      const rr = pair.filter(x => x.d.rr);
+      if (rr.length) { // 🍀 행운: 1이 나온 주사위는 한 번 더 구른다
+        for (const x of rr) { x.dv?.face(x.d.rr[0], 'min', tagOf(x.d.rr)); note(x.side, '🍀 행운: 1이라 다시'); }
         sfx(a => a.minFace());
         await wait(320);
-        dv?.roll();
-        sfx(a => a.roll(1));
+        for (const x of rr) x.dv?.roll();
+        sfx(a => a.roll(rr.length));
         await wait(260);
       }
-      const st = d.shownFaces[0] === sides ? 'max' : d.shownFaces[0] === 1 ? 'min' : 'idle';
-      dv?.face(d.shownFaces[0], st, tagOf(d.shownFaces) + (d.heavy ? ' 🪨' : ''));
-      run[o.side] += d.shown;
-      setTotal(o.side, run[o.side]);
-      sfx(a => a.land(d.shown, sides, i));
-      if (d.shownFaces.length > 1) {
-        sfx(a => a.explode(d.shownFaces.length - 1));
-        note(o.side, `터졌다! ${d.shownFaces.join(' + ')}`);
-      } else if (st === 'max') sfx(a => a.maxFace());
-      else if (st === 'min') sfx(a => a.minFace());
-      if (d.heavy) note(o.side, '🪨 1이 나와서 2');
+      for (const x of pair) {
+        const { d, dv, side } = x;
+        const sides = sidesOf(d.die);
+        const st = d.shownFaces[0] === sides ? 'max' : d.shownFaces[0] === 1 ? 'min' : 'idle';
+        dv?.face(d.shownFaces[0], st, tagOf(d.shownFaces) + (d.heavy ? ' 🪨' : ''));
+        run[side] += d.shown;
+        setTotal(side, run[side]);
+        sfx(a => a.land(d.shown, sides, i));
+        if (d.shownFaces.length > 1) {
+          sfx(a => a.explode(d.shownFaces.length - 1));
+          note(side, `터졌다! ${d.shownFaces.join(' + ')}`);
+        } else if (st === 'max') sfx(a => a.maxFace());
+        else if (st === 'min') sfx(a => a.minFace());
+        if (d.heavy) note(side, '🪨 1이 나와서 2');
+      }
       const nl = Math.sign(run.a - run.b);
       if (nl !== 0 && lead !== 0 && nl !== lead) sfx(a => a.lead());
       if (nl !== 0) lead = nl;
       markTotals(run);
       if (slow) {
         stageEl.classList.remove('tense');
-        flash(o.side === 'a' ? 'red' : 'blue');
+        flash(run.a > run.b ? 'red' : run.b > run.a ? 'blue' : 'gold');
         sfx(a => { a.heart(false); a.duck(false); });
       }
-      await wait(i >= c.lockAt ? 150 : quick(270));
+      await wait(i >= c.lockAt ? 180 : quick(360));
     }
 
     // 저주 · 불꽃
@@ -773,7 +781,7 @@ export function createForgeView(root, { audio = SILENT, embed = false } = {}) {
     }
     for (const x of c.brace) {
       sideOf(x.side).views.get(x.slot)?.crack();
-      note(x.side, '🧱 버팀! 금만 갔다');
+      note(x.side, '버텼다! 금만 갔다');
       sfx(a => a.thud());
       await wait(420);
     }
@@ -874,8 +882,8 @@ export function createForgeView(root, { audio = SILENT, embed = false } = {}) {
   function runOthers(list) {
     othersEl.replaceChildren(h('div', { class: 'fg-others-head' }, '다른 대결'));
     return Promise.all(list.map(async f => {
-      const nA = TECHS[f.a.tech].n;
-      const nB = TECHS[f.b.tech].n;
+      const nA = diceOfF(f.a).length;
+      const nB = diceOfF(f.b).length;
       const da = h('span', { class: 'fg-pa' }, pipsOf([...Array(nA).keys()], nA));
       const db = h('span', { class: 'fg-pb' }, pipsOf([...Array(nB).keys()], nB));
       const no = h('span', { class: 'fg-dim' }, '');

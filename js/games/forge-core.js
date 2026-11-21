@@ -1,20 +1,37 @@
 // 주사위 대장간 — 규칙 코어. 화면 · 소리와 상관없는 순수 함수만 둔다 (시제품 · 나중의 방장 · 봇 시험이 같이 쓴다).
-// 숫자는 기획서-주사위대장간.md '조절할 값'의 첫 값. 주사위 · 무기 · 기술은 주사위 합(dice-core.js) 것을 그대로 쓴다.
+// 숫자는 기획서-주사위대장간.md '조절할 값'의 첫 값. 주사위 종류 · 무기 이름은 주사위 합(dice-core.js) 것을 쓴다.
 //
 // 한 라운드: beginRound(수입 · 상점 · 짝짓기) → buy · curse (사람 · 봇) → resolveRound(대결 기록 + 정산 + 탈락)
 // 대결 하나 = duel() 이 돌려주는 기록 하나. 값은 전부 여기서 굴리고, 화면은 기록을 박자대로 틀기만 한다.
-import { DICE, WEAPONS, TECHS as BASE_TECHS, makeRng, labelOf } from './dice-core.js';
+import { DICE, WEAPONS, makeRng, labelOf } from './dice-core.js';
 
 export { DICE, WEAPONS, makeRng, labelOf };
 
-// 기술은 주사위 합 것 그대로, 봇 시뮬레이션에서 기운 것만 고친다 (2026-11-21 시제품):
-//   장사는 주사위가 하나라 여럿이 붙는 판에서 약했다 → 위력 +2 · 검객은 약하고 쌍검은 셌다 → 검객 +1, 쌍검 −1
-export const TECH_FIX = {
-  hm1: { base: 8 }, hm2: { base: 10 }, hm3: { base: 12 },
-  sw1: { base: 4 }, sw2: { base: 5 }, sw3: { base: 1 },
-  tw1: { base: 0 }, tw2: { base: 2 },
+// 기술 = 주사위만. 합계는 굴린 눈 그대로이고(+ 증강 보너스), 숨은 '위력' 숫자는 없다 (사용자 요청 2026-11-22: "순전히 주사위 숫자로").
+// 단이 오르면 주사위가 늘거나 커진다. 장사는 주사위가 하나인 대신 지는 걸 버틴다(금만 간다: 1단 한 번, 2단부터 두 번).
+// 구성은 봇끼리 판으로 맞춤 (2 · 4 · 6 · 8명 무기별 우승률이 공평한 값의 82~119%)
+export const TECHS = {
+  sw1: { w: 'sw', tier: 1, name: '베기', dice: ['d10', 'd10'] },
+  sw2: { w: 'sw', tier: 2, name: '겹베기', dice: ['d10', 'd10', 'd6'] },
+  sw3: { w: 'sw', tier: 3, name: '삼단베기', dice: ['d10', 'd10', 'd10'] },
+  hm1: { w: 'hm', tier: 1, name: '내려찍기', dice: ['d20'], tough: 1 },
+  hm2: { w: 'hm', tier: 2, name: '통짜찍기', dice: ['d20'], tough: 2 },
+  hm3: { w: 'hm', tier: 3, name: '산 가르기', dice: ['d20', 'd6'], tough: 2 },
+  tw1: { w: 'tw', tier: 1, name: '찌르기', dice: ['d6', 'd6', 'd6'] },
+  tw2: { w: 'tw', tier: 2, name: '난도질', dice: ['d6', 'd6', 'd6', 'd6'] },
+  tw3: { w: 'tw', tier: 3, name: '칼바람', dice: ['d10', 'd6', 'd6', 'd6'] },
+  gb1: { w: 'gb', tier: 1, name: '한 판', dice: ['x6', 'd6', 'd6'] },
+  gb2: { w: 'gb', tier: 2, name: '두 판', dice: ['x6', 'd6', 'd6', 'd6'] },
+  gb3: { w: 'gb', tier: 3, name: '몰빵', dice: ['x6', 'x6', 'x6', 'd6'] },
 };
-export const TECHS = Object.fromEntries(Object.entries(BASE_TECHS).map(([k, t]) => [k, { ...t, ...(TECH_FIX[k] || {}) }]));
+for (const [k, t] of Object.entries(TECHS)) t.key = k;
+export const MAIN_DIE = { sw: 'd10', hm: 'd20', tw: 'd6', gb: 'x6' }; // 🎲 주사위 하나 더
+export const TASTE = {
+  sw: '무난함. 열면체 둘로 시작해 셋',
+  hm: '이십면체 하나. 지는 걸 버틴다 (2단부터 두 번)',
+  tw: '육면체 여럿. 오래 버티고 연타',
+  gb: '🔥주사위는 6이면 한 번 더. 3단엔 셋',
+};
 
 export const RULE = {
   HP: 40,
@@ -26,13 +43,12 @@ export const RULE = {
   SHADOW_WIN: 2,      // 그림자를 이기면
   COLLECT: 3,         // 💰 수금
   TIER_COST: { 2: 4, 3: 8 },   // 2단은 위력이 조금만 올라서 숫돌보다 손해였다 (6 · 10 → 4 · 8)
-  WHET_COST: 3,       // 숫돌 첫 값, 살 때마다 +1
-  WHET_POWER: 2,
+  WHET_COST: 3,       // 숫돌 첫 값, 살 때마다 +1 (제일 작은 주사위를 한 단계 크게)
   REROLL: 1,
   AUG_COST: { s: 3, g: 5, p: 8 },
   AUG_MAX: 3,
   SLOTS: 3,
-  VENOM: 3,           // 독기: 이번 대결에서 깨진 내 주사위마다
+  VENOM: 3,           // 🌀 독기 증강: 이번 대결에서 깨진 내 주사위마다
   FLAME: 0.15,        // 🔥 하나마다 합 한 번에 불꽃 확률
   FLINT: 0.10,
   MOM_MAX: 3,
@@ -54,17 +70,18 @@ export const TRIALS = { p0: 600, mid: 300, preview: 1200, bot: 200 };
 export const AUGS = {
   luck: { tier: 's', icon: '🍀', name: '행운', text: '합마다 한 번, 1이 나온 주사위를 다시' },
   heavy: { tier: 's', icon: '🪨', name: '무거운 주사위', text: '1이 나오면 2' },
-  twins: { tier: 's', icon: '👯', name: '쌍둥이', text: '같은 눈 둘이면 +4', not: w => w === 'hm' },
+  twins: { tier: 's', icon: '👯', name: '쌍둥이', text: '같은 눈 둘이면 +4', not: w => w === 'hm' }, // 장사는 주사위가 거의 하나
   taste: { tier: 's', icon: '🩸', name: '피맛', text: '추격 한 대마다 +1' },
-  first: { tier: 's', icon: '🎯', name: '선빵', text: '첫 합은 위력 +3' },
+  first: { tier: 's', icon: '🎯', name: '선빵', text: '첫 합은 합계 +3' },
   brace: { tier: 's', icon: '🧱', name: '버팀', text: '처음 지는 합 한 번은 금만 간다' },
   powder: { tier: 'g', icon: '💥', name: '화약', text: '주사위 하나가 최대 눈이면 한 번 더', not: w => w === 'gb' },
   flint: { tier: 'g', icon: '🔥', name: '부싯돌', text: '불꽃 확률 +10%' },
   collect: { tier: 'g', icon: '💰', name: '수금', text: '이기면 냥 +3' },
   fox: { tier: 'g', icon: '🦊', name: '여우', text: '상점 칸이 4개' },
   counter: { tier: 'g', icon: '🪃', name: '되치기', text: '지면 상대 추격의 제일 큰 한 대를 돌려줌' },
+  venom: { tier: 'g', icon: '🌀', name: '독기', text: '깨질 때마다 합계 +3' },
   crit: { tier: 'p', icon: '👑', name: '일격필살', text: '추격에서 최대 눈은 두 배' },
-  venom2: { tier: 'p', icon: '🌀', name: '독기 두 배', text: '깨질 때마다 위력 +6' },
+  extra: { tier: 'p', icon: '🎲', name: '주사위 하나 더', text: '내 무기 주사위가 하나 는다' },
   jackpot: { tier: 'p', icon: '🎰', name: '잭팟', text: '같은 눈 셋이면 상대 주사위가 전부 깨짐', not: w => w === 'hm' },
   curse: { tier: 'p', icon: '☠️', name: '저주', text: '상대의 첫 합, 제일 높은 주사위가 1' },
   seer: { tier: 'p', icon: '🧿', name: '꿰뚫어 봄', text: '상대가 이번에 산 것이 보임' },
@@ -109,24 +126,51 @@ export const cloneBuild = b => (b ? { ...b, augs: [...b.augs] } : b);
 export const techKey = b => `${b.w}${b.tier}`;
 export const techOf = b => TECHS[techKey(b)];
 export const has = (b, k) => !!b && b.augs.includes(k);
-export const dieOf = b => techOf(b).die;
 export const sidesOf = die => DICE[die].sides;
-export const explodes = (b, slot) => DICE[dieOf(b)].explode || (slot === 0 && has(b, 'powder'));
-export const maxRoll = (b, slot) => sidesOf(dieOf(b)) * (explodes(b, slot) ? RULE.EXPLODE_MAX + 1 : 1);
-export const powerOf = b => techOf(b).base + RULE.WHET_POWER * b.whet;
-export const slotsOf = b => Array.from({ length: techOf(b).n }, (_, i) => i);
+const UPGRADE = { d6: 'd10', x6: 'd10', d10: 'd20' }; // 숫돌: 한 단계 크게
+const diceCache = new Map();
+// 이 빌드가 굴리는 주사위 (자리 순서): 기술 주사위 + 🎲 하나 더, 숫돌 수만큼 제일 작은 것(같으면 뒤쪽)부터 한 단계씩 크게
+export function diceOf(b) {
+  const key = `${b.w}${b.tier}|${b.whet}|${has(b, 'extra') ? 1 : 0}`;
+  const hit = diceCache.get(key);
+  if (hit) return hit;
+  const d = [...TECHS[techKey(b)].dice, ...(has(b, 'extra') ? [MAIN_DIE[b.w]] : [])];
+  for (let i = 0; i < b.whet; i++) {
+    let lo = -1;
+    for (let j = 0; j < d.length; j++) if (UPGRADE[d[j]] && (lo < 0 || sidesOf(d[j]) <= sidesOf(d[lo]))) lo = j;
+    if (lo < 0) break;
+    d[lo] = UPGRADE[d[lo]];
+  }
+  diceCache.set(key, d);
+  return d;
+}
+// 밸런스 맞출 때 TECHS를 바꿨으면 부른다 (브라우저 콘솔에서 __forge.core.TECHS.sw2.dice = [...]; __forge.core.resetDiceCache())
+export const resetDiceCache = () => diceCache.clear();
+export const canWhet = b => diceOf(b).some(x => UPGRADE[x]);
+export const dieAt = (b, slot) => diceOf(b)[slot];
+export const explodes = (b, slot) => DICE[dieAt(b, slot)].explode || (slot === 0 && has(b, 'powder'));
+export const maxRoll = (b, slot) => sidesOf(dieAt(b, slot)) * (explodes(b, slot) ? RULE.EXPLODE_MAX + 1 : 1);
+export const slotsOf = b => diceOf(b).map((_, i) => i);
+export const braceCap = b => (has(b, 'brace') ? 1 : 0) + (TECHS[techKey(b)].tough || 0); // 금만 가고 버티는 횟수
 export const augAllowed = (b, k) => !b.augs.includes(k) && !(AUGS[k].not && AUGS[k].not(b.w));
 
-export function diceTextOf(t) {
-  const die = DICE[t.die].explode ? '🔥d6' : t.die;
-  return `${die}${t.n > 1 ? `×${t.n}` : ''}`;
+// ["d10", "d10", "d6"] → "d10×2 + d6"
+export function diceTextOf(dice) {
+  const counts = [];
+  for (const d of dice) {
+    const c = counts.find(x => x.d === d);
+    if (c) c.n++;
+    else counts.push({ d, n: 1 });
+  }
+  return counts.map(c => `${DICE[c.d].explode ? '🔥d6' : c.d}${c.n > 1 ? `×${c.n}` : ''}`).join(' + ');
 }
-// "겹베기 4 + d10×2"
-export const techLine = b => { const t = techOf(b); return `${t.name} ${t.base} + ${diceTextOf(t)}`; };
+// "겹베기 d10×2 + d6"
+const toughText = t => (t.tough ? ` · 버팀 ${t.tough}` : '');
+export const techLine = b => `${techOf(b).name} ${diceTextOf(diceOf(b))}${toughText(techOf(b))}`;
 export function tierUpText(b) {
   if (b.tier >= 3) return null;
-  const t = TECHS[`${b.w}${b.tier + 1}`];
-  return `${t.tier}단 ${t.name} ${t.base} + ${diceTextOf(t)}`;
+  const nb = { ...b, tier: b.tier + 1 };
+  return `${nb.tier}단 ${techOf(nb).name} ${diceTextOf(diceOf(nb))}${toughText(techOf(nb))}`;
 }
 
 // ───────── 굴리기
@@ -139,18 +183,19 @@ function rollFaces(rng, sides, boom, first = 0) {
 // 기술 주사위 전부: [{ slot, die, faces, v, shown, shownFaces, max, rr?, heavy? }]
 //   shown = 떨어진 눈 (행운 · 무거운 주사위까지, 저주 · 불꽃 전). 화면은 shown을 먼저 보여 주고 사건으로 바꾼다
 function rollTech(rng, b, slots) {
-  const die = dieOf(b);
-  const sides = sidesOf(die);
-  const dice = slots.map(slot => ({ slot, die, faces: rollFaces(rng, sides, explodes(b, slot)) }));
+  const dice = slots.map(slot => {
+    const die = dieAt(b, slot);
+    return { slot, die, faces: rollFaces(rng, sidesOf(die), explodes(b, slot)) };
+  });
   // 행운(1이면 다시)을 먼저, 그다음 무거운 주사위(남은 1은 2). 둘 다 가져도 둘 다 일한다
   if (has(b, 'luck')) {
     const one = dice.find(d => d.faces[0] === 1);
-    if (one) { one.rr = one.faces; one.faces = rollFaces(rng, sides, explodes(b, one.slot)); }
+    if (one) { one.rr = one.faces; one.faces = rollFaces(rng, sidesOf(one.die), explodes(b, one.slot)); }
   }
   if (has(b, 'heavy')) for (const d of dice) if (d.faces[0] === 1) { d.faces = [2]; d.heavy = true; }
   for (const d of dice) {
     d.v = sum(d.faces);
-    d.max = d.faces[0] === sides;
+    d.max = d.faces[0] === sidesOf(d.die);
     d.shown = d.v;
     d.shownFaces = d.faces;
   }
@@ -190,7 +235,7 @@ function applyEvents(rng, F, s, dice, no) {
   return cursed;
 }
 
-const venomOf = b => (has(b, 'venom2') ? 2 * RULE.VENOM : RULE.VENOM);
+const venomOf = b => (has(b, 'venom') ? RULE.VENOM : 0); // 🌀 독기 증강만
 const lowest = dice => dice.reduce((lo, d) => (!lo || d.v < lo.v ? d : lo), null);
 function hasPair(dice) {
   const seen = new Set();
@@ -246,7 +291,6 @@ function judge(F, dice, g, st, no) {
   for (const s of SIDES) {
     const b = F[s].b;
     const p = {
-      power: powerOf(b),
       venom: st.broken[s] * venomOf(b),
       first: no === 1 && has(b, 'first') ? RULE.FIRST : 0,
       twins: has(b, 'twins') && hasPair(live[s]) ? RULE.TWINS : 0,
@@ -254,7 +298,7 @@ function judge(F, dice, g, st, no) {
       m: mul[s],
     };
     p.dice = sum(live[s].map(d => d.v));
-    p.total = (p.power + p.venom + p.first + p.twins + p.add + p.dice) * p.m;
+    p.total = (p.venom + p.first + p.twins + p.add + p.dice) * p.m;
     p.jack = has(b, 'jackpot') && hasTriple(live[s]);
     parts[s] = p;
   }
@@ -269,59 +313,57 @@ function judge(F, dice, g, st, no) {
   return { gone, bombs, live, parts, result, mirror };
 }
 
-// 보여 주는 순서: 작은 눈부터 양쪽 번갈아, 각자 제일 큰 눈은 남겨 뒀다가 앞선 쪽 먼저 · 지고 있는 쪽이 맨 끝.
-// lockAt = 몇 번째 공개에서 (기술 주사위만 보면) 결과가 정해지나. slowAt = 느리게 굴릴 공개 (없으면 -1):
-//   마지막 주사위가 결과를 가르고, 그 주사위 눈에 따라 정말 뒤집힐 수 있을 때(15~85%)만. 사건 · 도박이 남았으면 안 함
+// 보여 주는 순서: 한 걸음에 양쪽 주사위가 하나씩 '동시에' 떨어진다 (사용자 요청 2026-11-22).
+// 각자 작은 눈부터, 끝을 맞춰서 마지막 걸음 = 양쪽 제일 큰 눈. 주사위 수가 다르면 많은 쪽의 작은 주사위가 먼저 혼자 떨어진다.
+// steps = [{ a: 자리 | null, b: 자리 | null }], lockAt = 몇 번째 걸음에서 (기술 주사위만 보면) 결과가 정해지나,
+// slowAt = 느리게 굴릴 걸음: 마지막 걸음이 결과를 가르고, 그 걸음의 눈에 따라 정말 뒤집힐 수 있을 때(15~85%)만. 사건 · 도박이 남았으면 안 함
 function revealPlan(F, dice, parts, busy) {
   const sa = [...dice.a].sort((x, y) => x.shown - y.shown);
   const sb = [...dice.b].sort((x, y) => x.shown - y.shown);
-  const la = sa.pop();
-  const lb = sb.pop();
-  const order = [];
-  for (let i = 0; i < Math.max(sa.length, sb.length); i++) {
-    if (i < sa.length) order.push({ side: 'a', slot: sa[i].slot });
-    if (i < sb.length) order.push({ side: 'b', slot: sb[i].slot });
-  }
-  const base = s => parts[s].power + parts[s].venom + parts[s].first;
-  const shownA = base('a') + sum(sa.map(d => d.shown));
-  const shownB = base('b') + sum(sb.map(d => d.shown));
-  const LA = la ? { side: 'a', slot: la.slot } : null;
-  const LB = lb ? { side: 'b', slot: lb.slot } : null;
-  if (LA && LB) {
-    if (shownA < shownB) order.push(LB, LA);
-    else if (shownB < shownA) order.push(LA, LB);
-    else order.push(...(la.shown >= lb.shown ? [LB, LA] : [LA, LB]));
-  } else if (LA) order.push(LA);
-  else if (LB) order.push(LB);
-
+  const n = Math.max(sa.length, sb.length);
+  const offA = n - sa.length;
+  const offB = n - sb.length;
+  const steps = [];
+  for (let k = 0; k < n; k++) steps.push({ a: k >= offA ? sa[k - offA].slot : null, b: k >= offB ? sb[k - offB].slot : null });
   const by = { a: new Map(dice.a.map(d => [d.slot, d])), b: new Map(dice.b.map(d => [d.slot, d])) };
-  const known = { a: base('a'), b: base('b') };
+  const known = { a: parts.a.venom + parts.a.first, b: parts.b.venom + parts.b.first };
   const left = { a: dice.a.map(d => d.slot), b: dice.b.map(d => d.slot) };
   const minL = s => left[s].length * (has(F[s].b, 'heavy') ? 2 : 1);
   const maxL = s => sum(left[s].map(slot => maxRoll(F[s].b, slot)));
-  let lockAt = order.length - 1;
-  for (let i = 0; i < order.length; i++) {
-    const o = order[i];
-    known[o.side] += by[o.side].get(o.slot).shown;
-    left[o.side] = left[o.side].filter(x => x !== o.slot);
+  let lockAt = steps.length - 1;
+  for (let i = 0; i < steps.length; i++) {
+    for (const s of SIDES) {
+      const slot = steps[i][s];
+      if (slot == null) continue;
+      known[s] += by[s].get(slot).shown;
+      left[s] = left[s].filter(x => x !== slot);
+    }
     const lo = known.a + minL('a') - (known.b + maxL('b'));
     const hi = known.a + maxL('a') - (known.b + minL('b'));
     if (lo > 0 || hi < 0 || (lo === 0 && hi === 0)) { lockAt = i; break; }
   }
   let slowAt = -1;
-  if (!busy && order.length >= 2 && lockAt === order.length - 1) {
-    const o = order[order.length - 1];
-    const d = by[o.side].get(o.slot);
-    const sides = sidesOf(d.die);
-    const rest = known[o.side] - d.shown;
-    const opp = known[other(o.side)];
-    const actual = Math.sign(rest + d.shown - opp);
+  if (!busy && steps.length && lockAt === steps.length - 1) {
+    // 마지막 걸음 전 합계 + 마지막 주사위(들)의 모든 눈 조합에서, 결과가 실제와 달라지는 비율
+    const last = steps[steps.length - 1];
+    const dA = last.a != null ? by.a.get(last.a) : null;
+    const dB = last.b != null ? by.b.get(last.b) : null;
+    const restA = known.a - (dA ? dA.shown : 0);
+    const restB = known.b - (dB ? dB.shown : 0);
+    const actual = Math.sign(known.a - known.b);
+    const facesOf = d => (d ? Array.from({ length: sidesOf(d.die) }, (_, i) => i + 1) : [0]);
     let diff = 0;
-    for (let x = 1; x <= sides; x++) if (Math.sign(rest + x - opp) !== actual) diff++;
-    const p = diff / sides;
-    if (p >= 0.15 && p <= 0.85) slowAt = order.length - 1;
+    let tot = 0;
+    for (const x of facesOf(dA)) {
+      for (const y of facesOf(dB)) {
+        tot++;
+        if (Math.sign(restA + x - (restB + y)) !== actual) diff++;
+      }
+    }
+    const pf = diff / tot;
+    if (pf >= 0.15 && pf <= 0.85) slowAt = steps.length - 1;
   }
-  return { order, lockAt, slowAt };
+  return { steps, lockAt, slowAt };
 }
 
 function rollStart(rng, F) {
@@ -369,12 +411,12 @@ function rollChase(rng, F, winner, st, round, start) {
 }
 
 function initState(A, B) {
-  return { alive: { a: slotsOf(A.b), b: slotsOf(B.b) }, broken: { a: 0, b: 0 }, braced: { a: false, b: false }, no: 0, streak: 0 };
+  return { alive: { a: slotsOf(A.b), b: slotsOf(B.b) }, broken: { a: 0, b: 0 }, braced: { a: 0, b: 0 }, no: 0, streak: 0 };
 }
 const cloneState = st => ({ alive: { a: [...st.alive.a], b: [...st.alive.b] }, broken: { ...st.broken }, braced: { ...st.braced }, no: st.no, streak: st.streak, zeroWin: st.zeroWin || null });
 
 const info = f => ({
-  id: f.id ?? null, name: f.name, shadow: !!f.shadow, w: f.b.w, tier: f.b.tier, tech: techKey(f.b), power: powerOf(f.b), whet: f.b.whet,
+  id: f.id ?? null, name: f.name, shadow: !!f.shadow, w: f.b.w, tier: f.b.tier, tech: techKey(f.b), dice: diceOf(f.b), whet: f.b.whet,
   gamble: f.b.gamble, bet: !!(f.b.gamble && f.b.bet), augs: [...f.b.augs], mom: f.mom || 0, curses: f.curses || 0, cursedBy: f.cursedBy || [], hp: f.hp ?? null,
 });
 
@@ -419,8 +461,8 @@ export function duel(rng, A, B, opt = {}) {
     const breakLow = (s, how) => {
       const lo = lowest(J.live[s].filter(d => !broke.some(x => x.side === s && x.slot === d.slot)));
       if (!lo) return;
-      if (how === 'lose' && has(F[s].b, 'brace') && !st.braced[s]) {
-        st.braced[s] = true;
+      if (how === 'lose' && st.braced[s] < braceCap(F[s].b)) {
+        st.braced[s]++;
         brace.push({ side: s, slot: lo.slot });
         return;
       }
@@ -466,7 +508,7 @@ export function duel(rng, A, B, opt = {}) {
         slot: d.slot, die: d.die, faces: d.faces, v: d.v, shown: d.shown, shownFaces: d.shownFaces, max: d.max,
         rr: d.rr || null, heavy: !!d.heavy, ev: d.ev || null, gone: J.gone[s].has(d.slot),
       })),
-      power: J.parts[s].power, venom: venomNow[s], first: J.parts[s].first, twins: J.parts[s].twins,
+      venom: venomNow[s], first: J.parts[s].first, twins: J.parts[s].twins,
       add: J.parts[s].add, m: J.parts[s].m, total: J.parts[s].total, jack: J.parts[s].jack,
       g: g[s] ? {
         ...g[s],
@@ -497,7 +539,7 @@ const specKey = f => [f.b.w, f.b.tier, f.b.whet, f.b.gamble || '-', f.b.gamble &
 export function probFrom(A, B, st, trials = TRIALS.preview) {
   if (!st.alive.a.length) return 0;
   if (!st.alive.b.length) return 1;
-  const key = `${specKey(A)}#${specKey(B)}#${st.alive.a.join(',')}/${st.alive.b.join(',')}/${st.broken.a},${st.broken.b}/${st.braced.a ? 1 : 0}${st.braced.b ? 1 : 0}/${st.no}/${st.streak}#${trials}`;
+  const key = `${specKey(A)}#${specKey(B)}#${st.alive.a.join(',')}/${st.alive.b.join(',')}/${st.broken.a},${st.broken.b}/${st.braced.a}${st.braced.b}/${st.no}/${st.streak}#${trials}`;
   const hit = probCache.get(key);
   if (hit !== undefined) return hit;
   const rng = makeRng(hashStr(key));
@@ -550,7 +592,7 @@ function rollSlot(rng, b, round, taken) {
   for (let tries = 0; tries < 8; tries++) {
     const t = weighted(rng, RULE.SLOT_W);
     let s = null;
-    if (t === 'whet') s = { t, key: 'whet' };
+    if (t === 'whet') s = canWhet(b) ? { t, key: 'whet' } : null;
     else if (t === 'gamble') s = { t, key: pick(rng, GAMBLE_KEYS.filter(k => k !== b.gamble)) };
     else {
       const tw = tierWeights(round);
@@ -564,7 +606,7 @@ function rollSlot(rng, b, round, taken) {
       return { ...s, sold: false };
     }
   }
-  return { t: 'whet', key: 'whet', sold: false };
+  return canWhet(b) ? { t: 'whet', key: 'whet', sold: false } : { t: 'gamble', key: pick(rng, GAMBLE_KEYS.filter(k => k !== b.gamble && !taken.has(k))), sold: false };
 }
 export const shopSize = b => RULE.SLOTS + (has(b, 'fox') ? 1 : 0);
 function makeShop(rng, b, round) {
@@ -578,7 +620,7 @@ export function slotCost(b, s) {
   return RULE.AUG_COST[AUGS[s.key].tier];
 }
 export function slotInfo(s) {
-  if (s.t === 'whet') return { icon: '🔨', name: '숫돌', text: `위력 +${RULE.WHET_POWER}`, tier: 'whet' };
+  if (s.t === 'whet') return { icon: '🔨', name: '숫돌', text: '제일 작은 주사위를 한 단계 크게', tier: 'whet' };
   if (s.t === 'gamble') { const g = GAMBLES[s.key]; return { icon: g.icon, name: `${g.name} 주사위`, text: g.text, tier: 'gamble' }; }
   const a = AUGS[s.key];
   return { icon: a.icon, name: a.name, text: a.text, tier: a.tier };
@@ -850,10 +892,10 @@ export function titles(game) {
 
 // ───────── 봇
 const FIT = {
-  sw: ['powder', 'twins', 'crit', 'venom2', 'first'],
-  hm: ['luck', 'heavy', 'crit', 'first', 'flint', 'brace'],
-  tw: ['twins', 'jackpot', 'taste', 'venom2', 'luck'],
-  gb: ['luck', 'crit', 'first', 'flint', 'heavy'],
+  sw: ['powder', 'twins', 'crit', 'venom', 'first', 'extra'],
+  hm: ['luck', 'heavy', 'crit', 'first', 'flint', 'brace', 'extra'],
+  tw: ['twins', 'jackpot', 'taste', 'venom', 'luck'],
+  gb: ['luck', 'crit', 'first', 'flint', 'heavy', 'extra'],
 };
 // 냥이 되면 단 올리기 → 무기에 맞는 증강 → 남으면 숫돌. 다시 뽑기는 7냥 넘게 남을 때만 (라운드에 두 번까지)
 export function botShop(game, pid, rng) {
@@ -980,7 +1022,7 @@ export function mirrorFight(f) {
       ...c,
       a: g(c.b),
       b: g(c.a),
-      order: c.order.map(flipSide),
+      steps: c.steps.map(x => ({ a: x.b, b: x.a })),
       bombs: c.bombs.map(x => ({ ...x, by: sw(x.by), side: sw(x.side) })),
       broke: c.broke.map(flipSide),
       brace: c.brace.map(flipSide),
@@ -1001,7 +1043,7 @@ export function playMs(f) {
   for (const c of f.clashes) {
     const e = Math.min(0.4, 0.08 * (c.no - 1));
     const q = x => Math.max(110, x * (1 - e));
-    ms += 450 + c.order.length * 300 + (c.slowAt >= 0 ? 1100 : 0);
+    ms += 450 + c.steps.length * 360 + (c.slowAt >= 0 ? 1100 : 0);
     for (const s of ['a', 'b']) {
       for (const d of c[s].dice) {
         if (d.rr) ms += 600;

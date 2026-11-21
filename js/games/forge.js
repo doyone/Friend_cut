@@ -273,7 +273,7 @@ export function mount(root, api) {
     view.top(topGame(), { me, ready, target });
   }
   const sideInfo = (name, b, mom = 0, { bet, shadow = false } = {}) => ({
-    name, w: b.w, tier: b.tier, whet: b.whet, gamble: b.gamble, bet: bet === undefined ? !!b.bet : bet, augs: [...(b.augs || [])], mom, shadow,
+    name, w: b.w, tier: b.tier, dice: core.diceOf({ ...b, augs: b.augs || [] }), gamble: b.gamble, bet: bet === undefined ? !!b.bet : bet, augs: [...(b.augs || [])], mom, shadow,
   });
   const fighter = (name, b, mom = 0) => ({ name, b: { ...b, augs: [...(b.augs || [])] }, mom, curses: 0 });
   const pairsText = () => V.pairs.map(pr => ({ a: V.players[idxOf(pr.a)]?.name, b: pr.b === null ? pr.shadow?.name : V.players[idxOf(pr.b)]?.name }));

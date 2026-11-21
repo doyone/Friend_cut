@@ -75,7 +75,7 @@ export function boot(root) {
 
   // 화면에 넘길 빌드 정보 (bet: true · false · null=모름)
   function sideInfo(f, { bet } = {}) {
-    return { name: f.name, w: f.b.w, tier: f.b.tier, whet: f.b.whet, gamble: f.b.gamble, bet: bet === undefined ? !!f.b.bet : bet, augs: [...f.b.augs], mom: f.mom || 0, shadow: !!f.shadow };
+    return { name: f.name, w: f.b.w, tier: f.b.tier, dice: core.diceOf(f.b), gamble: f.b.gamble, bet: bet === undefined ? !!f.b.bet : bet, augs: [...f.b.augs], mom: f.mom || 0, shadow: !!f.shadow };
   }
 
   function pairsText() {
