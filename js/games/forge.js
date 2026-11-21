@@ -350,10 +350,10 @@ export function mount(root, api) {
     const notes = S.notes ? JSON.parse(S.notes) : [];
     const myName = meP()?.name;
     return notes.map(n => {
-      if (n.out) return { text: `💀 ${n.out} 탈락 · ${n.place}등`, cls: 'out' };
-      if (n.shadow && n.loserHp == null) return { text: `${n.winner} 승 (상대: ${n.loser}) · 냥 +${RULE.SHADOW_WIN}`, cls: n.winner === myName ? 'good' : '' };
-      const extra = [n.back ? `🪃 ${n.winner} −${n.back}` : '', n.heal ? `🧛 ${n.winner} +${n.heal}` : '', n.bounty ? `💰 현상금 +${n.bounty}` : ''].filter(Boolean).join(' · ');
-      return { text: `${n.winner} 승 → ${n.loser} 체력 −${n.dmg} (남은 ${Math.max(0, n.loserHp)})${extra ? ` · ${extra}` : ''}`, cls: n.loser === myName ? 'hurt' : n.winner === myName ? 'good' : '' };
+      if (n.out) return { text: `💀 ${n.out} ${n.place}등`, cls: 'out' };
+      if (n.shadow && n.loserHp == null) return { text: `${n.winner} ▶ ${n.loser} +${RULE.SHADOW_WIN}냥`, cls: n.winner === myName ? 'good' : '' };
+      const extra = [n.back ? `🪃 −${n.back}` : '', n.heal ? `🧛 +${n.heal}` : '', n.bounty ? `💰 +${n.bounty}냥` : ''].filter(Boolean).join(' ');
+      return { text: `${n.winner} ▶ ${n.loser} −${n.dmg}${extra ? ` ${extra}` : ''}`, cls: n.loser === myName ? 'hurt' : n.winner === myName ? 'good' : '' };
     });
   }
 
@@ -402,7 +402,7 @@ export function mount(root, api) {
       else drawShop();
     } else if (S.phase === 'reveal') drawReveal();
     else if (S.phase === 'settle') {
-      view.settle({ rows: settleRows(), mine: mp ? (mp.alive ? `내 냥 ${P?.gold ?? 0} · 체력 ${mp.hp}` : `👻 ${mp.place}등 · 다음 라운드엔 저주를 건다`) : '' });
+      view.settle({ rows: settleRows(), mine: mp ? (mp.alive ? `냥 ${P?.gold ?? 0} · 체력 ${mp.hp}` : `👻 ${mp.place}등`) : '' });
     } else if (S.phase === 'final') {
       const rows = [...V.players].sort((x, y) => (x.place || 99) - (y.place || 99)).map(p => ({
         place: p.place, name: p.name, hp: p.hp, w: p.w, tier: p.b?.tier || 1, augs: p.b?.augs || [], gamble: p.b?.gamble || null, me: p.pid === me,
@@ -463,28 +463,28 @@ export function mount(root, api) {
     if (si >= 0 && si < (P.shop || []).length) {
       const s = P.shop[si];
       const cost = core.slotCost(b, s);
-      if (s.sold) { msg = '이미 샀다'; audio.thud(); }
-      else if (P.gold < cost) { msg = `냥이 모자라다 (${cost}냥)`; audio.thud(); }
-      else { audio.chip(3); return send({ t: 'slot', i: si }, `${core.slotInfo(s).name}!`); }
+      if (s.sold) { msg = '산 것'; audio.thud(); }
+      else if (P.gold < cost) { msg = '냥 부족'; audio.thud(); }
+      else { audio.chip(3); return send({ t: 'slot', i: si }, core.slotInfo(s).name); }
     } else if (d === 4) {
       const cost = RULE.TIER_COST[b.tier + 1];
-      if (b.tier >= 3) { msg = '이미 3단이다'; audio.thud(); }
-      else if (P.gold < cost) { msg = `냥이 모자라다 (${cost}냥)`; audio.thud(); }
-      else { audio.chip(3); return send({ t: 'tier' }, `${b.tier + 1}단!`); }
+      if (b.tier >= 3) { msg = '3단'; audio.thud(); }
+      else if (P.gold < cost) { msg = '냥 부족'; audio.thud(); }
+      else { audio.chip(3); return send({ t: 'tier' }, `${b.tier + 1}단`); }
     } else if (c === 'KeyR') {
-      if (P.gold < RULE.REROLL) { msg = '냥이 모자라다'; audio.thud(); }
-      else { audio.tick(); return send({ t: 'reroll' }, '다시 뽑았다'); }
+      if (P.gold < RULE.REROLL) { msg = '냥 부족'; audio.thud(); }
+      else { audio.tick(); return send({ t: 'reroll' }, ''); }
     } else if (c === 'KeyG') {
-      if (!b.gamble) { msg = '도박 주사위가 없다'; audio.thud(); }
-      else { audio.tick(); return send({ t: 'bet' }, b.bet ? `${GAMBLES[b.gamble].name} 주사위를 안 건다` : `${GAMBLES[b.gamble].name} 주사위를 건다`); }
+      if (!b.gamble) { msg = '도박 없음'; audio.thud(); }
+      else { audio.tick(); return send({ t: 'bet' }, ''); }
     } else if (c === 'Backspace') {
-      if (!P.undo) { msg = '되돌릴 게 없다'; audio.thud(); }
-      else { audio.tick(); return send({ t: 'undo' }, '되돌렸다'); }
+      if (!P.undo) { msg = ''; audio.thud(); }
+      else { audio.tick(); return send({ t: 'undo' }, ''); }
     } else if (c === 'Space') {
       const on = !S.ready?.[me];
       api.send('ready', { round: S.round, on });
       if (on) audio.betLock(); else audio.tick();
-      msg = on ? '준비 완료 — 다른 사람을 기다린다' : '준비 취소';
+      msg = '';
     } else return;
     shown = '';
     render();
@@ -523,7 +523,7 @@ export default {
   emoji: '⚒️',
   tag: '우정파괴',
   color: '#5d275d',
-  desc: '라운드마다 냥으로 주사위를 강화하고, 무작위 상대와 합을 쳐요. 지면 주사위가 하나씩 깨지고 체력이 깎여요. 도박 주사위로 크게 걸 수도 있어요',
+  desc: '냥으로 주사위를 키우고 아무나와 합을 쳐요. 눈 합이 작으면 주사위가 깨지고, 다 깨지면 체력이 깎여요',
   minPlayers: 2,
   maxPlayers: 8,
   tickMs: 100,

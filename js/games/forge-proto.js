@@ -151,11 +151,11 @@ export function boot(root) {
   function settleRows(res) {
     const rows = [];
     for (const n of res.notes) {
-      if (n.out) { rows.push({ text: `💀 ${n.out} 탈락 · ${n.place}등`, cls: 'out' }); continue; }
-      if (n.shadow && n.loserHp == null) rows.push({ text: `${n.winner} 승 (상대: ${n.loser}) · 냥 +${RULE.SHADOW_WIN}`, cls: n.winner === me().name ? 'good' : '' });
+      if (n.out) { rows.push({ text: `💀 ${n.out} ${n.place}등`, cls: 'out' }); continue; }
+      if (n.shadow && n.loserHp == null) rows.push({ text: `${n.winner} ▶ ${n.loser} +${RULE.SHADOW_WIN}냥`, cls: n.winner === me().name ? 'good' : '' });
       else {
-        const extra = [n.back ? `🪃 ${n.winner} −${n.back}` : '', n.heal ? `🧛 ${n.winner} +${n.heal}` : '', n.bounty ? `💰 현상금 +${n.bounty}` : ''].filter(Boolean).join(' · ');
-        rows.push({ text: `${n.winner} 승 → ${n.loser} 체력 −${n.dmg} (남은 ${Math.max(0, n.loserHp)})${extra ? ` · ${extra}` : ''}`, cls: n.loser === me().name ? 'hurt' : n.winner === me().name ? 'good' : '' });
+        const extra = [n.back ? `🪃 −${n.back}` : '', n.heal ? `🧛 +${n.heal}` : '', n.bounty ? `💰 +${n.bounty}냥` : ''].filter(Boolean).join(' ');
+        rows.push({ text: `${n.winner} ▶ ${n.loser} −${n.dmg}${extra ? ` ${extra}` : ''}`, cls: n.loser === me().name ? 'hurt' : n.winner === me().name ? 'good' : '' });
       }
     }
     return rows;
@@ -229,7 +229,7 @@ export function boot(root) {
       state = 'settle';
       refreshTop();
       const p = me();
-      view.settle({ rows: settleRows(res), mine: p.alive ? `내 냥 ${p.gold} · 체력 ${p.hp}` : `👻 ${p.place}등 · 다음 라운드엔 저주를 건다`, hint: '스페이스 = 다음 라운드' });
+      view.settle({ rows: settleRows(res), mine: p.alive ? `냥 ${p.gold} · 체력 ${p.hp}` : `👻 ${p.place}등`, hint: '스페이스 = 다음 라운드' });
       await phase(auto || fast ? 1500 : 4000, () => false);
     }
     if (my !== runId) return;
@@ -268,7 +268,7 @@ export function boot(root) {
     if (e.code === 'KeyF') { fast = !fast; view.speed(fast ? 2.2 : 1); view.toast(fast ? '빠르게' : '보통 빠르기'); e.preventDefault(); return; }
     if (e.code === 'KeyA' && state !== 'title' && state !== 'over') {
       auto = !auto;
-      view.toast(auto ? '나도 봇 (자동)' : '자동 끔');
+      view.toast(auto ? '자동' : '자동 끔');
       if (auto && state === 'shop') { core.botShop(game, ME, Math.random); core.botBet(game, ME); myReady = true; drawShop(); }
       if (auto && state === 'ghost') { core.botCurse(game, ME); myReady = true; drawGhost(); }
       refreshTop(state === 'ghost' ? me().curse : null);
@@ -306,7 +306,7 @@ export function boot(root) {
         else if (e.code === 'Space') {
           myReady = !myReady;
           if (myReady) audio.betLock(); else audio.tick();
-          msg = myReady ? '준비 완료 — 다른 사람을 기다린다' : '준비 취소';
+          msg = '';
           drawShop();
           refreshTop();
         } else return;

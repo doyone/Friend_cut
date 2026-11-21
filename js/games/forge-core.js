@@ -27,10 +27,10 @@ export const TECHS = {
 for (const [k, t] of Object.entries(TECHS)) t.key = k;
 export const MAIN_DIE = { sw: 'd10', hm: 'd20', tw: 'd6', gb: 'x6' }; // 🎲 주사위 하나 더
 export const TASTE = {
-  sw: '무난함. 열면체 둘로 시작해 셋',
-  hm: '이십면체 하나. 지는 걸 버틴다 (2단부터 두 번)',
-  tw: '육면체 여럿. 오래 버티고 연타',
-  gb: '🔥주사위는 6이면 한 번 더. 3단엔 셋',
+  sw: '고르게',
+  hm: '큰 한 방 · 버팀',
+  tw: '많이 · 오래',
+  gb: '🔥 6이면 한 번 더',
 };
 
 export const RULE = {
@@ -68,34 +68,34 @@ export const RULE = {
 export const TRIALS = { p0: 600, mid: 300, preview: 1200, bot: 200 };
 
 export const AUGS = {
-  luck: { tier: 's', icon: '🍀', name: '행운', text: '합마다 한 번, 1이 나온 주사위를 다시' },
-  heavy: { tier: 's', icon: '🪨', name: '무거운 주사위', text: '1이 나오면 2' },
-  twins: { tier: 's', icon: '👯', name: '쌍둥이', text: '같은 눈 둘이면 +4', not: w => w === 'hm' }, // 장사는 주사위가 거의 하나
-  taste: { tier: 's', icon: '🩸', name: '피맛', text: '추격 한 대마다 +1' },
-  first: { tier: 's', icon: '🎯', name: '선빵', text: '첫 합은 합계 +3' },
-  brace: { tier: 's', icon: '🧱', name: '버팀', text: '처음 지는 합 한 번은 금만 간다' },
-  powder: { tier: 'g', icon: '💥', name: '화약', text: '주사위 하나가 최대 눈이면 한 번 더', not: w => w === 'gb' },
+  luck: { tier: 's', icon: '🍀', name: '행운', text: '1이 나오면 한 번 다시' },
+  heavy: { tier: 's', icon: '🪨', name: '무거운 주사위', text: '1은 2로' },
+  twins: { tier: 's', icon: '👯', name: '쌍둥이', text: '같은 눈 둘 +4', not: w => w === 'hm' }, // 장사는 주사위가 거의 하나
+  taste: { tier: 's', icon: '🩸', name: '피맛', text: '추격 한 대 +1' },
+  first: { tier: 's', icon: '🎯', name: '선빵', text: '첫 합 +3' },
+  brace: { tier: 's', icon: '🧱', name: '버팀', text: '한 번 안 깨짐' },
+  powder: { tier: 'g', icon: '💥', name: '화약', text: '첫 주사위도 최대 눈이면 한 번 더', not: w => w === 'gb' },
   flint: { tier: 'g', icon: '🔥', name: '부싯돌', text: '불꽃 확률 +10%' },
   collect: { tier: 'g', icon: '💰', name: '수금', text: '이기면 냥 +3' },
-  fox: { tier: 'g', icon: '🦊', name: '여우', text: '상점 칸이 4개' },
-  counter: { tier: 'g', icon: '🪃', name: '되치기', text: '지면 상대 추격의 제일 큰 한 대를 돌려줌' },
-  venom: { tier: 'g', icon: '🌀', name: '독기', text: '깨질 때마다 합계 +3' },
-  crit: { tier: 'p', icon: '👑', name: '일격필살', text: '추격에서 최대 눈은 두 배' },
-  extra: { tier: 'p', icon: '🎲', name: '주사위 하나 더', text: '내 무기 주사위가 하나 는다' },
-  jackpot: { tier: 'p', icon: '🎰', name: '잭팟', text: '같은 눈 셋이면 상대 주사위가 전부 깨짐', not: w => w === 'hm' },
-  curse: { tier: 'p', icon: '☠️', name: '저주', text: '상대의 첫 합, 제일 높은 주사위가 1' },
-  seer: { tier: 'p', icon: '🧿', name: '꿰뚫어 봄', text: '상대가 이번에 산 것이 보임' },
-  endless: { tier: 'p', icon: '⚡', name: '끝없는 합', text: '동수면 상대 주사위가 하나 깨짐' },
+  fox: { tier: 'g', icon: '🦊', name: '여우', text: '상점 4칸' },
+  counter: { tier: 'g', icon: '🪃', name: '되치기', text: '지면 제일 큰 한 대 반사' },
+  venom: { tier: 'g', icon: '🌀', name: '독기', text: '깨질 때마다 +3' },
+  crit: { tier: 'p', icon: '👑', name: '일격필살', text: '추격 최대 눈 ×2' },
+  extra: { tier: 'p', icon: '🎲', name: '주사위 하나 더', text: '무기 주사위 +1' },
+  jackpot: { tier: 'p', icon: '🎰', name: '잭팟', text: '같은 눈 셋: 상대 전멸', not: w => w === 'hm' },
+  curse: { tier: 'p', icon: '☠️', name: '저주', text: '상대 첫 합 최고 눈 → 1' },
+  seer: { tier: 'p', icon: '🧿', name: '꿰뚫어 봄', text: '상대 강화가 보임' },
+  endless: { tier: 'p', icon: '⚡', name: '끝없는 합', text: '동수면 상대 하나 깨짐' },
 };
 
 // per: clash = 합마다 기술 주사위가 다 나온 뒤에 굴림 · fight = 대결 시작에 한 번
 export const GAMBLES = {
-  allin: { icon: '🎴', name: '올인', cost: 4, per: 'clash', text: '반은 −6, 반은 +10', faces: [-6, -6, -6, 10, 10, 10] },
-  mult: { icon: '✖️', name: '배수', cost: 5, per: 'clash', text: '×0 아니면 ×2', faces: [0, 1, 1, 1, 1, 2] },
-  bomb: { icon: '💣', name: '폭탄', cost: 4, per: 'clash', text: '6이면 상대, 1이면 내 주사위가 깨짐' },
-  mirror: { icon: '🪞', name: '거울', cost: 4, per: 'clash', text: '반은 상대 큰 눈을 가져오고, 반은 내 걸 준다' },
-  stake: { icon: '🪙', name: '판돈', cost: 3, per: 'fight', text: '이번 대결 피해 ×1 · ×2 · ×3' },
-  leech: { icon: '🧛', name: '흡혈', cost: 4, per: 'fight', text: '이기면 d6 회복, 지면 d6 더 깎임' },
+  allin: { icon: '🎴', name: '올인', cost: 4, per: 'clash', text: '−6 아니면 +10', faces: [-6, -6, -6, 10, 10, 10] },
+  mult: { icon: '✖️', name: '배수', cost: 5, per: 'clash', text: '1: ×0 · 6: ×2', faces: [0, 1, 1, 1, 1, 2] },
+  bomb: { icon: '💣', name: '폭탄', cost: 4, per: 'clash', text: '6: 상대 하나 깨짐 · 1: 내 것' },
+  mirror: { icon: '🪞', name: '거울', cost: 4, per: 'clash', text: '1~3 상대 큰 눈 뺏음 · 4~6 줌' },
+  stake: { icon: '🪙', name: '판돈', cost: 3, per: 'fight', text: '피해 ×1~3' },
+  leech: { icon: '🧛', name: '흡혈', cost: 4, per: 'fight', text: '이기면 회복 · 지면 더 맞음' },
 };
 
 for (const [k, v] of Object.entries(AUGS)) v.key = k;
@@ -154,7 +154,9 @@ export const slotsOf = b => diceOf(b).map((_, i) => i);
 export const braceCap = b => (has(b, 'brace') ? 1 : 0) + (TECHS[techKey(b)].tough || 0); // 금만 가고 버티는 횟수
 export const augAllowed = (b, k) => !b.augs.includes(k) && !(AUGS[k].not && AUGS[k].not(b.w));
 
-// ["d10", "d10", "d6"] → "d10×2 + d6"
+// 화면에 쓰는 이름: d6 같은 표기는 처음 보면 모른다 (사용자: "d10×2 이게 뭐야?")
+export const DIE_LABEL = { d6: '6면', d10: '10면', d20: '20면', x6: '🔥6면' };
+// ["d10", "d10", "d6"] → "10면 2개 + 6면 1개"
 export function diceTextOf(dice) {
   const counts = [];
   for (const d of dice) {
@@ -162,9 +164,9 @@ export function diceTextOf(dice) {
     if (c) c.n++;
     else counts.push({ d, n: 1 });
   }
-  return counts.map(c => `${DICE[c.d].explode ? '🔥d6' : c.d}${c.n > 1 ? `×${c.n}` : ''}`).join(' + ');
+  return counts.map(c => `${DIE_LABEL[c.d] || c.d} ${c.n}개`).join(' + ');
 }
-// "겹베기 d10×2 + d6"
+// "겹베기 10면 2개 + 6면 1개"
 const toughText = t => (t.tough ? ` · 버팀 ${t.tough}` : '');
 export const techLine = b => `${techOf(b).name} ${diceTextOf(diceOf(b))}${toughText(techOf(b))}`;
 export function tierUpText(b) {
@@ -620,8 +622,8 @@ export function slotCost(b, s) {
   return RULE.AUG_COST[AUGS[s.key].tier];
 }
 export function slotInfo(s) {
-  if (s.t === 'whet') return { icon: '🔨', name: '숫돌', text: '제일 작은 주사위를 한 단계 크게', tier: 'whet' };
-  if (s.t === 'gamble') { const g = GAMBLES[s.key]; return { icon: g.icon, name: `${g.name} 주사위`, text: g.text, tier: 'gamble' }; }
+  if (s.t === 'whet') return { icon: '🔨', name: '숫돌', text: '작은 주사위 하나 키움', tier: 'whet' };
+  if (s.t === 'gamble') { const g = GAMBLES[s.key]; return { icon: g.icon, name: g.name, text: g.text, tier: 'gamble' }; }
   const a = AUGS[s.key];
   return { icon: a.icon, name: a.name, text: a.text, tier: a.tier };
 }
@@ -715,7 +717,7 @@ export function buy(game, pid, act) {
   if (act.t === 'bet') {
     if (!p.b.gamble) return no('도박 주사위가 없다');
     p.b.bet = !p.b.bet;
-    return { ok: true, msg: p.b.bet ? `${GAMBLES[p.b.gamble].name} 주사위를 건다` : `${GAMBLES[p.b.gamble].name} 주사위를 안 건다` };
+    return { ok: true, msg: p.b.bet ? '건다' : '안 건다' };
   }
   const save = () => p.undo.push({ b: cloneBuild(p.b), gold: p.gold, shop: p.shop.map(s => ({ ...s })), bought: [...p.bought], rerolls: p.rerolls });
   if (act.t === 'reroll') {
@@ -729,19 +731,19 @@ export function buy(game, pid, act) {
   if (act.t === 'tier') {
     if (p.b.tier >= 3) return no('이미 3단이다');
     const c = RULE.TIER_COST[p.b.tier + 1];
-    if (p.gold < c) return no(`냥이 모자라다 (${c}냥)`);
+    if (p.gold < c) return no('냥 부족');
     save();
     p.gold -= c;
     p.b.tier++;
     p.bought.push({ k: 'tier', to: p.b.tier });
-    return { ok: true, msg: `${p.b.tier}단 ${techOf(p.b).name}!` };
+    return { ok: true, msg: `${p.b.tier}단` };
   }
   if (act.t === 'slot') {
     const s = p.shop[act.i];
     if (!s) return no('빈칸');
     if (s.sold) return no('이미 샀다');
     const c = slotCost(p.b, s);
-    if (p.gold < c) return no(`냥이 모자라다 (${c}냥)`);
+    if (p.gold < c) return no('냥 부족');
     save();
     p.gold -= c;
     s.sold = true;
@@ -749,7 +751,7 @@ export function buy(game, pid, act) {
     p.b = b;
     p.bought.push({ k: s.t, key: s.key, dropped });
     const inf = slotInfo(s);
-    return { ok: true, msg: dropped ? `${inf.name} — ${AUGS[dropped].name}은(는) 버렸다` : `${inf.name}!` };
+    return { ok: true, msg: dropped ? `${inf.name} (${AUGS[dropped].name} 버림)` : inf.name };
   }
   return no('');
 }
@@ -1043,7 +1045,7 @@ export function playMs(f) {
   for (const c of f.clashes) {
     const e = Math.min(0.4, 0.08 * (c.no - 1));
     const q = x => Math.max(110, x * (1 - e));
-    ms += 450 + c.steps.length * 360 + (c.slowAt >= 0 ? 1100 : 0);
+    ms += 250 + c.steps.length * 1000 + (c.slowAt >= 0 ? 650 : 0); // 주사위 한 걸음 ≈ 1초 (forge-view.js STEP_MS)
     for (const s of ['a', 'b']) {
       for (const d of c[s].dice) {
         if (d.rr) ms += 600;
