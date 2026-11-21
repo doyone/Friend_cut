@@ -1,0 +1,33 @@
+/* 주사위 합 시제품 페이지 틀: 위 막대(시연 대진 · 직접 고르기 · 내 냥) + 무대 + 아래 안내 한 줄.
+   무대 안(연출)은 css/dice.css. 도트 글꼴 Galmuri는 원래 크기의 정수배로만 (9→18, 11→22) */
+html, body.dz-page { margin: 0; height: 100%; background: #0f1020; color: #f4f4f4; overflow: hidden; }
+body.dz-page { font-family: 'Galmuri11', 'Pretendard', sans-serif; font-size: 22px; line-height: 1.3; user-select: none; -webkit-user-select: none; }
+.dz-app { display: grid; grid-template-rows: auto 1fr auto; height: 100vh; }
+.dz-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 9px 18px; padding: 9px 15px;
+  background: #1a1c2c; box-shadow: 0 3px 0 #333c57; z-index: 2;
+  font-family: 'Galmuri9', 'Pretendard', sans-serif; font-size: 18px;
+}
+.dz-title { font-family: 'Galmuri11', sans-serif; font-size: 22px; color: #ffcd75; white-space: nowrap; }
+.dz-title small { font-family: 'Galmuri9', sans-serif; font-size: 18px; color: #566c86; }
+.dz-group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.dz-group.right { margin-left: auto; }
+.dz-btn {
+  font: inherit; color: #f4f4f4; background: #333c57; border: 0; padding: 3px 9px; cursor: pointer;
+  box-shadow: 0 0 0 3px #1a1c2c, 0 3px 0 3px #1a1c2c;
+}
+.dz-btn:hover:not(:disabled) { background: #566c86; }
+.dz-btn:disabled { opacity: .4; cursor: default; }
+.dz-btn.go { background: #b13e53; }
+.dz-btn.go:hover:not(:disabled) { background: #ef7d57; }
+.dz-sel { font: inherit; color: #f4f4f4; background: #29366f; border: 0; padding: 3px 6px; box-shadow: 0 0 0 3px #1a1c2c; }
+.dz-tag { color: #94b0c2; }
+.dz-group .dz-tag:first-child { color: #ef7d57; }
+.dz-vs { color: #566c86; padding: 0 3px; }
+.dz-group .dz-vs + .dz-tag { color: #41a6f6; }
+.dz-purse { color: #ffcd75; font-family: 'Galmuri11', sans-serif; font-size: 22px; min-width: 66px; text-align: right; }
+.dz-stage-wrap { position: relative; min-height: 0; overflow: hidden; }
+.dz-hint {
+  padding: 6px 15px; background: #1a1c2c; color: #94b0c2; text-align: center;
+  font-family: 'Galmuri9', sans-serif; font-size: 18px; min-height: 24px; box-shadow: 0 -3px 0 #333c57;
+}

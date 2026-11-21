@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>주사위 합 — 소리 들어 보기</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/galmuri@2.40.3/dist/galmuri.css">
+  <style>
+    body { margin: 0; padding: 18px; background: linear-gradient(#0f1020, #1d2244) fixed; color: #f4f4f4; font-family: 'Galmuri11', sans-serif; font-size: 18px; }
+    h1 { font-size: 24px; margin: 0 0 4px; }
+    h2 { font-family: 'Galmuri9', sans-serif; font-size: 16px; color: #94b0c2; margin: 18px 0 6px; }
+    p.hint { color: #566c86; margin: 0 0 10px; font-family: 'Galmuri9', sans-serif; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    button { font: inherit; font-size: 15px; background: #29366f; color: #f4f4f4; border: 2px solid #3b5dc9; padding: 6px 10px; cursor: pointer; text-align: left; }
+    button:hover { background: #3b5dc9; }
+    button small { display: block; font-family: 'Galmuri9', sans-serif; font-size: 12px; color: #94b0c2; }
+    button.big { border-color: #ffcd75; background: #5d275d; }
+    input[type=range] { width: 220px; }
+    #lv { min-width: 3em; display: inline-block; }
+  </style>
+</head>
+<body>
+  <h1>🎲 주사위 합 소리</h1>
+  <p class="hint">아무 데나 한 번 누르면 소리가 켜진다.</p>
+
+  <h2>바탕</h2>
+  <div class="row">
+    <label>긴장 <input id="bed" type="range" min="0" max="1" step="0.05" value="0"> <span id="lv">0</span></label>
+    <button id="heart">심장 켜기<small>쿵-쿵 반복</small></button>
+    <label>빠르기 <input id="rate" type="range" min="0.6" max="2" step="0.1" value="1"></label>
+    <button id="duck">duck 켜기<small>다른 소리 줄이기</small></button>
+    <button id="toggle">소리 끄기<small>store 'dice-sound'</small></button>
+  </div>
+
+  <h2>합 하나</h2>
+  <div class="row"><button id="demo" class="big">합 하나 들어 보기<small>북 → 던짐 → 공개 → 마지막 주사위 → 챙 → 깨짐</small></button></div>
+
+  <div id="groups"></div>
+
+  <script type="module">
+    import { createDiceAudio } from '../js/games/dice-audio.js';
+    const audio = createDiceAudio();
+    window.audio = audio;
+    addEventListener('pointerdown', () => audio.unlock(), { once: true });
+    addEventListener('keydown', () => audio.unlock(), { once: true });
+
+    const groups = [
+      ['대면 · 내기', [
+        ['whoosh', '휙 들어옴'], ['slam', '이름표 꽂힘'], ['chip', '엽전 하나', [1]], ['chip', '엽전 다섯', [5]],
+        ['tick', '남은 시간'], ['betLock', '내기 확정'], ['count', '셋', [3]], ['count', '둘', [2]], ['count', '하나', [1]],
+      ]],
+      ['합', [
+        ['drum', '제 1 합', [1]], ['drum', '제 3 합', [3]], ['drum', '제 6 합', [6]],
+        ['roll', '던짐 둘', [2]], ['roll', '던짐 넷', [4]],
+        ['land', '톡 2/6', [2, 6, 0]], ['land', '톡 5/6', [5, 6, 1]], ['land', '톡 17/20', [17, 20, 2]],
+        ['maxFace', '최대 눈'], ['minFace', '1'], ['explode', '터짐 1', [1]], ['explode', '터짐 3', [3]],
+        ['flame', '불꽃'], ['fizzle', '꺼짐'], ['lead', '앞섬 바뀜'], ['slow', '마지막 주사위'],
+        ['clash', '챙 1합 · 차이 5', [1, 5]], ['clash', '챙 4합 · 1 차이', [4, 1]],
+        ['shatter', '깨짐'], ['ember', '불씨'], ['tie', '동수', [1]], ['tie', '동수 3연속', [3]],
+        ['near', '1 차이'], ['swing', '흐름 ↑', [0.6]], ['swing', '흐름 ↓', [-0.6]],
+      ]],
+      ['끝', [
+        ['win', '승리'], ['comeback', '역전'], ['miracle', '기적'],
+        ['hit', '1타', [1, false]], ['hit', '3타 치명', [3, true]],
+        ['coins', '엽전 6', [6]], ['coins', '엽전 20', [20]],
+        ['cheer', '함성 작게', [0.3]], ['cheer', '함성 크게', [1]], ['gasp', '헉'], ['jackpot', '대박'], ['lose', '잃음'],
+      ]],
+    ];
+    const box = document.getElementById('groups');
+    for (const [title, items] of groups) {
+      const h = document.createElement('h2'); h.textContent = title; box.append(h);
+      const row = document.createElement('div'); row.className = 'row'; box.append(row);
+      for (const [fn, desc, args = []] of items) {
+        const b = document.createElement('button');
+        b.innerHTML = `${fn}(${args.join(', ')})<small>${desc}</small>`;
+        b.onclick = async () => { await audio.unlock(); audio[fn](...args); };
+        row.append(b);
+      }
+    }
+
+    const bed = document.getElementById('bed');
+    const lv = document.getElementById('lv');
+    bed.oninput = async () => { await audio.unlock(); audio.bed(+bed.value); lv.textContent = bed.value; };
+
+    let heartOn = false;
+    const heartBtn = document.getElementById('heart');
+    const rate = document.getElementById('rate');
+    heartBtn.onclick = async () => {
+      await audio.unlock();
+      heartOn = !heartOn;
+      audio.heart(heartOn, +rate.value);
+      heartBtn.firstChild.textContent = heartOn ? '심장 끄기' : '심장 켜기';
+    };
+    rate.oninput = () => { if (heartOn) audio.heart(true, +rate.value); };
+
+    let ducked = false;
+    const duckBtn = document.getElementById('duck');
+    duckBtn.onclick = async () => {
+      await audio.unlock();
+      ducked = !ducked;
+      audio.duck(ducked);
+      duckBtn.firstChild.textContent = ducked ? 'duck 끄기' : 'duck 켜기';
+    };
+
+    const toggleBtn = document.getElementById('toggle');
+    const showToggle = () => { toggleBtn.firstChild.textContent = audio.enabled ? '소리 끄기' : '소리 켜기'; };
+    showToggle();
+    toggleBtn.onclick = () => { audio.toggle(); showToggle(); };
+
+    // 합 하나: 실제 박자대로 (제 3 합, 마지막 주사위가 승부를 가름)
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    let running = false;
+    document.getElementById('demo').onclick = async () => {
+      if (running) return;
+      running = true;
+      await audio.unlock();
+      audio.bed(0.55);
+      audio.drum(3);
+      await wait(350);
+      audio.roll(3);
+      await wait(400);
+      audio.land(2, 6, 0); await wait(220);
+      audio.land(4, 10, 1); await wait(220);
+      audio.land(6, 6, 2); audio.maxFace(); await wait(260);
+      audio.duck(true); audio.heart(true, 1.4); audio.slow();
+      await wait(900);
+      audio.land(9, 10, 3);
+      await wait(200);
+      audio.heart(false); audio.duck(false);
+      await wait(250);
+      audio.clash(3, 1);
+      await wait(450);
+      audio.shatter();
+      await wait(400);
+      audio.ember();
+      await wait(350);
+      audio.swing(-0.4); audio.chip(1);
+      await wait(400);
+      audio.bed(Number(bed.value));
+      running = false;
+    };
+  </script>
+</body>
+</html>

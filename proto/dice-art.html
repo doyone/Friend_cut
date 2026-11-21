@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <title>주사위 합 — 도트 그림 모아 보기</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/galmuri@2.40.3/dist/galmuri.css">
+  <style>
+    body { margin: 0; padding: 18px; background: linear-gradient(#0f1020, #1d2244); color: #f4f4f4; font-family: 'Galmuri11', sans-serif; font-size: 22px; }
+    h2 { font-family: 'Galmuri9', sans-serif; font-size: 18px; color: #94b0c2; margin: 18px 0 6px; }
+    .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+    figure { margin: 0; display: grid; justify-items: center; gap: 3px; }
+    figcaption { font-family: 'Galmuri9', sans-serif; font-size: 18px; color: #566c86; }
+    img { image-rendering: pixelated; display: block; }
+    .flip { transform: scaleX(-1); }
+  </style>
+</head>
+<body>
+  <div id="out"></div>
+  <script type="module">
+    import { PX, sprite, dieFace, dieTumble, fighter, shard, SPRITES, POSE_KEYS, DIE_SIZE } from '../js/games/dice-art.js';
+    const out = document.getElementById('out');
+    const sec = (title) => { const h = document.createElement('h2'); h.textContent = title; out.append(h); const r = document.createElement('div'); r.className = 'row'; out.append(r); return r; };
+    const fig = (row, s, cap, cls = '') => {
+      const f = document.createElement('figure');
+      const i = document.createElement('img');
+      i.src = s.url; i.width = s.w * PX; i.height = s.h * PX; if (cls) i.className = cls;
+      const c = document.createElement('figcaption'); c.textContent = cap;
+      f.append(i, c); row.append(f);
+    };
+    for (const die of Object.keys(DIE_SIZE)) {
+      const r = sec(`주사위 ${die}`);
+      const max = { d6: 6, x6: 6, d10: 10, d20: 20 }[die];
+      for (let v = 1; v <= max; v++) fig(r, dieFace(die, v), String(v));
+      fig(r, dieFace(die, max, 'max'), '최대');
+      fig(r, dieFace(die, 1, 'min'), '1');
+      fig(r, dieFace(die, Math.ceil(max / 2), 'crack'), '금');
+      fig(r, dieFace(die, 1, 'ghost'), '깨짐');
+      for (let f = 0; f < 4; f++) fig(r, dieTumble(die, f), `구름${f}`);
+      for (let i = 0; i < 6; i++) fig(r, shard(die, i), `조각${i}`);
+    }
+    for (const w of ['sw', 'hm', 'tw', 'gb']) {
+      const r = sec(`사람 ${w}`);
+      for (const p of POSE_KEYS) fig(r, fighter(w, p, 'a'), `${p} a`);
+      for (const p of POSE_KEYS) fig(r, fighter(w, p, 'b'), `${p} b`, 'flip');
+    }
+    const r = sec('배경 · 작은 그림');
+    for (const n of SPRITES) fig(r, sprite(n), n);
+  </script>
+</body>
+</html>
