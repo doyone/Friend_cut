@@ -194,3 +194,13 @@ body.fg-page { font-family: 'Galmuri11', 'Pretendard', sans-serif; font-size: 18
 @keyframes fg-shard { to { transform: translate(var(--dx), var(--dy)) rotate(var(--rot)); opacity: 0; } }
 @keyframes fg-float { 0% { opacity: 1; margin-top: 0; } 100% { opacity: 0; margin-top: -60px; } }
 @keyframes fg-flash { 0% { opacity: .5; } 100% { opacity: 0; } }
+
+/* 로비 게임 화면 안 (embed): 게임 칸 너비에 맞춰 1280×760을 통째로 줄인다 (forge-view.js fit) */
+.fg-host { position: relative; }
+.fg-host.embed {
+  width: 100%; overflow: hidden; border-radius: 12px; background: #0f1020; color: #f4f4f4;
+  font-family: 'Galmuri11', 'Pretendard', sans-serif; font-size: 18px; line-height: 1.35; user-select: none; -webkit-user-select: none;
+}
+.fg-host.embed .fg-app { position: absolute; top: 0; box-sizing: content-box; }
+.fg-host.embed .fg-flash, .fg-host.embed .fg-toast { position: absolute; }
+.fg-host.embed .fg-toast { top: 66px; }

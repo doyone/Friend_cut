@@ -14,7 +14,8 @@ function restart(el, cls) {
   el.classList.add(cls);
 }
 
-export function createForgeView(root, { audio = SILENT } = {}) {
+// embed = 로비 게임 화면 안에 넣을 때 (칸 너비 · 창 높이에 맞춰 줄인다). 아니면 시제품처럼 창 전체
+export function createForgeView(root, { audio = SILENT, embed = false } = {}) {
   // ───────── 틀: 위(모두의 자리) · 가운데(대결) + 옆(다른 대결) · 아래(할 일)
   const topEl = h('header', { class: 'fg-top' });
   const arena = h('section', { class: 'fg-arena' });
@@ -23,11 +24,21 @@ export function createForgeView(root, { audio = SILENT } = {}) {
   const flashEl = h('div', { class: 'fg-flash' });
   const toastEl = h('div', { class: 'fg-toast' });
   const appEl = h('div', { class: 'fg-app' }, topEl, h('main', { class: 'fg-main' }, arena, othersEl), bottom);
-  root.append(appEl, flashEl, toastEl);
-  // 1280×760 기준. 창이 그보다 작으면 통째로 줄인다 (좁은 창에서 글이 겹치지 않게)
+  const hostEl = h('div', { class: `fg-host${embed ? ' embed' : ''}` }, appEl, flashEl, toastEl);
+  root.append(hostEl);
+  // 1280×760 기준. 창(로비 안이면 게임 칸)이 그보다 작으면 통째로 줄인다 (좁은 창에서 글이 겹치지 않게)
   const BASE_W = 1280;
   const BASE_H = 760;
   function fit() {
+    if (embed) {
+      const w = hostEl.clientWidth || BASE_W;
+      const s = Math.min(1, w / BASE_W, Math.max(420, window.innerHeight - 96) / BASE_H);
+      appEl.classList.add('scaled');
+      appEl.style.transform = `scale(${s})`;
+      appEl.style.left = `${Math.max(0, Math.round((w - BASE_W * s) / 2))}px`;
+      hostEl.style.height = `${Math.round(BASE_H * s)}px`;
+      return;
+    }
     const s = Math.min(window.innerWidth / BASE_W, window.innerHeight / BASE_H);
     appEl.classList.toggle('scaled', s < 1);
     appEl.style.transform = s < 1 ? `scale(${s})` : '';
@@ -238,8 +249,9 @@ export function createForgeView(root, { audio = SILENT } = {}) {
     barEl.classList.remove('hide');
     barP = p;
     barA.style.width = `${Math.round(p * 1000) / 10}%`;
-    barLa.textContent = `${nameA} ${pct(p)}`;
-    barLb.textContent = `${pct(1 - p)} ${nameB}`;
+    const la = Math.round(p * 100); // 양쪽 합이 늘 100%가 되게
+    barLa.textContent = `${nameA} ${la}%`;
+    barLb.textContent = `${100 - la}% ${nameB}`;
     barMid.textContent = p >= 0.5 ? `${nameA} ${labelOf(p)}` : `${nameB} ${labelOf(1 - p)}`;
   }
 
@@ -325,9 +337,18 @@ export function createForgeView(root, { audio = SILENT } = {}) {
     arena.replaceChildren(h('div', { class: 'fg-panel' }, ...children));
   }
 
+  const HELP = ['라운드마다 냥으로 주사위를 강화한다', '무작위 상대와 합을 친다: 둘 다 굴려 진 쪽 주사위가 하나씩 깨진다', '이긴 쪽이 남은 주사위로 추격한 만큼 체력이 깎인다', '체력 40, 끝까지 남은 한 명이 이긴다', '도박 주사위는 라운드마다 G로 건다 · 안 건다'];
+  const help = () => othersEl.replaceChildren(h('div', { class: 'fg-others-head' }, '하는 법'), ...HELP.map(t => h('p', { class: 'fg-help' }, t)));
+
+  // 로비 판의 시작 안내 (2초). 한 판 더면 제목과 '곧 시작'만
+  function intro({ again = false } = {}) {
+    help();
+    panel(h('div', { class: 'fg-logo' }, '⚒️ 주사위 대장간'), h('div', { class: again ? 'fg-sub' : 'fg-line' }, again ? '곧 시작' : '강화하고 굴려라. 지면 주사위가 깨진다.'));
+    bottom.replaceChildren(h('div', { class: 'fg-hint' }, again ? '' : '라운드마다 냥으로 강화 → 무작위 상대와 합 → 끝까지 남은 한 명'));
+  }
+
   function title({ count }) {
-    othersEl.replaceChildren(h('div', { class: 'fg-others-head' }, '하는 법'),
-      ...['라운드마다 냥으로 주사위를 강화한다', '무작위 상대와 합을 친다: 둘 다 굴려 진 쪽 주사위가 하나씩 깨진다', '이긴 쪽이 남은 주사위로 추격한 만큼 체력이 깎인다', '체력 40, 끝까지 남은 한 명이 이긴다', '도박 주사위는 라운드마다 G로 건다 · 안 건다'].map(t => h('p', { class: 'fg-help' }, t)));
+    help();
     panel(
       h('div', { class: 'fg-logo' }, '⚒️ 주사위 대장간'),
       h('div', { class: 'fg-sub' }, '시제품 · 나 + 봇'),
@@ -424,6 +445,12 @@ export function createForgeView(root, { audio = SILENT } = {}) {
 
   // ───────── 유령: 저주할 사람 고르기
   function ghost(d) {
+    if (d.watch) {
+      panel(h('div', { class: 'fg-logo small' }, '👀 구경 중'), h('div', { class: 'fg-line' }, '모두 강화하는 중. 대결이 시작되면 크게 보여 준다.'));
+      bottom.replaceChildren(h('div', { class: 'fg-hint' }, ''), timerBar(d.left, d.total));
+      pairsList(d.pairs, '이번 라운드 대진');
+      return;
+    }
     panel(
       h('div', { class: 'fg-logo small' }, '👻 유령'),
       h('div', { class: 'fg-line' }, '살아 있는 사람 하나를 저주한다. 그 사람은 첫 합에서 제일 높게 나온 주사위가 1이 된다.'),
@@ -478,6 +505,7 @@ export function createForgeView(root, { audio = SILENT } = {}) {
     cap(`${f.a.name} vs ${f.b.name}`);
     await wait(650);
     // 대결 시작: 판돈 · 흡혈
+    let shownMult = 1;
     for (const s of SIDES) {
       const o = sideOf(s);
       const r = f.start.stake[s];
@@ -487,7 +515,8 @@ export function createForgeView(root, { audio = SILENT } = {}) {
         await wait(500);
         const m = stakeMultOf(r);
         o.g?.show(`×${m}`, m >= 2 ? 'good' : '');
-        stakeEl.textContent = `판돈 ×${f.start.stake.mult}`;
+        shownMult = Math.max(shownMult, m);
+        stakeEl.textContent = `판돈 ×${shownMult}`;
         cap(m === 3 ? `🪙 판돈 ×3! 진 쪽은 세 배로 맞는다` : m === 2 ? '🪙 판돈 ×2' : '🪙 판돈 ×1 (그대로)', m >= 2 ? 'gold' : '');
         if (m === 3) flash('gold');
         sfx(a => (m === 3 ? a.jackpot() : a.chip(m * 2)));
@@ -589,14 +618,18 @@ export function createForgeView(root, { audio = SILENT } = {}) {
 
     // 저주 · 불꽃
     for (const s of SIDES) {
+      const ghosts = f[s].cursedBy || [];
+      const skull = c.no === 1 && f[other(s)].augs.includes('curse');
+      let curseNo = 0;
       for (const d of c[s].dice) {
         if (!d.ev) continue;
         const dv = sideOf(s).views.get(d.slot);
         if (d.ev.startsWith('curse')) {
           run[s] += 1 - d.shown;
           dv?.face(1, 'min');
-          const ghosts = f[s].cursedBy || [];
-          cap(c.no === 1 && f[other(s)].augs.includes('curse') ? `☠️ ${f[other(s)].name}의 저주! ${f[s].name}의 제일 높은 주사위가 1` : `👻 ${ghosts[c.no - 1] || ghosts[0] || '유령'}의 저주! 제일 높은 주사위가 1`, 'tense');
+          const bySkull = skull && curseNo === 0;
+          curseNo++;
+          cap(bySkull ? `☠️ ${f[other(s)].name}의 저주! ${f[s].name}의 제일 높은 주사위가 1` : `👻 ${ghosts[c.no - 1] || ghosts[0] || '유령'}의 저주! 제일 높은 주사위가 1`, 'tense');
           sfx(a => a.fizzle());
           setTotal(s, run[s]);
           markTotals(run);
@@ -614,7 +647,9 @@ export function createForgeView(root, { audio = SILENT } = {}) {
         }
       }
     }
-    // 쌍둥이
+    // 도박 주사위 (금테): 폭탄이 먼저 터지고(판정 순서 A → B), 남은 주사위로 쌍둥이,
+    // 나머지 도박은 앞선 쪽 먼저 · 지고 있는 쪽이 마지막
+    for (const s of SIDES.filter(x => c[x].g?.key === 'bomb')) await showGamble(s);
     for (const s of SIDES) {
       if (!c[s].twins) continue;
       run[s] += c[s].twins;
@@ -624,9 +659,8 @@ export function createForgeView(root, { audio = SILENT } = {}) {
       markTotals(run);
       await wait(380);
     }
-    // 도박 주사위: 앞선 쪽 먼저, 지고 있는 쪽이 마지막 (금테)
-    const gs = SIDES.filter(s => c[s].g).sort((x, y) => run[y] - run[x]);
-    for (const s of gs) {
+    for (const s of SIDES.filter(x => c[x].g && c[x].g.key !== 'bomb').sort((x, y) => run[y] - run[x])) await showGamble(s);
+    async function showGamble(s) {
       const g = c[s].g;
       const o = sideOf(s);
       if (g.tense) {
@@ -672,20 +706,25 @@ export function createForgeView(root, { audio = SILENT } = {}) {
         stageEl.classList.remove('tense');
         sfx(a => { a.heart(false); a.duck(false); });
       }
-      if (g.flip) {
+      if (g.flip && g.key !== 'mult') {
         cap(`${GAMBLES[g.key].icon} 도박이 판을 뒤집었다!`, 'gold');
         flash('gold');
         sfx(a => a.cheer(0.6));
       }
       await wait(quick(420));
     }
-    // 배수: 합계에 곱한다
+    // 배수: 합계에 곱한다 (뒤집었으면 곱한 다음에 알린다)
     for (const s of SIDES) {
       if (c[s].m === 1) continue;
       run[s] = c[s].total;
       note(s, c[s].m === 2 ? '✖️ 두 배!' : '✖️ 0이 됐다');
       setTotal(s, run[s]);
       markTotals(run);
+      if (c[s].g?.flip) {
+        cap('✖️ 도박이 판을 뒤집었다!', 'gold');
+        flash('gold');
+        sfx(a => a.cheer(0.6));
+      }
       await wait(quick(380));
     }
     // 값 맞추기 (폭탄 · 거울 순서 차이)
@@ -710,8 +749,10 @@ export function createForgeView(root, { audio = SILENT } = {}) {
     sfx(a => a.clash(c.no, c.margin));
     markTotals(run, res);
     if (res === 'tie') {
-      cap(c.streak >= 2 ? `또 동수! (${c.streak}번째)` : '동수! 아무것도 안 깨진다', 'tie');
-      sfx(a => a.tie(c.streak || 1));
+      const tb = c.broke.find(x => x.how === 'tie' || x.how === 'endless');
+      const n = c.tieNo || c.streak || 1;
+      cap(tb ? (tb.how === 'tie' ? `동수 ${RULE.TIE_MAX}번! 둘 다 깨진다` : '동수! ⚡ 끝없는 합') : n >= 2 ? `또 동수! (${n}번째)` : '동수! 아무것도 안 깨진다', 'tie');
+      sfx(a => a.tie(n));
     } else if (c.margin <= 1 && !c.broke.some(x => x.how === 'jackpot' || x.how === 'bomb')) {
       cap('1 차이!', 'near');
       sfx(a => a.near());
@@ -875,7 +916,7 @@ export function createForgeView(root, { audio = SILENT } = {}) {
   function settle(d) {
     // d: { rows: [{ text, cls }], gold, me }
     bottom.replaceChildren(h('div', { class: 'fg-settle' }, ...d.rows.map(r => h('div', { class: `fg-srow ${r.cls || ''}` }, r.text))),
-      h('div', { class: 'fg-hint' }, `${d.mine || ''} · 스페이스 = 다음 라운드`));
+      h('div', { class: 'fg-hint' }, [d.mine, d.hint].filter(Boolean).join(' · ')));
   }
 
   // ───────── 끝
@@ -887,8 +928,8 @@ export function createForgeView(root, { audio = SILENT } = {}) {
         h('b', null, `${r.place}등`), h('span', null, `${WEAPONS[r.w].icon} ${r.name}`), h('span', { class: 'fg-dim' }, `${r.tier}단 · 체력 ${Math.max(0, r.hp)}`),
         h('span', null, [...r.augs.map(k => AUGS[k].icon), r.gamble ? GAMBLES[r.gamble].icon : ''].join(' '))))),
       h('div', { class: 'fg-titles' }, ...d.titles.map(t => h('div', { class: 'fg-title' }, `${t.icon} ${t.name} — ${t.who}`, t.note ? h('small', null, ` (${t.note})`) : null))));
-    bottom.replaceChildren(h('div', { class: 'fg-hint' }, `스페이스 = 다시 하기 · ← → 인원 (${d.count}명)`));
-    sfx(a => a.win());
+    bottom.replaceChildren(h('div', { class: 'fg-hint' }, d.hint || ''));
+    if (!d.quiet) sfx(a => a.win());
   }
 
   function destroy() {
@@ -899,7 +940,7 @@ export function createForgeView(root, { audio = SILENT } = {}) {
   }
 
   return {
-    top, title, weapon, shop, ghost, reveal, fights, settle, over, toast, tickTimer,
+    top, intro, title, weapon, shop, ghost, reveal, fights, settle, over, toast, tickTimer,
     speed(m) { speed = Math.max(0.25, Number(m) || 1); },
     skip, destroy,
     cap,

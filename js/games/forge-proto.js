@@ -39,6 +39,7 @@ export function boot(root) {
 
   const me = () => game.players[ME];
   const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const meReady = () => myReady || (auto && ready.has(ME));
 
   // 시간이 다 되거나, done()이 참이 되거나, endPhase()가 불리면 끝
   function phase(ms, done, onTick) {
@@ -66,8 +67,8 @@ export function boot(root) {
 
   function refreshTop(target = null) {
     if (!game) return;
-    const r = new Set(ready);
-    if (myReady) r.add(ME);
+    const r = new Set([...ready].filter(id => id !== ME));
+    if (meReady()) r.add(ME);
     const shopping = state === 'shop' || state === 'ghost';
     view.top(game, { me: ME, ready: shopping ? r : null, target, hide: shopping });
   }
@@ -142,7 +143,7 @@ export function boot(root) {
       const oppF = opp || core.visibleOpp(game, ME);
       mineInfo = sideInfo(mine);
       oppInfo = sideInfo(oppF);
-      p = core.winChance(mine, oppF);
+      p = core.winChance(mine, oppF, core.TRIALS.p0);
     }
     view.reveal({ rows, me: mineInfo, opp: oppInfo, p });
   }
@@ -201,7 +202,7 @@ export function boot(root) {
       refreshTop();
       if (state === 'shop') drawShop();
       else drawGhost();
-      const allReady = () => game.players.every(p => (p.id === ME && !auto ? myReady : ready.has(p.id)));
+      const allReady = () => game.players.every(p => (p.id === ME ? meReady() : ready.has(p.id)));
       await phase(RULE.SHOP_TIME, allReady, left => view.tickTimer(left, RULE.SHOP_TIME));
       botTimers.forEach(clearTimeout);
       botTimers = [];
@@ -217,9 +218,9 @@ export function boot(root) {
       state = 'fight';
       let featured = res.fights.findIndex(f => f.a.id === ME || f.b.id === ME);
       if (featured < 0) {
-        // 유령이면 체력 제일 많은 사람의 대결을 크게
-        const top = game.players.filter(p => p.alive || p.place).reduce((x, y) => (y.hp > x.hp ? y : x), game.players[0]);
-        featured = Math.max(0, res.fights.findIndex(f => f.a.id === top.id || f.b.id === top.id));
+        // 유령이면 대결 '전' 체력 1등의 대결을 크게 (정산 뒤 체력으로 고르면 결과가 샌다)
+        const hp = f => Math.max(f.a.shadow ? -1 : f.a.hp ?? -1, f.b.shadow ? -1 : f.b.hp ?? -1);
+        featured = res.fights.reduce((best, f, i) => (hp(f) > hp(res.fights[best]) ? i : best), 0);
       }
       window.__forge.last = res;
       await view.fights(res.fights, { featured });
@@ -228,16 +229,21 @@ export function boot(root) {
       state = 'settle';
       refreshTop();
       const p = me();
-      view.settle({ rows: settleRows(res), mine: p.alive ? `내 냥 ${p.gold} · 체력 ${p.hp}` : `👻 ${p.place}등 · 다음 라운드엔 저주를 건다` });
+      view.settle({ rows: settleRows(res), mine: p.alive ? `내 냥 ${p.gold} · 체력 ${p.hp}` : `👻 ${p.place}등 · 다음 라운드엔 저주를 건다`, hint: '스페이스 = 다음 라운드' });
       await phase(auto || fast ? 1500 : 4000, () => false);
     }
     if (my !== runId) return;
     state = 'over';
     refreshTop();
+    drawOver();
+  }
+
+  function drawOver(quiet = false) {
     view.over({
       rows: core.standings(game).map(p => ({ place: p.place, name: p.name, hp: p.hp, w: p.w, tier: p.b.tier, augs: p.b.augs, gamble: p.b.gamble, me: p.id === ME })),
       titles: core.titles(game),
-      count,
+      hint: `스페이스 = 다시 하기 · ← → 인원 (${count}명)`,
+      quiet,
     });
   }
 
@@ -264,7 +270,8 @@ export function boot(root) {
       auto = !auto;
       view.toast(auto ? '나도 봇 (자동)' : '자동 끔');
       if (auto && state === 'shop') { core.botShop(game, ME, Math.random); core.botBet(game, ME); myReady = true; drawShop(); }
-      if (auto && state === 'ghost') { core.botCurse(game, ME); myReady = true; }
+      if (auto && state === 'ghost') { core.botCurse(game, ME); myReady = true; drawGhost(); }
+      refreshTop(state === 'ghost' ? me().curse : null);
       if (auto && state === 'weapon') endPhase?.();
       e.preventDefault();
       return;
@@ -277,11 +284,12 @@ export function boot(root) {
           try { localStorage.setItem('forge-count', String(count)); } catch { /* 괜찮다 */ }
           audio.tick();
           if (state === 'title') view.title({ count });
-          else view.toast(`${count}명`);
+          else drawOver(true);
         } else if (e.code === 'Space') void runGame();
         else return;
         break;
       case 'weapon':
+        if (game?.players[ME].w) return; // 이미 정해졌다 (넘어가는 중)
         if (d >= 1 && d <= 4) {
           weaponPick = WEAPON_KEYS[d - 1];
           audio.betLock();

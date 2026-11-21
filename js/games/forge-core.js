@@ -25,7 +25,7 @@ export const RULE = {
   BOUNTY: 4,          // 🔥3인 사람을 잡으면
   SHADOW_WIN: 2,      // 그림자를 이기면
   COLLECT: 3,         // 💰 수금
-  TIER_COST: { 2: 6, 3: 10 },
+  TIER_COST: { 2: 4, 3: 8 },   // 2단은 위력이 조금만 올라서 숫돌보다 손해였다 (6 · 10 → 4 · 8)
   WHET_COST: 3,       // 숫돌 첫 값, 살 때마다 +1
   WHET_POWER: 2,
   REROLL: 1,
@@ -141,15 +141,13 @@ function rollFaces(rng, sides, boom, first = 0) {
 function rollTech(rng, b, slots) {
   const die = dieOf(b);
   const sides = sidesOf(die);
-  const dice = slots.map(slot => {
-    const d = { slot, die, faces: rollFaces(rng, sides, explodes(b, slot)) };
-    if (d.faces[0] === 1 && has(b, 'heavy')) { d.faces = [2]; d.heavy = true; }
-    return d;
-  });
+  const dice = slots.map(slot => ({ slot, die, faces: rollFaces(rng, sides, explodes(b, slot)) }));
+  // 행운(1이면 다시)을 먼저, 그다음 무거운 주사위(남은 1은 2). 둘 다 가져도 둘 다 일한다
   if (has(b, 'luck')) {
     const one = dice.find(d => d.faces[0] === 1);
     if (one) { one.rr = one.faces; one.faces = rollFaces(rng, sides, explodes(b, one.slot)); }
   }
+  if (has(b, 'heavy')) for (const d of dice) if (d.faces[0] === 1) { d.faces = [2]; d.heavy = true; }
   for (const d of dice) {
     d.v = sum(d.faces);
     d.max = d.faces[0] === sides;
@@ -165,6 +163,7 @@ function flameLowest(rng, f, dice) {
   let lo = dice[0];
   for (const d of dice) if (d.v < lo.v) lo = d;
   const sides = sidesOf(lo.die);
+  if (lo.faces[0] === sides && lo.ev !== 'curse') return; // 이미 최대 눈 (다시 굴리면 터진 몫이 줄 수 있다)
   lo.ev = lo.ev ? `${lo.ev}+flame` : 'flame';
   lo.faces = rollFaces(rng, sides, explodes(f.b, lo.slot), sides);
   lo.v = sum(lo.faces);
@@ -264,7 +263,7 @@ function judge(F, dice, g, st, no) {
     // 폭탄으로 한쪽(드물게 둘 다)이 다 깨짐
     if (live.a.length) result = 'a';
     else if (live.b.length) result = 'b';
-    else result = parts.a.total >= parts.b.total ? 'a' : 'b';
+    else result = parts.a.total > parts.b.total ? 'a' : parts.b.total > parts.a.total ? 'b' : 'tie';
   } else if (parts.a.jack !== parts.b.jack) result = parts.a.jack ? 'a' : 'b';
   else result = parts.a.total > parts.b.total ? 'a' : parts.b.total > parts.a.total ? 'b' : 'tie';
   return { gone, bombs, live, parts, result, mirror };
@@ -336,7 +335,7 @@ function rollStart(rng, F) {
       stake[s] = r;
       stake.mult = Math.max(stake.mult, r <= 2 ? 1 : r <= 4 ? 2 : 3);
     }
-    if (b.gamble === 'leech') leech[s] = ri(rng, 6);
+    if (b.gamble === 'leech' && !F[s].shadow) leech[s] = ri(rng, 6);
   }
   return { stake, leech };
 }
@@ -372,7 +371,7 @@ function rollChase(rng, F, winner, st, round, start) {
 function initState(A, B) {
   return { alive: { a: slotsOf(A.b), b: slotsOf(B.b) }, broken: { a: 0, b: 0 }, braced: { a: false, b: false }, no: 0, streak: 0 };
 }
-const cloneState = st => ({ alive: { a: [...st.alive.a], b: [...st.alive.b] }, broken: { ...st.broken }, braced: { ...st.braced }, no: st.no, streak: st.streak });
+const cloneState = st => ({ alive: { a: [...st.alive.a], b: [...st.alive.b] }, broken: { ...st.broken }, braced: { ...st.braced }, no: st.no, streak: st.streak, zeroWin: st.zeroWin || null });
 
 const info = f => ({
   id: f.id ?? null, name: f.name, shadow: !!f.shadow, w: f.b.w, tier: f.b.tier, tech: techKey(f.b), power: powerOf(f.b), whet: f.b.whet,
@@ -414,6 +413,7 @@ export function duel(rng, A, B, opt = {}) {
       }
     }
     const venomNow = { a: J.parts.a.venom, b: J.parts.b.venom };
+    let tieNo = 0;
     const broke = J.bombs.filter(x => x.side).map(x => ({ side: x.side, slot: x.slot, how: 'bomb' }));
     const brace = [];
     const breakLow = (s, how) => {
@@ -433,8 +433,11 @@ export function duel(rng, A, B, opt = {}) {
         st.streak = 0;
       } else if (J.result === 'tie') {
         st.streak++;
-        if (has(A.b, 'endless')) breakLow('b', 'endless');
-        if (has(B.b, 'endless')) breakLow('a', 'endless');
+        tieNo = st.streak;
+        // 끝없는 합끼리 둘 다 마지막 주사위면 서로 깨지 않는다 (둘 다 0개로 끝나지 않게)
+        const lastBoth = has(A.b, 'endless') && has(B.b, 'endless') && J.live.a.length === 1 && J.live.b.length === 1;
+        if (has(A.b, 'endless') && !lastBoth) breakLow('b', 'endless');
+        if (has(B.b, 'endless') && !lastBoth) breakLow('a', 'endless');
         if (st.streak >= RULE.TIE_MAX && (J.live.a.length > 1 || J.live.b.length > 1)) {
           breakLow('a', 'tie');
           breakLow('b', 'tie');
@@ -449,13 +452,14 @@ export function duel(rng, A, B, opt = {}) {
       st.alive[x.side] = st.alive[x.side].filter(v => v !== x.slot);
       st.broken[x.side]++;
     }
+    if (!st.alive.a.length && !st.alive.b.length) st.zeroWin = J.result === 'tie' ? (rng() < 0.5 ? 'a' : 'b') : J.result;
     if (!rec) continue;
     const busy = dice.a.some(d => d.ev) || dice.b.some(d => d.ev) || J.parts.a.twins || J.parts.b.twins
       || J.bombs.length > 0 || J.parts.a.jack || J.parts.b.jack || !!(g.a?.tense || g.b?.tense);
     const plan = revealPlan(F, dice, J.parts, busy);
     const over = !st.alive.a.length || !st.alive.b.length;
     const pA = over
-      ? (st.alive.a.length ? 1 : st.alive.b.length ? 0 : J.result === 'b' ? 0 : 1)
+      ? (st.alive.a.length ? 1 : st.alive.b.length ? 0 : st.zeroWin === 'a' ? 1 : 0)
       : (opt.fast ? null : probFrom(A, B, st, TRIALS.mid));
     const sideRec = s => ({
       dice: dice[s].map(d => ({
@@ -473,14 +477,14 @@ export function duel(rng, A, B, opt = {}) {
     });
     clashes.push({
       no, a: sideRec('a'), b: sideRec('b'), ...plan, bombs: J.bombs, result: J.result, broke, brace,
-      streak: st.streak, alive: { a: [...st.alive.a], b: [...st.alive.b] },
+      streak: st.streak, tieNo, alive: { a: [...st.alive.a], b: [...st.alive.b] },
       margin: Math.abs(J.parts.a.total - J.parts.b.total), pA,
     });
   }
   let winner;
   if (st.alive.a.length && !st.alive.b.length) winner = 'a';
   else if (st.alive.b.length && !st.alive.a.length) winner = 'b';
-  else if (!st.alive.a.length && !st.alive.b.length) winner = last === 'a' || last === 'b' ? last : (rng() < 0.5 ? 'a' : 'b');
+  else if (!st.alive.a.length && !st.alive.b.length) winner = st.zeroWin || (last === 'b' ? 'b' : 'a');
   else winner = st.alive.a.length > st.alive.b.length ? 'a' : st.alive.b.length > st.alive.a.length ? 'b' : (rng() < 0.5 ? 'a' : 'b'); // 안전장치
   if (!rec) return winner;
   const chase = rollChase(rng, F, winner, st, opt.round || 1, start);
@@ -511,14 +515,15 @@ function roundRng(game, salt) {
   return makeRng((game.seed ^ Math.imul(game.round + 1, 0x9e3779b1) ^ Math.imul(salt + 1, 0x85ebca6b)) >>> 0);
 }
 
-export function newGame({ names, human = 0, seed = 1 }) {
+// names = 이름들 (번호 = 플레이어 id), pids = 방의 id들 (네트워크 판에서), human = 늘 왼쪽(a)에 둘 사람 (-1이면 없음)
+export function newGame({ names, pids = null, human = 0, seed = 1 }) {
   return {
     seed: seed >>> 0,
     round: 0,
     over: false,
     human,
     players: names.map((name, id) => ({
-      id, name, bot: id !== human, w: null, b: null, hp: RULE.HP, gold: 0, mom: 0, alive: true, place: 0,
+      id, pid: pids ? pids[id] : id, name, bot: id !== human, w: null, b: null, hp: RULE.HP, gold: 0, mom: 0, alive: true, place: 0,
       lastOpp: null, lastShadow: false, shop: [], bought: [], undo: [], snap: null, curse: null, income: null, rerolls: 0,
       stats: { wins: 0, losses: 0, broken: 0, flips: 0, jackpots: 0, stake3: 0, momMax: 0, longest: 0, miracle: 0, curses: 0, dealt: 0 },
     })),
@@ -658,7 +663,7 @@ export function buy(game, pid, act) {
   if (act.t === 'undo') {
     const u = p.undo.pop();
     if (!u) return no('되돌릴 게 없다');
-    p.b = u.b;
+    p.b = { ...u.b, bet: u.b.gamble && u.b.gamble === p.b.gamble ? p.b.bet : u.b.bet }; // G는 되돌리기 대상이 아니다
     p.gold = u.gold;
     p.shop = u.shop;
     p.bought = u.bought;
@@ -794,9 +799,15 @@ function settleFight(game, f, notes) {
   notes.push(note);
 }
 
+// 체력이 같으면 씨앗 난수로 순서를 정한다 (앞 번호가 늘 이기지 않게)
+function byHp(game, list, salt) {
+  const rng = roundRng(game, salt);
+  return list.map(p => ({ p, r: rng() })).sort((x, y) => y.p.hp - x.p.hp || x.r - y.r).map(x => x.p);
+}
+
 function eliminate(game, notes) {
   const alive = game.players.filter(p => p.alive);
-  const dead = alive.filter(p => p.hp <= 0).sort((x, y) => y.hp - x.hp);
+  const dead = byHp(game, alive.filter(p => p.hp <= 0), 3);
   let left = alive.length - dead.length;
   if (left === 0 && dead.length) { dead.shift(); left = 1; } // 다 같이 쓰러지면 덜 깎인 사람이 남는다
   dead.forEach((p, i) => {
@@ -809,7 +820,7 @@ function eliminate(game, notes) {
 }
 
 function finish(game) {
-  const alive = game.players.filter(p => p.alive).sort((x, y) => y.hp - x.hp);
+  const alive = byHp(game, game.players.filter(p => p.alive), 4);
   alive.forEach((p, i) => { p.place = i + 1; });
   game.over = true;
 }
@@ -824,7 +835,7 @@ export function titles(game) {
     for (const p of ps) if (fn(p) >= min && (!best || fn(p) > fn(best))) best = p;
     return best;
   };
-  const add = (p, icon, name, note) => { if (p) out.push({ icon, name, who: p.name, note }); };
+  const add = (p, icon, name, note) => { if (p) out.push({ icon, name, who: p.name, id: p.id, note }); };
   add(ps.find(p => p.place === 1), '🏆', '대장장이', '우승');
   add(topBy(p => p.stats.miracle), '🎲', '기적의 손', '승률 10% 밑에서 이김');
   add(topBy(p => p.stats.flips), '🎴', '도박왕', `도박으로 뒤집은 합 ${topBy(p => p.stats.flips)?.stats.flips}번`);
@@ -950,4 +961,59 @@ export function simulate({ games = 200, players = 6, seed = 7 } = {}) {
     gambleFlipRate: gClashes ? pct(flips / gClashes) : '-',
     gambleEnd: Object.fromEntries(GAMBLE_KEYS.map(k => [GAMBLES[k].name, `${gambleHeld[k]}명 · 우승 ${gambleWin[k]}`])),
   };
+}
+
+// ───────── 화면이 쓰는 것
+// 대결 기록의 왼쪽(a)과 오른쪽(b)을 바꾼다 (내가 b인 대결을 내 쪽이 왼쪽에 오게 볼 때). 값은 그대로
+export function mirrorFight(f) {
+  const sw = s => (s === 'a' ? 'b' : s === 'b' ? 'a' : s);
+  const flipSide = x => ({ ...x, side: sw(x.side) });
+  const g = sd => (sd.g ? { ...sd, g: { ...sd.g, to: sw(sd.g.to) } } : sd);
+  return {
+    ...f,
+    a: f.b,
+    b: f.a,
+    start: { stake: { a: f.start.stake.b, b: f.start.stake.a, mult: f.start.stake.mult }, leech: { a: f.start.leech.b, b: f.start.leech.a } },
+    p0: f.p0 == null ? null : 1 - f.p0,
+    winner: sw(f.winner),
+    clashes: f.clashes.map(c => ({
+      ...c,
+      a: g(c.b),
+      b: g(c.a),
+      order: c.order.map(flipSide),
+      bombs: c.bombs.map(x => ({ ...x, by: sw(x.by), side: sw(x.side) })),
+      broke: c.broke.map(flipSide),
+      brace: c.brace.map(flipSide),
+      alive: { a: c.alive.b, b: c.alive.a },
+      result: sw(c.result),
+      pA: c.pA == null ? null : 1 - c.pA,
+    })),
+  };
+}
+
+// 대결 하나를 화면이 틀 때 걸리는 시간 어림 (빠르기 1, 넉넉히). 방장이 대결 단계 길이를 정할 때 쓴다 (forge-view.js 박자와 맞춤)
+export function playMs(f) {
+  let ms = 650 + 300;
+  for (const s of ['a', 'b']) {
+    if (f.start.stake[s]) ms += 1300;
+    if (f.start.leech[s]) ms += 1200;
+  }
+  for (const c of f.clashes) {
+    const e = Math.min(0.4, 0.08 * (c.no - 1));
+    const q = x => Math.max(110, x * (1 - e));
+    ms += 450 + c.order.length * 300 + (c.slowAt >= 0 ? 1100 : 0);
+    for (const s of ['a', 'b']) {
+      for (const d of c[s].dice) {
+        if (d.rr) ms += 600;
+        if (d.ev) ms += d.ev.includes('+') ? 1120 : 560;
+      }
+      if (c[s].twins) ms += 380;
+      if (c[s].g) ms += (c[s].g.tense ? 1050 : q(320)) + q(420) + 200;
+      if (c[s].m !== 1) ms += 380;
+    }
+    if (c.a.jack !== c.b.jack) ms += 1350;
+    ms += q(220) + c.broke.length * (q(160) + 140) + c.brace.length * 420 + q(620) + 150;
+  }
+  ms += 1000 + 450 + f.chase.dice.length * 420 + 1500;
+  return Math.round(ms);
 }

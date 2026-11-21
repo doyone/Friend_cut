@@ -23,10 +23,11 @@ import roulette from './roulette.js';
 import arena from './arena.js';
 import scale from './scale.js';
 import raid from './raid.js';
+import forge from './forge.js';
 
 // 로비 숫자키(1~9)는 이 순서라, 새 게임은 뒤에 붙인다 (친구들이 외운 번호가 안 바뀌게)
 export const GAMES = [timer, bomb, tower, pullout, seesaw, bumper, race, reaction, liar, professor, door, sky, stack, quick, nunchi,
-  count, stop, memory, balloon, cannon, roulette, arena, scale, raid];
+  count, stop, memory, balloon, cannon, roulette, arena, scale, raid, forge];
 
 export const COMING = [];
 
